@@ -47,7 +47,7 @@ its report and exits 4 or 5.
   "version": "v1.8.0",
   "commands": ["companion info","profile list","profile show","cert list","sign","verify",
                "doctor","profile validate","profile capabilities","rules"],
-  "capabilities": {"windows":false,"macos":true,"checksums":true,"containers":false,"attestations":false,"rules":true},
+  "capabilities": {"windows":false,"macos":true,"checksums":true,"containers":false,"attestations":false,"rules":true,"strictReads":true},
   "capabilityList": ["macos","checksums","rules"],
   "backends": {"authenticode/azure-artifact-signing":false,"authenticode/certum":false,"authenticode/cert-store":false,
                "authenticode/pfx":false,"developer-id/codesign":true,"developer-id/notarytool":true,
