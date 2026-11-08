@@ -27,9 +27,19 @@ type CompanionInfo struct {
 	Tools          []string        `json:"tools"`
 }
 
+// StrictReadsCapability tells a caller that the read commands (companion
+// info, profile list and show, cert list) accept --strict. They have no
+// partial or skipped answer, so --strict changes nothing: every problem is
+// already an error. It is accepted so a caller can pass --strict to every
+// call without first learning which ones take it.
+const StrictReadsCapability = "strictReads"
+
+// readFlags are the flags of the read commands.
+var readFlags = flagSpec{"json": boolFlag, "strict": boolFlag}
+
 func (a *App) companionInfo() CompanionInfo {
 	platforms, backends := signing.HostCapabilities(a.host())
-	caps := map[string]bool{"rules": true}
+	caps := map[string]bool{"rules": true, StrictReadsCapability: true}
 	list := []string{}
 	for k, v := range platforms {
 		caps[k] = v
@@ -44,7 +54,7 @@ func (a *App) companionInfo() CompanionInfo {
 }
 
 func cmdCompanion(_ context.Context, a *App, args []string) (int, error) {
-	p, err := parse(args, flagSpec{"json": boolFlag})
+	p, err := parse(args, readFlags)
 	if err != nil {
 		return 0, err
 	}
@@ -142,7 +152,7 @@ func orNone(s string) string {
 }
 
 func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
-	p, err := parse(args, flagSpec{"json": boolFlag})
+	p, err := parse(args, readFlags)
 	if err != nil {
 		return 0, err
 	}

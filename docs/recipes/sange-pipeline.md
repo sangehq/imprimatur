@@ -25,10 +25,12 @@ impr rules --json --strict --request rules-request.json      # SIG-03, when info
   `.asc`, `.minisig`, `.sigstore.json` files in `outputs`.
 - impr does not enforce `requiresApproval`; sange does (APR-11).
 
-> sange's companion client (`internal/adapters/imprimatur`) still starts the
-> PowerShell toolkit: it pins a tree hash of `src/` and `bin/` and runs
-> `pwsh -File src/impr.ps1`. Until that client learns to pin and run this
-> binary, sange cannot call the Go `impr`; the JSON it would read is the same.
+> sange runs this binary once it is pinned by absolute path and SHA-256 with
+> `sange release signing tools pin impr <absolute path>` (a typed `pin impr`
+> confirmation). It asks `impr companion info --json` for contract 1 before any
+> other call, and refuses a binary whose hash changed rather than falling back.
+> With no binary pinned, sange still starts the deprecated PowerShell toolkit.
+> The pin command ships in sange's Phase 9 build.
 
 ---
 

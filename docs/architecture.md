@@ -18,7 +18,7 @@ src/internal/artifact/ the build manifest, safe path resolution, digests, file k
 src/internal/secrets/  credential references to values, temporary files for tools
 src/internal/execx/    the allow-listed exec adapter (the only importer of os/exec)
 src/internal/paths/    XDG and Windows config and state directories
-src/internal/guardtest/ repository guards: exec, workflows, build layout, docs
+src/internal/guardtest/ repository guards: exec, workflows, build layout, docs, community files
 ```
 
 The module has no dependency outside the Go standard library.

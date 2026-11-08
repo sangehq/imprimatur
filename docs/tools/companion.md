@@ -12,7 +12,10 @@ impr companion info [--json]
 - **Transport.** Exec. With `--json`, stdout carries exactly one JSON document
   and every human line goes to stderr. Every document carries `"contract": 1`;
   shapes only ever gain fields.
-- **`--strict`.** A platform that would be skipped is an error instead.
+- **`--strict`.** On `sign`, `verify` and `rules`, a platform that would be skipped is an error instead.
+  The read commands (`companion info`, `profile list`, `profile show`, `cert list`) also accept it: they
+  have no partial answer, so it changes nothing there, and `companion info` advertises this with the
+  `strictReads` capability so a caller can pass `--strict` everywhere.
 - **Exit codes:**
 
 | Code | Meaning |
@@ -44,7 +47,7 @@ its report and exits 4 or 5.
   "version": "v1.8.0",
   "commands": ["companion info","profile list","profile show","cert list","sign","verify",
                "doctor","profile validate","profile capabilities","rules"],
-  "capabilities": {"windows":false,"macos":true,"checksums":true,"containers":false,"attestations":false,"rules":true},
+  "capabilities": {"windows":false,"macos":true,"checksums":true,"containers":false,"attestations":false,"rules":true,"strictReads":true},
   "capabilityList": ["macos","checksums","rules"],
   "backends": {"authenticode/azure-artifact-signing":false,"authenticode/certum":false,"authenticode/cert-store":false,
                "authenticode/pfx":false,"developer-id/codesign":true,"developer-id/notarytool":true,

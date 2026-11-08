@@ -2,7 +2,7 @@
 
 > Sign and verify release artifacts with named, scoped signing profiles, and render Windows allow rules for them.
 
-Go 1.27 or newer, built from source; runs on macOS, Linux and Windows. No registry version, Tests or Static analysis badge yet: releases are on hold (git only) and the repository is not published, so there is nothing those badges could truthfully show. The licence is MIT.
+Go 1.27 or newer, built from source; runs on macOS, Linux and Windows. No registry version, Tests or Static analysis badge yet: releases are on hold (git only) and the repository ([sangehq/imprimatur](https://github.com/sangehq/imprimatur)) is private, so there is nothing those badges could truthfully show. The licence is MIT.
 
 ## Install
 
