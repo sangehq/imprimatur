@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Repository files the organisation standard requires: `CONTRIBUTING.md`,
+  `SECURITY.md` (reports by email to security@simtabi.com), `CODE_OF_CONDUCT.md`
+  (Contributor Covenant 2.1), `.editorconfig`, a weekly grouped Dependabot
+  configuration for Go modules and GitHub Actions, issue templates and a pull
+  request template, with a guard test that fails when any of them is missing
+  or loses its required text.
 - The Go rewrite of imprimatur (SIG-07, decision SD-066), module
   `github.com/sangehq/imprimatur/src`, one binary `impr`. The PowerShell 1.8.x
   line stays in use until this one reaches parity; see
