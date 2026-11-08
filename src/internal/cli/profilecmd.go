@@ -11,7 +11,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/profile"
 )
 
-var profileFlags = flagSpec{"json": boolFlag, "force": boolFlag, "scope": stringFlag, "owner": stringFlag, "purpose": listFlag,
+var profileFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "force": boolFlag, "scope": stringFlag, "owner": stringFlag, "purpose": listFlag,
 	"allowed-repo": listFlag, "requires-approval": boolFlag, "notes": stringFlag, "set": repeatFlag, "unset": repeatFlag,
 	"from-file": stringFlag, "out-file": stringFlag, "from": stringFlag}
 

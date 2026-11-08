@@ -483,3 +483,26 @@ func TestSetKeepsCommas(t *testing.T) {
 		t.Fatalf("--purpose did not split: %q", got)
 	}
 }
+
+// TestReadCommandsAcceptStrict: a caller may pass --strict to every call,
+// so the read commands accept it, and companion info advertises that with
+// the strictReads capability. Proven red by dropping "strict" from
+// readFlags: companion info and cert list then exit 1.
+func TestReadCommandsAcceptStrict(t *testing.T) {
+	h := newHarness(t)
+	reads := [][]string{
+		{"companion", "info", "--json", "--strict"},
+		{"profile", "list", "--json", "--strict"},
+		{"cert", "list", "--json", "--strict"},
+	}
+	for _, args := range reads {
+		h.ok(args...)
+	}
+	out := h.ok("companion", "info", "--json")
+	if !strings.Contains(out, `"`+StrictReadsCapability+`":true`) {
+		t.Errorf("companion info does not advertise %s:\n%s", StrictReadsCapability, out)
+	}
+	if len(reads) != 3 {
+		t.Fatal("read command list was cut")
+	}
+}

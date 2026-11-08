@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The read commands (`companion info`, `profile list`, `profile show`, `cert list`)
+  accept `--strict`, and `companion info` advertises the `strictReads`
+  capability, so sange can pass `--strict` to every call.
 - Repository files the organisation standard requires: `CONTRIBUTING.md`,
   `SECURITY.md` (reports by email to security@simtabi.com), `CODE_OF_CONDUCT.md`
   (Contributor Covenant 2.1), `.editorconfig`, a weekly grouped Dependabot

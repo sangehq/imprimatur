@@ -12,7 +12,10 @@ impr companion info [--json]
 - **Transport.** Exec. With `--json`, stdout carries exactly one JSON document
   and every human line goes to stderr. Every document carries `"contract": 1`;
   shapes only ever gain fields.
-- **`--strict`.** A platform that would be skipped is an error instead.
+- **`--strict`.** On `sign`, `verify` and `rules`, a platform that would be skipped is an error instead.
+  The read commands (`companion info`, `profile list`, `profile show`, `cert list`) also accept it: they
+  have no partial answer, so it changes nothing there, and `companion info` advertises this with the
+  `strictReads` capability so a caller can pass `--strict` everywhere.
 - **Exit codes:**
 
 | Code | Meaning |
