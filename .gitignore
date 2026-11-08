@@ -1,0 +1,23 @@
+# Build output: only the tracked inputs stay
+/build/*
+!/build/targets.txt
+
+# Go
+*.test
+*.out
+/src/coverage*
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+
+# Agent tooling
+.claude/
+CLAUDE.local.md

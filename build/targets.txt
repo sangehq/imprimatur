@@ -1,0 +1,15 @@
+# Release targets: "GOOS GOARCH [GOARM]".
+#
+# The Go names are used here; artifact names map darwin -> macos and arm -> armvN,
+# and Windows binaries get .exe. Every target builds with CGO_ENABLED=0.
+# Releases are on hold (git only): nothing builds this list on a tag push.
+darwin amd64
+darwin arm64
+linux amd64
+linux arm64
+linux arm 7
+linux 386
+windows amd64
+windows arm64
+freebsd amd64
+freebsd arm64

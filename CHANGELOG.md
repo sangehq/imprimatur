@@ -1,0 +1,43 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Added
+
+- The Go rewrite of imprimatur (SIG-07, decision SD-066), module
+  `github.com/sangehq/imprimatur/src`, one binary `impr`. The PowerShell 1.8.x
+  line stays in use until this one reaches parity; see
+  [migrate from the PowerShell imprimatur](docs/recipes/migrate-from-powershell.md)
+  for what is not ported yet.
+- Signing profiles (`imprimatur.signing-profile/v1`): scope, owner, purposes,
+  `allowedRepos`, `requiresApproval`, per-platform specs holding credential
+  references only, and the pinned identity verification must find. A profile is
+  never both `test` and `release`; key material in a profile file is refused.
+- `impr profile list|show|add|edit|rm|import|export|validate|default|capabilities|import-legacy`.
+- The PowerShell line's settings (`imprimatur.settings.json`) and profiles are
+  imported automatically the first time impr runs, or with
+  `impr profile import-legacy`; the `MACOS_*` variables become a separate
+  `default-macos` profile of `env://` references.
+- Backends behind one port (`Sign`, `Verify`, `Capability`, `Certificate`):
+  Authenticode (Azure Artifact Signing, Certum, Windows certificate store through
+  signtool; `.pfx` through osslsigncode), Apple Developer ID (codesign,
+  notarytool, stapler), GPG, minisign and SSH checksum signatures, and cosign
+  bundles, key or keyless.
+- Contract v1 for sange: `--json` on stdout, human text on stderr, exit codes
+  0 to 5, `--strict`; `impr companion info`, `impr sign --manifest`,
+  `impr verify`, `impr cert list`, `impr doctor`, and `impr rules --request`
+  (AppLocker publisher rules and a WDAC supplemental policy, deterministic, no
+  file-hash rules).
+- `impr-manifest.json` per signing run: the profile, its pinned identity and
+  digest, the build-manifest digest, and every file's digest before and after
+  signing.
+- Every external tool runs through one allow-listed adapter by absolute path,
+  never through a shell.
+- Configuration and state under XDG on every Unix, macOS included
+  (`~/.config/imprimatur`, `~/.local/state/imprimatur`), `%AppData%` and
+  `%LocalAppData%` on Windows.
