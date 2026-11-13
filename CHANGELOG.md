@@ -53,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `release.yml` calls simtabi/.github's shared `go-release.yml` at `d648d89` (simtabi/.github#30), its latest commit, which adds an optional `node-version` input and changes nothing a caller passes.
+- `make check-build` is new, and `make build` and `make cross` run it after they write: it fails when `build/` holds anything but `targets.txt`, `checksums.txt` and the OS folders, and when it inspected fewer files than the build wrote (`BUILD_LAYOUT_MIN`: 2 after `make build`, one per target plus two after `make cross`).
 - Releases build on a pushed `vX.Y.Z` tag, or on request with
   `gh workflow run release.yml --repo sangehq/imprimatur -f tag=vX.Y.Z`, through
   `simtabi/.github`'s shared `go-release.yml` and a new `src/.goreleaser.yaml`.
