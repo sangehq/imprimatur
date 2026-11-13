@@ -2,12 +2,12 @@
 
 > Sign and verify release artifacts with named, scoped signing profiles, and render Windows allow rules for them.
 
-Go 1.27 or newer, built from source; runs on macOS, Linux and Windows. No registry version, Tests or Static analysis badge yet: releases are on hold (git only) and the repository ([sangehq/imprimatur](https://github.com/sangehq/imprimatur)) is private, so there is nothing those badges could truthfully show. The licence is MIT.
+Go 1.27 or newer, built from source; runs on macOS, Linux and Windows. No registry version, Tests or Static analysis badge yet: no version has been released yet and the repository ([sangehq/imprimatur](https://github.com/sangehq/imprimatur)) is private, so there is nothing those badges could truthfully show. The licence is MIT.
 
 ## Install
 
-Releases are on hold: there is no download, package-manager or `go install`
-path. Build from source:
+No version has been released yet. Binaries will ship on the GitHub release
+only, never through a package manager or `go install`. Build from source:
 
 ```bash
 git clone https://github.com/sangehq/imprimatur.git
@@ -61,7 +61,7 @@ else is in the [documentation](#documentation) below.
 - [Getting started](docs/getting-started.md) — a first profile, a first signed build manifest
 - [Configuration](docs/configuration.md) — profiles, credential references, paths and environment variables
 - [Architecture](docs/architecture.md) — the backend port, the exec allow-list, and why
-- [Release](docs/release.md) — how binaries are released (on hold) and the one command that does it
+- [Release](docs/release.md) — how binaries are released on the GitHub release, and the commands that start one
 
 ### Reference
 

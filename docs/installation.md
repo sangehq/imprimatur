@@ -1,7 +1,8 @@
 # Installation
 
-impr is built from source; releases are on hold, so there is no download,
-package-manager or `go install` path.
+impr is built from source. No version has been released yet; binaries will ship
+on the GitHub release only, never through a package manager or `go install`
+(see [release](release.md)).
 
 ## Requirements
 

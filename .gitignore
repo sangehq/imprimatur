@@ -21,3 +21,6 @@
 # Agent tooling
 .claude/
 CLAUDE.local.md
+
+# GoReleaser scratch output (src/.goreleaser.yaml dist:)
+/.cache/

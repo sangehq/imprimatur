@@ -1,0 +1,82 @@
+version: 2
+
+# imprimatur's release, run by simtabi/.github's shared go-release.yml from the
+# repository root (`goreleaser release --config src/.goreleaser.yaml`). Binaries
+# ship on the GitHub release and nowhere else: this file holds no Homebrew,
+# Scoop, Winget, package-repository or image block, and the shared workflow
+# refuses to run one that does.
+#
+# Every path here is repository-relative; only the Go build is pointed into the
+# module, via builds[].dir.
+#
+# The release carries exactly what the hand-written release.yml published before
+# it: one bare binary per line of build/targets.txt, named
+# impr_{os}_{arch}[.exe] with darwin written as macos and arm as armvN, plus
+# checksums.txt. src/internal/guardtest pins the targets to build/targets.txt.
+
+# The shared workflow pushes src/vX.Y.Z (the Go module alias) on the same commit
+# as vX.Y.Z. Without this, GoReleaser can take src/vX.Y.Z as the current tag.
+git:
+  ignore_tags:
+    - "src/*"
+
+project_name: imprimatur
+
+# A scratch directory (ignored), never build/, which holds only the local layout.
+dist: .cache/goreleaser
+
+builds:
+  - id: impr
+    dir: src
+    main: ./cmd/impr
+    binary: impr
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    # The same list as build/targets.txt.
+    targets:
+      - darwin_amd64_v1
+      - darwin_arm64_v8.0
+      - linux_amd64_v1
+      - linux_arm64_v8.0
+      - linux_arm_7
+      - linux_386_sse2
+      - windows_amd64_v1
+      - windows_arm64_v8.0
+      - freebsd_amd64_v1
+      - freebsd_arm64_v8.0
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    # The variables `impr version` reports, as `make build` and `make cross` set them.
+    ldflags:
+      - -s -w
+      - -X github.com/sangehq/imprimatur/src/internal/cli.version={{ .Tag }}
+      - -X github.com/sangehq/imprimatur/src/internal/cli.commit={{ .ShortCommit }}
+      - -X github.com/sangehq/imprimatur/src/internal/cli.date={{ .Date }}
+
+# The bare, ready-to-run executables, version-less:
+#   impr_macos_arm64, impr_linux_armv7, impr_windows_amd64.exe.
+archives:
+  - id: binary
+    ids: [impr]
+    formats: [binary]
+    name_template: >-
+      {{ .Binary }}_{{- if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}_
+      {{- if eq .Arch "arm" }}armv{{ .Arm }}{{ else }}{{ .Arch }}{{ end }}
+
+# Bare filenames, so `sha256sum -c checksums.txt` resolves next to the downloads.
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  github:
+    owner: sangehq
+    name: imprimatur
+  draft: false
+  prerelease: auto
+
+# The release body is the tagged CHANGELOG section, passed with --release-notes.
+# Not disabled: `disable: true` also drops --release-notes.
+changelog:
+  use: git

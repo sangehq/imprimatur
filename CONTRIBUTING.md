@@ -45,7 +45,9 @@ cosign real-tool test always skips, because a key-mode run would upload to the p
 - `build/` holds only `targets.txt`, `checksums.txt`, `archives/` and one folder per OS;
 - every docs page has a title, the right footer depth, and the README has its required sections;
 - CI has no push trigger and exactly one weekly schedule;
-- the release workflow is dispatch-only and compares its confirmation input, not just mentions it;
+- the release workflow runs only on a version tag or a dispatch naming one, calls the shared, commit-pinned
+  `go-release.yml`, and its GoReleaser config publishes nowhere but the GitHub release and builds exactly
+  `build/targets.txt`;
 - `actions/*` float on a major tag, and every other action is pinned to a commit SHA with a version
   comment;
 - the community files the organisation standard requires are present.
@@ -60,7 +62,8 @@ A new guard is proven red once, by introducing the defect it catches, before it 
 - **External programs run only through `execx`**, by absolute path, never through a shell.
 - **Docs change with the code.** A user-visible change updates the matching page under `docs/` and adds an
   `[Unreleased]` entry to `CHANGELOG.md`.
-- **Releases are on hold.** Do not add a release trigger; see [docs/release.md](docs/release.md).
+- **A pushed version tag publishes.** Push one only for code that is ready to ship; see
+  [docs/release.md](docs/release.md).
 
 ## Pull requests
 

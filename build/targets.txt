@@ -2,7 +2,8 @@
 #
 # The Go names are used here; artifact names map darwin -> macos and arm -> armvN,
 # and Windows binaries get .exe. Every target builds with CGO_ENABLED=0.
-# Releases are on hold (git only): nothing builds this list on a tag push.
+# `make cross` builds this list, and src/.goreleaser.yaml builds the same list for a
+# release (src/internal/guardtest keeps the two equal).
 darwin amd64
 darwin arm64
 linux amd64
