@@ -302,17 +302,18 @@ var (
 	fullSHA      = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	releaseNote  = regexp.MustCompile(`^#\s*v?[0-9]+\.[0-9]+\.[0-9]+\s*$`)
 	floatsOwners = map[string]bool{"actions": true, "docker": true, "github": true}
-	// An org's shared workflows live in its .github repository, which publishes
-	// no releases, so a pin names the pull request that produced the commit.
+	// An org's shared workflows live in its .github repository, which tags its
+	// releases (simtabi/.github v1.0.0 onward), so a pin names the release tag of
+	// the commit, `# vX.Y.Z`: that is the comment Dependabot reads and rewrites.
 	reusableWorkflow = regexp.MustCompile(`^[A-Za-z0-9_.-]+/\.github/\.github/workflows/[^/]+\.ya?ml$`)
-	sharedPRNote     = regexp.MustCompile(`^#\s*[A-Za-z0-9_.-]+/\.github#[0-9]+$`)
+	sharedReleaseTag = regexp.MustCompile(`^#\s*v[0-9]+\.[0-9]+\.[0-9]+$`)
 )
 
 // pinProblem returns why an action reference has the wrong form, or "".
 // actions/*, docker/* and github/* float on a major tag; every other action is
 // a 40-hex commit SHA followed by a `# x.y.z` comment; an org's shared workflow
 // (owner/.github/.github/workflows/*.yml) is a 40-hex commit SHA followed by a
-// `# owner/.github#N` comment.
+// `# vX.Y.Z` comment naming its release tag.
 func pinProblem(ref, comment string) string {
 	if strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "docker://") {
 		return ""
@@ -326,8 +327,8 @@ func pinProblem(ref, comment string) string {
 		if !fullSHA.MatchString(version) {
 			return ref + ": a shared workflow is pinned to a 40-hex commit SHA"
 		}
-		if !sharedPRNote.MatchString(strings.TrimSpace(comment)) {
-			return ref + ": a shared-workflow pin is followed by a `# owner/.github#N` comment naming the pull request it came from"
+		if !sharedReleaseTag.MatchString(strings.TrimSpace(comment)) {
+			return ref + ": a shared-workflow pin is followed by a `# vX.Y.Z` comment naming its release tag"
 		}
 		return ""
 	}
@@ -498,6 +499,8 @@ func TestWorkflowGuardsCanFail(t *testing.T) {
 		{"simtabi/.github/.github/workflows/go-release.yml@main", ""},
 		{"simtabi/.github/.github/workflows/go-release.yml@" + strings.Repeat("a", 40), ""},
 		{"simtabi/.github/.github/workflows/go-release.yml@" + strings.Repeat("a", 40), "# v1"},
+		{"simtabi/.github/.github/workflows/go-release.yml@" + strings.Repeat("a", 40), "# 1.0.0"},
+		{"simtabi/.github/.github/workflows/go-release.yml@" + strings.Repeat("a", 40), "# simtabi/.github#30"},
 	} {
 		if pinProblem(c.ref, c.comment) == "" {
 			t.Errorf("pinProblem accepted %s %s", c.ref, c.comment)
@@ -507,7 +510,7 @@ func TestWorkflowGuardsCanFail(t *testing.T) {
 		{"actions/checkout@v7", ""},
 		{"github/codeql-action/init@v4", ""},
 		{"golangci/golangci-lint-action@" + strings.Repeat("a", 40), "# 9.3.0"},
-		{"simtabi/.github/.github/workflows/go-release.yml@" + strings.Repeat("a", 40), "# simtabi/.github#28"},
+		{"simtabi/.github/.github/workflows/go-release.yml@" + strings.Repeat("a", 40), "# v1.0.0"},
 	} {
 		if p := pinProblem(c.ref, c.comment); p != "" {
 			t.Errorf("pinProblem rejected %s %s: %s", c.ref, c.comment, p)
