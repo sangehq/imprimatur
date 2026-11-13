@@ -7,8 +7,8 @@
 #   make build   build/{host-os}/impr
 #   make cross   build/{os}/impr_{os}_{arch}[.exe] + build/checksums.txt
 #
-# The OS folder is macos, never darwin. Releases are on hold: nothing here
-# publishes.
+# The OS folder is macos, never darwin. Nothing here publishes: a release is
+# built by GoReleaser (src/.goreleaser.yaml) in .github/workflows/release.yml.
 MODULE    := src
 GO        := go -C $(MODULE)
 HOST_GOOS := $(shell go env GOOS 2>/dev/null)

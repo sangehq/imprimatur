@@ -1,35 +1,57 @@
 # Release
 
-Binaries are not released yet: imprimatur is git only until the owner approves
-a release, and users build from source.
+A release publishes impr's binaries on imprimatur's GitHub release and nowhere
+else: there is no package-manager, image or `go install` path. No version has
+been released yet.
 
-## How a release runs, when one is approved
+## How a release runs
 
-`.github/workflows/release.yml` has `workflow_dispatch` as its only trigger,
-with a required `confirm` input. Its first step refuses to run unless `confirm`
-is `release-go` and the run is on a `refs/tags/v[0-9]*` tag. The one command:
+`.github/workflows/release.yml` calls `simtabi/.github`'s shared
+`go-release.yml`, pinned to a commit, which runs GoReleaser with
+`src/.goreleaser.yaml`. It starts in one of two ways:
 
 ```bash
-gh workflow run release.yml --repo sangehq/imprimatur --ref vX.Y.Z -f confirm=release-go
+# push the tag: this builds and publishes vX.Y.Z
+git -C ~/Artisan/projects/opensource/sange/packages/imprimatur push origin vX.Y.Z
+
+# or build a tag that is already on GitHub
+gh workflow run release.yml --repo sangehq/imprimatur -f tag=vX.Y.Z
 ```
 
-- Pushing a `vX.Y.Z` tag publishes nothing.
-- `vX.Y.Z` must be a real tag already on GitHub.
-- The command publishes for real: it cross-builds `build/targets.txt`, checks
-  `build/checksums.txt`, and creates a GitHub release with the binaries, the
-  checksums and that version's `CHANGELOG.md` section. Run it only for a
-  version that was approved.
+- Pushing a `vX.Y.Z` (or `vX.Y.Z-rc.N`) tag publishes. Push one only for code
+  that is ready to ship; test builds use a pre-release tag.
+- The run refuses a final version whose `CHANGELOG.md` has no `## [X.Y.Z]`
+  section; that section becomes the release body.
+- The release carries one bare binary per line of `build/targets.txt`, named
+  `impr_{os}_{arch}[.exe]` (`macos`, never `darwin`; `armv7` for 32-bit ARM),
+  and `checksums.txt` with bare file names:
 
-`src/internal/guardtest` fails if `release.yml` gains a `push`, `schedule`,
-`pull_request` or `release` trigger, or loses the confirmation.
+  ```bash
+  sha256sum -c --ignore-missing checksums.txt
+  ```
+
+- The shared workflow also pushes `src/vX.Y.Z` on the same commit, the tag Go
+  resolves the module in `src/` through. It matches no release trigger.
+- Build provenance is not attested: GitHub Free refuses attestations on a
+  private repository, so the shared workflow skips that step here.
+
+`src/internal/guardtest` fails if `release.yml` gains a branch or schedule
+trigger, stops calling the pinned shared workflow, or stops passing the tag;
+if `src/.goreleaser.yaml` gains a block that publishes anywhere else or writes
+into `build/`; and if its targets drift from `build/targets.txt`.
+
+Check the config locally, writing only to the ignored `.cache/goreleaser/`:
+
+```bash
+goreleaser check --config src/.goreleaser.yaml
+goreleaser release --snapshot --clean --skip=sign,publish,sbom --config src/.goreleaser.yaml
+```
 
 ## Versions and tags
 
 The first tag after the move to `sangehq` is `v1.8.0`, matching the PowerShell
 line's CHANGELOG (SD-070). Tags are final: never moved, deleted or reused, and
-a bad version is retracted, not replaced. The module lives in `src/`, so Go
-resolves it only through a `src/vX.Y.Z` tag on the same commit; the release
-workflow does not create that alias tag yet, so it is pushed alongside `vX.Y.Z`.
+a bad version is retracted, not replaced.
 
 ---
 

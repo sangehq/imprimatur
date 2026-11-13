@@ -1,79 +1,40 @@
+# Release: build impr's binaries and publish them on imprimatur's GitHub release, and nowhere else
+# (no `go install` path, Homebrew, Scoop, Winget, image or any other channel). The pipeline is
+# simtabi/.github's shared go-release.yml, driven by src/.goreleaser.yaml; this file only says when.
+#
+#   git push origin vX.Y.Z                                                  builds and publishes vX.Y.Z
+#   gh workflow run release.yml --repo sangehq/imprimatur -f tag=vX.Y.Z     the same, for a tag already pushed
+#
+# Push a version tag only for final code: tags are final, and a pushed tag publishes. The shared
+# workflow also pushes the src/vX.Y.Z module tag, which matches no trigger here.
+# src/internal/guardtest asserts the triggers and the shared call.
 name: Release
 
-# Go releases are git only until the owner says otherwise, so nothing here starts
-# on a tag push: pushing a vX.Y.Z tag records a version and publishes nothing.
-# A release is dispatched by hand against an existing tag, with an explicit
-# confirmation, and refuses to run without both:
-#
-#   gh workflow run release.yml --repo sangehq/imprimatur --ref vX.Y.Z -f confirm=release-go
-#
-# It cross-builds build/targets.txt and attaches the binaries and checksums to a
-# GitHub release whose body is that version's CHANGELOG.md section. It
-# publishes to no package manager. src/internal/guardtest asserts the trigger
-# and the confirmation.
 on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
   workflow_dispatch:
     inputs:
-      confirm:
-        description: Type release-go to publish binaries for the tag this run is dispatched on
+      tag:
+        description: 'An existing vX.Y.Z tag to build and publish'
         required: true
         type: string
 
-# A release is never cancelled mid-publish.
+permissions: {}
+
+# One run per tag, never cancelled: two runs must not publish the same release.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
-
-permissions:
-  contents: read
-
-env:
-  GOPRIVATE: github.com/sangehq/*
-  GONOSUMDB: github.com/sangehq/*
 
 jobs:
   release:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
     permissions:
-      contents: write # create the release and upload its assets
-    steps:
-      - name: Refuse without confirmation or a release tag
-        env:
-          CONFIRM: ${{ inputs.confirm }}
-        run: |
-          if [ "${CONFIRM}" != "release-go" ]; then
-            echo "::error::confirm must be release-go; nothing was published"
-            exit 1
-          fi
-          case "${GITHUB_REF}" in
-            refs/tags/v[0-9]*) ;;
-            *) echo "::error::dispatch this on a vX.Y.Z tag (--ref vX.Y.Z), not ${GITHUB_REF}"; exit 1 ;;
-          esac
-
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: src/go.mod
-
-      - name: Cross-build every target
-        run: make cross
-
-      - name: Verify checksums
-        run: cd build && sha256sum -c checksums.txt
-
-      - name: Release notes from CHANGELOG.md
-        run: |
-          v="${GITHUB_REF_NAME#v}"
-          awk -v v="$v" '$0 ~ "^## \\[" v "\\]" {p=1; next} /^## \[/ {p=0} p' CHANGELOG.md > "${RUNNER_TEMP}/notes.md"
-          test -s "${RUNNER_TEMP}/notes.md" || { echo "::error::CHANGELOG.md has no section for ${GITHUB_REF_NAME}"; exit 1; }
-
-      - name: Create the GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" --verify-tag --title "${GITHUB_REF_NAME}" \
-            --notes-file "${RUNNER_TEMP}/notes.md" build/*/impr_* build/checksums.txt
+      contents: write
+      id-token: write
+      attestations: write
+    uses: simtabi/.github/.github/workflows/go-release.yml@941f7b7ecce5dc8af6daedfc7496dd4367c70877  # simtabi/.github#28
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}

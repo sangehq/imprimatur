@@ -50,3 +50,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configuration and state under XDG on every Unix, macOS included
   (`~/.config/imprimatur`, `~/.local/state/imprimatur`), `%AppData%` and
   `%LocalAppData%` on Windows.
+
+### Changed
+
+- Releases build on a pushed `vX.Y.Z` tag, or on request with
+  `gh workflow run release.yml --repo sangehq/imprimatur -f tag=vX.Y.Z`, through
+  `simtabi/.github`'s shared `go-release.yml` and a new `src/.goreleaser.yaml`.
+  The binaries still ship on the GitHub release only, under the same names
+  (`impr_{os}_{arch}[.exe]` for every line of `build/targets.txt`, plus
+  `checksums.txt`), and `checksums.txt` now lists bare file names. The
+  dispatch-only workflow and its `confirm=release-go` input are gone; the guard
+  tests now pin the new triggers, the pinned shared call, a GoReleaser config
+  that publishes nowhere else, and its targets against `build/targets.txt`.

@@ -134,94 +134,166 @@ func ciProblems(text string) []string {
 	return problems
 }
 
-// releaseProblems checks release.yml: dispatch-only, a required confirm input,
-// and a first step that refuses without confirm=release-go on a v[0-9]* tag.
+// releaseTagFilters are the push filters release.yml carries: a final version
+// tag and a pre-release one. The src/vX.Y.Z module alias matches neither.
+var releaseTagFilters = []string{"v[0-9]+.[0-9]+.[0-9]+", "v[0-9]+.[0-9]+.[0-9]+-*"}
+
+var (
+	sharedReleaseCall = regexp.MustCompile(`(?m)^\s*uses\s*:\s*simtabi/\.github/\.github/workflows/go-release\.yml@[0-9a-f]{40}\s*(#.*)?$`)
+	tagFromInput      = regexp.MustCompile(`(?m)^\s*tag\s*:\s*\$\{\{\s*inputs\.tag\s*\|\|\s*github\.ref_name\s*\}\}\s*$`)
+	neverCancelled    = regexp.MustCompile(`(?m)^\s*cancel-in-progress\s*:\s*false\s*(#.*)?$`)
+	listItem          = regexp.MustCompile(`^\s*-\s*['"]?([^'"#]+?)['"]?\s*(#.*)?$`)
+	stepsKey          = regexp.MustCompile(`(?m)^\s*steps\s*:`)
+)
+
+// childBlock returns the lines nested under the first line in block whose key
+// is name.
+func childBlock(block []string, name string) ([]string, bool) {
+	for i, l := range block {
+		m := keyLine.FindStringSubmatch(l)
+		if m == nil || m[1] != name {
+			continue
+		}
+		var out []string
+		for _, c := range block[i+1:] {
+			if isBlankOrComment(c) {
+				continue
+			}
+			if indentOf(c) <= indentOf(l) {
+				break
+			}
+			out = append(out, c)
+		}
+		return out, true
+	}
+	return nil, false
+}
+
+// releaseProblems checks release.yml: it runs on a pushed version tag or on a
+// dispatch naming one, on no branch, and its one job calls the shared
+// go-release.yml pinned to a commit, passing the tag through.
 func releaseProblems(text string) []string {
 	var problems []string
 	names := triggers(text)
-	if len(names) != 1 || names[0] != "workflow_dispatch" {
-		problems = append(problems, "release.yml triggers on "+strings.Join(names, ", ")+"; want workflow_dispatch only")
+	if strings.Join(names, ",") != "push,workflow_dispatch" {
+		problems = append(problems, "release.yml triggers on "+strings.Join(names, ", ")+"; want exactly push (version tags) and workflow_dispatch")
 	}
-
-	// inputs.confirm with required: true.
 	block, _, _ := onBlock(text)
-	confirmAt, required := -1, false
-	for _, l := range block {
-		if isBlankOrComment(l) {
-			continue
+
+	push, _ := childBlock(block, "push")
+	var tags []string
+	for _, l := range push {
+		if m := keyLine.FindStringSubmatch(l); m != nil && m[1] != "tags" {
+			problems = append(problems, "release.yml's push trigger filters on "+m[1]+"; it runs on version tags only")
 		}
-		if confirmAt >= 0 {
-			if indentOf(l) <= confirmAt {
-				break
-			}
-			if regexp.MustCompile(`^\s*required\s*:\s*true\s*(#.*)?$`).MatchString(l) {
-				required = true
-			}
-			continue
-		}
-		if m := keyLine.FindStringSubmatch(l); m != nil && m[1] == "confirm" {
-			confirmAt = indentOf(l)
+		if m := listItem.FindStringSubmatch(l); m != nil {
+			tags = append(tags, strings.TrimSpace(m[1]))
 		}
 	}
-	if confirmAt < 0 {
-		problems = append(problems, "release.yml has no confirm input")
-	} else if !required {
-		problems = append(problems, "release.yml's confirm input is not required: true")
+	if !slices.Equal(tags, releaseTagFilters) {
+		problems = append(problems, "release.yml's push tags are "+strings.Join(tags, ", ")+"; want "+strings.Join(releaseTagFilters, ", "))
 	}
 
-	// The first step of the job.
-	step := firstStep(text)
-	if step == "" {
-		problems = append(problems, "release.yml has no steps")
-	} else {
-		for _, want := range []string{"refs/tags/v[0-9]*", "exit 1"} {
-			if !strings.Contains(step, want) {
-				problems = append(problems, "release.yml's first step does not check "+want)
-			}
-		}
-		// The confirmation must be compared, not merely mentioned in a message.
-		if !regexp.MustCompile(`!=\s*"?release-go"?`).MatchString(step) {
-			problems = append(problems, "release.yml's first step does not refuse unless confirm is release-go")
-		}
-		if regexp.MustCompile(`(?m)^\s*-?\s*uses\s*:`).MatchString(step) {
-			problems = append(problems, "release.yml's first step is an action, not the refusal")
-		}
+	dispatch, _ := childBlock(block, "workflow_dispatch")
+	input, ok := childBlock(dispatch, "tag")
+	if !ok {
+		problems = append(problems, "release.yml's workflow_dispatch has no tag input")
+	} else if !slices.ContainsFunc(input, regexp.MustCompile(`^\s*required\s*:\s*true\s*(#.*)?$`).MatchString) {
+		problems = append(problems, "release.yml's tag input is not required: true")
+	}
+
+	if !neverCancelled.MatchString(text) {
+		problems = append(problems, "release.yml's concurrency does not say cancel-in-progress: false")
+	}
+	if !sharedReleaseCall.MatchString(text) {
+		problems = append(problems, "release.yml does not call simtabi/.github's go-release.yml pinned to a commit")
+	}
+	if !tagFromInput.MatchString(text) {
+		problems = append(problems, "release.yml does not pass tag: ${{ inputs.tag || github.ref_name }}")
+	}
+	if stepsKey.MatchString(text) {
+		problems = append(problems, "release.yml has steps of its own; the shared workflow does the work")
 	}
 	return problems
 }
 
-// firstStep returns the text of the first step under the first `steps:` key.
-func firstStep(text string) string {
-	lines := strings.Split(text, "\n")
-	for i, l := range lines {
-		if !regexp.MustCompile(`^\s*steps\s*:\s*$`).MatchString(l) {
+// bannedGoReleaserBlocks publish somewhere other than the GitHub release. The
+// list is the one simtabi/.github's go-release.yml refuses.
+var bannedGoReleaserBlocks = []string{
+	"brews", "homebrew_casks", "scoops", "winget", "chocolateys", "aurs", "aur_sources",
+	"snapcrafts", "flatpaks", "nix", "dockers", "dockers_v2", "docker_manifests", "docker_signs",
+	"kos", "krews", "npms", "cloudsmiths", "furies", "publishers", "blobs", "uploads", "artifactories",
+}
+
+var topKey = regexp.MustCompile(`^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$`)
+
+// goreleaserProblems checks src/.goreleaser.yaml publishes on the GitHub
+// release only and writes its scratch output outside build/.
+func goreleaserProblems(text string) []string {
+	var problems []string
+	dist := ""
+	for _, l := range strings.Split(text, "\n") {
+		m := topKey.FindStringSubmatch(l)
+		if m == nil {
 			continue
 		}
-		var step []string
-		itemIndent := -1
-		for _, s := range lines[i+1:] {
-			if isBlankOrComment(s) {
-				if itemIndent >= 0 {
-					step = append(step, s)
-				}
+		if slices.Contains(bannedGoReleaserBlocks, m[1]) {
+			problems = append(problems, "src/.goreleaser.yaml has a "+m[1]+" block; binaries ship on the GitHub release only")
+		}
+		if m[1] == "dist" {
+			dist = strings.Trim(strings.TrimSpace(strings.SplitN(m[2], "#", 2)[0]), `"'`)
+		}
+	}
+	if dist == "" || dist == "build" || strings.HasPrefix(dist, "build/") {
+		problems = append(problems, "src/.goreleaser.yaml's dist is "+strconv.Quote(dist)+"; it must be a scratch directory outside build/")
+	}
+	return problems
+}
+
+// goreleaserTargets returns the builds' targets as "goos goarch [goarm]",
+// the form build/targets.txt uses.
+func goreleaserTargets(text string) []string {
+	var out []string
+	lines := strings.Split(text, "\n")
+	for i, l := range lines {
+		if m := keyLine.FindStringSubmatch(l); m == nil || m[1] != "targets" {
+			continue
+		}
+		for _, c := range lines[i+1:] {
+			if isBlankOrComment(c) {
 				continue
 			}
-			if itemIndent < 0 {
-				if !strings.HasPrefix(strings.TrimSpace(s), "- ") {
-					return ""
-				}
-				itemIndent = indentOf(s)
-				step = append(step, s)
-				continue
-			}
-			if indentOf(s) < itemIndent || (indentOf(s) == itemIndent && strings.HasPrefix(strings.TrimSpace(s), "-")) {
+			m := listItem.FindStringSubmatch(c)
+			if m == nil || indentOf(c) < indentOf(l) {
 				break
 			}
-			step = append(step, s)
+			f := strings.Split(strings.TrimSpace(m[1]), "_")
+			if len(f) < 2 {
+				out = append(out, m[1])
+				continue
+			}
+			target := f[0] + " " + f[1]
+			if f[1] == "arm" && len(f) > 2 {
+				target += " " + f[2]
+			}
+			out = append(out, target)
 		}
-		return strings.Join(step, "\n")
 	}
-	return ""
+	sort.Strings(out)
+	return out
+}
+
+// targetsFile returns build/targets.txt's targets, normalised to single spaces.
+func targetsFile(text string) []string {
+	var out []string
+	for _, l := range strings.Split(text, "\n") {
+		if isBlankOrComment(l) {
+			continue
+		}
+		out = append(out, strings.Join(strings.Fields(l), " "))
+	}
+	sort.Strings(out)
+	return out
 }
 
 var (
@@ -230,11 +302,17 @@ var (
 	fullSHA      = regexp.MustCompile(`^[0-9a-f]{40}$`)
 	releaseNote  = regexp.MustCompile(`^#\s*v?[0-9]+\.[0-9]+\.[0-9]+\s*$`)
 	floatsOwners = map[string]bool{"actions": true, "docker": true, "github": true}
+	// An org's shared workflows live in its .github repository, which publishes
+	// no releases, so a pin names the pull request that produced the commit.
+	reusableWorkflow = regexp.MustCompile(`^[A-Za-z0-9_.-]+/\.github/\.github/workflows/[^/]+\.ya?ml$`)
+	sharedPRNote     = regexp.MustCompile(`^#\s*[A-Za-z0-9_.-]+/\.github#[0-9]+$`)
 )
 
 // pinProblem returns why an action reference has the wrong form, or "".
 // actions/*, docker/* and github/* float on a major tag; every other action is
-// a 40-hex commit SHA followed by a `# x.y.z` comment.
+// a 40-hex commit SHA followed by a `# x.y.z` comment; an org's shared workflow
+// (owner/.github/.github/workflows/*.yml) is a 40-hex commit SHA followed by a
+// `# owner/.github#N` comment.
 func pinProblem(ref, comment string) string {
 	if strings.HasPrefix(ref, "./") || strings.HasPrefix(ref, "docker://") {
 		return ""
@@ -244,6 +322,15 @@ func pinProblem(ref, comment string) string {
 		return ref + " has no @ref"
 	}
 	owner, _, _ := strings.Cut(action, "/")
+	if reusableWorkflow.MatchString(action) {
+		if !fullSHA.MatchString(version) {
+			return ref + ": a shared workflow is pinned to a 40-hex commit SHA"
+		}
+		if !sharedPRNote.MatchString(strings.TrimSpace(comment)) {
+			return ref + ": a shared-workflow pin is followed by a `# owner/.github#N` comment naming the pull request it came from"
+		}
+		return ""
+	}
 	if floatsOwners[owner] {
 		if !majorTag.MatchString(version) {
 			return ref + ": first-party actions float on a major tag (vN)"
@@ -285,13 +372,36 @@ func TestCIHasNoPushTriggerAndOneWeeklyCron(t *testing.T) {
 	atLeast(t, "ci.yml triggers", len(triggers(text)), 3)
 }
 
-// TestReleaseIsConfirmedDispatchOnly: pushing a tag publishes nothing.
-func TestReleaseIsConfirmedDispatchOnly(t *testing.T) {
+// TestReleaseRunsOnAVersionTagOrOnRequest: a pushed vX.Y.Z tag, or a dispatch
+// naming one, publishes through the shared go-release.yml; nothing else does.
+func TestReleaseRunsOnAVersionTagOrOnRequest(t *testing.T) {
 	text := readFile(t, filepath.Join(repoRoot(t), ".github", "workflows", "release.yml"))
 	for _, p := range releaseProblems(text) {
 		t.Error(p)
 	}
-	atLeast(t, "release.yml triggers", len(triggers(text)), 1)
+	atLeast(t, "release.yml triggers", len(triggers(text)), 2)
+}
+
+// TestGoReleaserPublishesOnTheGitHubReleaseOnly: no block in the GoReleaser
+// config publishes anywhere else, and its output stays out of build/.
+func TestGoReleaserPublishesOnTheGitHubReleaseOnly(t *testing.T) {
+	text := readFile(t, filepath.Join(repoRoot(t), "src", ".goreleaser.yaml"))
+	for _, p := range goreleaserProblems(text) {
+		t.Error(p)
+	}
+	atLeast(t, "top-level GoReleaser keys", len(regexp.MustCompile(`(?m)^[a-z_]+\s*:`).FindAllString(text, -1)), 8)
+}
+
+// TestGoReleaserBuildsTheTargetsList: the release builds exactly the targets
+// `make cross` builds, so the published asset names stay the same.
+func TestGoReleaserBuildsTheTargetsList(t *testing.T) {
+	root := repoRoot(t)
+	got := goreleaserTargets(readFile(t, filepath.Join(root, "src", ".goreleaser.yaml")))
+	want := targetsFile(readFile(t, filepath.Join(root, "build", "targets.txt")))
+	if !slices.Equal(got, want) {
+		t.Errorf("src/.goreleaser.yaml targets %v; build/targets.txt lists %v", got, want)
+	}
+	atLeast(t, "release targets", len(got), 10)
 }
 
 // TestActionPinForm checks every `uses:` in every workflow.
@@ -334,17 +444,49 @@ func TestWorkflowGuardsCanFail(t *testing.T) {
 		t.Error("ciProblems accepted two crons")
 	}
 
-	tagRelease := "on:\n  push:\n    tags: ['v*']\n  workflow_dispatch:\n    inputs:\n      confirm:\n        required: true\njobs:\n  r:\n    steps:\n      - run: |\n          [ \"$C\" != release-go ] && exit 1\n          case \"$GITHUB_REF\" in refs/tags/v[0-9]*) ;; *) exit 1;; esac\n"
-	if len(releaseProblems(tagRelease)) == 0 {
-		t.Error("releaseProblems accepted a tag push trigger")
+	// The hand-written, confirmed-dispatch release this replaced must fail.
+	oldRelease := "on:\n  workflow_dispatch:\n    inputs:\n      confirm:\n        required: true\njobs:\n  r:\n    steps:\n      - run: exit 1\n"
+	if len(releaseProblems(oldRelease)) == 0 {
+		t.Error("releaseProblems accepted a dispatch-only release with no shared call")
 	}
-	optional := strings.Replace(strings.Replace(tagRelease, "  push:\n    tags: ['v*']\n", "", 1), "required: true", "required: false", 1)
-	if ps := releaseProblems(optional); len(ps) != 1 {
-		t.Errorf("releaseProblems on an optional confirm: want 1 problem, got %v", ps)
+	good := readFile(t, filepath.Join(repoRoot(t), ".github", "workflows", "release.yml"))
+	for name, bad := range map[string]string{
+		"a branch push":        strings.Replace(good, "    tags:\n", "    branches: [main]\n    tags:\n", 1),
+		"a schedule":           strings.Replace(good, "  workflow_dispatch:\n", "  schedule:\n    - cron: '0 6 * * 1'\n  workflow_dispatch:\n", 1),
+		"a loose tag filter":   strings.Replace(good, "'v[0-9]+.[0-9]+.[0-9]+-*'", "'v*'", 1),
+		"an optional tag":      strings.Replace(good, "required: true", "required: false", 1),
+		"a cancelled run":      strings.Replace(good, "cancel-in-progress: false", "cancel-in-progress: true", 1),
+		"a branch-pinned call": regexp.MustCompile(`go-release\.yml@[0-9a-f]{40}`).ReplaceAllString(good, "go-release.yml@main"),
+		"a tag not passed":     strings.Replace(good, "tag: ${{ inputs.tag || github.ref_name }}", "tag: ${{ github.ref_name }}", 1),
+		"steps of its own":     good + "    steps:\n      - run: make cross\n",
+	} {
+		if bad == good {
+			t.Errorf("the %s sample did not change release.yml", name)
+			continue
+		}
+		if len(releaseProblems(bad)) == 0 {
+			t.Errorf("releaseProblems accepted %s", name)
+		}
 	}
-	checkoutFirst := strings.Replace(strings.Replace(tagRelease, "  push:\n    tags: ['v*']\n", "", 1), "      - run: |", "      - uses: actions/checkout@v7\n      - run: |", 1)
-	if len(releaseProblems(checkoutFirst)) == 0 {
-		t.Error("releaseProblems accepted a first step that is not the refusal")
+
+	gr := readFile(t, filepath.Join(repoRoot(t), "src", ".goreleaser.yaml"))
+	for name, bad := range map[string]string{
+		"a Homebrew tap": gr + "brews:\n  - name: impr\n",
+		"a Docker image": gr + "dockers_v2:\n  - images: [x]\n",
+		"dist in build/": strings.Replace(gr, "dist: .cache/goreleaser", "dist: build/dist", 1),
+		"no dist":        strings.Replace(gr, "dist: .cache/goreleaser", "", 1),
+	} {
+		if bad == gr {
+			t.Errorf("the %s sample did not change src/.goreleaser.yaml", name)
+			continue
+		}
+		if len(goreleaserProblems(bad)) == 0 {
+			t.Errorf("goreleaserProblems accepted %s", name)
+		}
+	}
+	extra := strings.Replace(gr, "      - linux_arm_7\n", "      - linux_arm_7\n      - linux_arm_6\n", 1)
+	if extra == gr || slices.Equal(goreleaserTargets(extra), goreleaserTargets(gr)) {
+		t.Error("goreleaserTargets did not see an added target")
 	}
 
 	for _, c := range []struct{ ref, comment string }{
@@ -353,6 +495,9 @@ func TestWorkflowGuardsCanFail(t *testing.T) {
 		{"golangci/golangci-lint-action@v9", ""},
 		{"golangci/golangci-lint-action@" + strings.Repeat("a", 40), ""},
 		{"golangci/golangci-lint-action@" + strings.Repeat("a", 40), "# v9"},
+		{"simtabi/.github/.github/workflows/go-release.yml@main", ""},
+		{"simtabi/.github/.github/workflows/go-release.yml@" + strings.Repeat("a", 40), ""},
+		{"simtabi/.github/.github/workflows/go-release.yml@" + strings.Repeat("a", 40), "# v1"},
 	} {
 		if pinProblem(c.ref, c.comment) == "" {
 			t.Errorf("pinProblem accepted %s %s", c.ref, c.comment)
@@ -362,16 +507,10 @@ func TestWorkflowGuardsCanFail(t *testing.T) {
 		{"actions/checkout@v7", ""},
 		{"github/codeql-action/init@v4", ""},
 		{"golangci/golangci-lint-action@" + strings.Repeat("a", 40), "# 9.3.0"},
+		{"simtabi/.github/.github/workflows/go-release.yml@" + strings.Repeat("a", 40), "# simtabi/.github#28"},
 	} {
 		if p := pinProblem(c.ref, c.comment); p != "" {
 			t.Errorf("pinProblem rejected %s %s: %s", c.ref, c.comment, p)
 		}
-	}
-}
-
-func TestReleaseGuardNeedsTheComparison(t *testing.T) {
-	mentioned := "on:\n  workflow_dispatch:\n    inputs:\n      confirm:\n        required: true\njobs:\n  r:\n    steps:\n      - run: |\n          if [ \"$C\" != anything ]; then echo \"confirm must be release-go\"; exit 1; fi\n          case \"$GITHUB_REF\" in refs/tags/v[0-9]*) ;; *) exit 1;; esac\n"
-	if len(releaseProblems(mentioned)) == 0 {
-		t.Error("releaseProblems accepted a step that only mentions release-go")
 	}
 }
