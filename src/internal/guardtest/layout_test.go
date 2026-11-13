@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -11,39 +12,65 @@ import (
 var osFolders = map[string]bool{"macos": true, "linux": true, "windows": true, "freebsd": true, "archives": true}
 
 // buildProblems checks build/ holds only targets.txt, checksums.txt and one
-// folder per OS (plus archives/), with no subfolder in an OS folder.
-func buildProblems(dir string) []string {
+// folder per OS (plus archives/), with no subfolder in an OS folder. It also
+// returns how many files it inspected: those at the root and in each OS folder.
+func buildProblems(dir string) ([]string, int) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return []string{err.Error()}
+		return []string{err.Error()}, 0
 	}
 	var p []string
+	n := 0
 	for _, e := range entries {
-		n := e.Name()
+		name := e.Name()
 		switch {
-		case !e.IsDir() && (n == "targets.txt" || n == "checksums.txt"):
-		case e.IsDir() && osFolders[n]:
-			sub, _ := os.ReadDir(filepath.Join(dir, n))
+		case name == ".DS_Store":
+		case !e.IsDir() && (name == "targets.txt" || name == "checksums.txt"):
+			n++
+		case e.IsDir() && osFolders[name]:
+			sub, _ := os.ReadDir(filepath.Join(dir, name))
 			for _, s := range sub {
-				if s.IsDir() {
-					p = append(p, "build/"+n+"/"+s.Name()+" is a folder")
+				switch {
+				case s.IsDir():
+					p = append(p, "build/"+name+"/"+s.Name()+" is a folder")
+				case s.Name() != ".DS_Store":
+					n++
 				}
 			}
 		default:
-			p = append(p, "build/"+n+" does not belong in build/")
+			p = append(p, "build/"+name+" does not belong in build/")
 		}
 	}
-	return p
+	return p, n
 }
 
+// buildFloor is the fewest files build/ must hold: BUILD_LAYOUT_MIN, which the
+// Makefile sets to what the build that just ran wrote, else 1 (targets.txt).
+func buildFloor(t *testing.T) int {
+	t.Helper()
+	raw := os.Getenv("BUILD_LAYOUT_MIN")
+	if raw == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		t.Fatalf("BUILD_LAYOUT_MIN=%q is not a positive number", raw)
+	}
+	return n
+}
+
+// `make check-build` runs this after every build, with BUILD_LAYOUT_MIN set to
+// what that build wrote.
 func TestBuildLayout(t *testing.T) {
 	dir := filepath.Join(repoRoot(t), "build")
-	for _, p := range buildProblems(dir) {
-		t.Error(p)
-	}
 	if _, err := os.Stat(filepath.Join(dir, "targets.txt")); err != nil {
 		t.Fatal("build/targets.txt is missing")
 	}
+	problems, n := buildProblems(dir)
+	for _, p := range problems {
+		t.Error(p)
+	}
+	atLeast(t, "files in build/", n, buildFloor(t))
 }
 
 func TestBuildLayoutCanFail(t *testing.T) {
@@ -51,8 +78,21 @@ func TestBuildLayoutCanFail(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, "targets.txt"), nil, 0o600)
 	_ = os.MkdirAll(filepath.Join(dir, "dist"), 0o750)
 	_ = os.MkdirAll(filepath.Join(dir, "macos", "impr_macos_arm64"), 0o750)
-	if len(buildProblems(dir)) != 2 {
-		t.Fatalf("got %v", buildProblems(dir))
+	if p, _ := buildProblems(dir); len(p) != 2 {
+		t.Fatalf("got %v", p)
+	}
+}
+
+// The count is what the floor stands on, so it has to count what is there.
+func TestBuildLayoutCountsWhatItInspected(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"targets.txt", "checksums.txt", ".DS_Store", "macos/impr_macos_arm64", "linux/impr_linux_amd64"} {
+		p := filepath.Join(dir, filepath.FromSlash(f))
+		_ = os.MkdirAll(filepath.Dir(p), 0o750)
+		_ = os.WriteFile(p, nil, 0o600)
+	}
+	if p, n := buildProblems(dir); len(p) != 0 || n != 4 {
+		t.Fatalf("got problems %v and %d files, want none and 4", p, n)
 	}
 }
 

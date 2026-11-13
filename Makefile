@@ -29,7 +29,13 @@ LDFLAGS := -s -w -X $(CLI_PKG).version=$(VERSION) -X $(CLI_PKG).commit=$(COMMIT)
 
 GOFILES_DIRS := $(MODULE)/cmd $(MODULE)/internal
 
-.PHONY: help build test vet fmt fmt-check lint check cross clean
+# The fewest files `make check-build` must inspect in build/. Each build passes
+# what it just wrote (build: targets.txt and the binary; cross: targets.txt,
+# checksums.txt and one binary per target), so a check reading an empty or wrong
+# directory fails instead of passing nothing.
+BUILD_LAYOUT_MIN ?= 1
+
+.PHONY: help build test vet fmt fmt-check lint check cross check-build clean
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | sort
@@ -38,6 +44,7 @@ build: ## compile the host binary into build/{host-os}/impr
 	@mkdir -p build/$(HOST_OS)
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags '$(LDFLAGS)' -o ../$(BIN)$(EXE) $(PKG)
 	@echo "built $(BIN)$(EXE)"
+	@$(MAKE) --no-print-directory check-build BUILD_LAYOUT_MIN=2
 
 test: ## run the suite with the race detector
 	$(GO) test -race ./...
@@ -68,6 +75,10 @@ cross: clean ## cross-build build/targets.txt into build/{os}/ with build/checks
 	done
 	@cd build && find . -mindepth 2 -type f -name 'impr_*' | sed 's|^\./||' | sort | xargs shasum -a 256 > checksums.txt
 	@echo "wrote build/checksums.txt"
+	@$(MAKE) --no-print-directory check-build BUILD_LAYOUT_MIN=$$(( $$(grep -cvE '^[[:space:]]*(#|$$)' build/targets.txt) + 2 ))
+
+check-build: ## fail when build/ holds anything but targets.txt, checksums.txt and the OS folders
+	BUILD_LAYOUT_MIN=$(BUILD_LAYOUT_MIN) $(GO) test ./internal/guardtest -run 'TestBuildLayout$$' -count=1
 
 clean: ## remove generated build output, keeping build/targets.txt
 	rm -rf $(OS_DIRS)
