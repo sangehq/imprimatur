@@ -38,10 +38,17 @@ with `build/checksums.txt`.
 
 ## Where impr keeps its files
 
-| What | Unix (macOS included) | Windows |
-| --- | --- | --- |
-| Configuration | `$XDG_CONFIG_HOME/imprimatur`, else `~/.config/imprimatur` | `%AppData%\imprimatur` |
-| State | `$XDG_STATE_HOME/imprimatur`, else `~/.local/state/imprimatur` | `%LocalAppData%\imprimatur` |
+The same layout on every OS, Windows included (`~` is `%USERPROFILE%` there):
+
+| What | Location |
+| --- | --- |
+| Configuration | `$XDG_CONFIG_HOME/imprimatur`, else `~/.config/imprimatur` |
+| State | `$XDG_STATE_HOME/imprimatur`, else `~/.local/state/imprimatur` |
+
+Earlier Windows builds used `%AppData%\imprimatur` and
+`%LocalAppData%\imprimatur`. The first run that finds one of those, and no new
+folder yet, copies it across and writes `<config>/.migrated-from`; the old
+folder is left in place.
 
 `IMPR_CONFIG_DIR` and `IMPR_STATE_DIR` override both. Profiles are
 `<config>/profiles/<name>.json` and the default is in `<config>/profiles.json`;

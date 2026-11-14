@@ -186,6 +186,11 @@ func (a *App) store() (profile.Store, error) {
 	if err != nil {
 		return profile.Store{}, contract.Wrap(contract.Unavailable, err, "locate the imprimatur config")
 	}
+	if copied, err := paths.MigrateLegacy(d, a.Now()); err != nil {
+		a.say("config    could not copy the old Windows config: %v", err)
+	} else if len(copied) > 0 {
+		a.say("config    copied %s into %s; the old folder is kept", strings.Join(copied, ", "), d.Config)
+	}
 	s := profile.Store{Dir: d.Config}
 	a.migrateOnce(s, d)
 	return s, nil

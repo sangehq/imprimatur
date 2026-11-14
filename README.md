@@ -35,8 +35,8 @@ impr profile add me-test --scope personal --owner me --purpose test \
 impr profile capabilities me-test     # what this host can sign with it
 ```
 
-Profiles live in `~/.config/imprimatur/profiles/` (`%AppData%\imprimatur` on
-Windows) and hold credential references only, never a key or password.
+Profiles live in `~/.config/imprimatur/profiles/` on every OS, Windows
+included, and hold credential references only, never a key or password.
 
 ### Usage
 
