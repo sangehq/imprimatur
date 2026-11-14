@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Events: impr records a CloudEvents 1.0 event for every signing and
+  verification run (`sh.sange.imprimatur.signing.run.started`, `.artifact.signed`,
+  `.run.completed|skipped|failed`, `verification.run.completed|failed`) in a
+  hash-chained log at `<state>/events/YYYY-MM.jsonl`, with a random install id as
+  the source. `impr events tail|verify|types` reads it; `companion info` reports
+  the `events` capability. Events never go to stdout, so `--json` output is
+  unchanged.
+
 - The read commands (`companion info`, `profile list`, `profile show`, `cert list`)
   accept `--strict`, and `companion info` advertises the `strictReads`
   capability, so sange can pass `--strict` to every call.

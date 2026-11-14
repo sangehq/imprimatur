@@ -34,12 +34,17 @@ type CompanionInfo struct {
 // call without first learning which ones take it.
 const StrictReadsCapability = "strictReads"
 
+// EventsCapability tells a caller that impr records CloudEvents in its event
+// log (`impr events tail|verify|types`). Events never appear on stdout, so the
+// --json documents are unchanged.
+const EventsCapability = "events"
+
 // readFlags are the flags of the read commands.
 var readFlags = flagSpec{"json": boolFlag, "strict": boolFlag}
 
 func (a *App) companionInfo() CompanionInfo {
 	platforms, backends := signing.HostCapabilities(a.host())
-	caps := map[string]bool{"rules": true, StrictReadsCapability: true}
+	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true}
 	list := []string{}
 	for k, v := range platforms {
 		caps[k] = v

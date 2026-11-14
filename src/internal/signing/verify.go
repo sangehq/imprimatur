@@ -34,6 +34,25 @@ type item struct {
 // The report is returned with the error, so a failed verification still
 // prints what failed.
 func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, error) {
+	res, err := s.verify(ctx, o)
+	if res.Profile != "" {
+		failed := []string{}
+		for _, a := range res.Artifacts {
+			if !a.OK {
+				failed = append(failed, a.Path)
+			}
+		}
+		data := map[string]any{"profile": res.Profile, "artifacts": len(res.Artifacts), "failed": failed, "exitCode": int(contract.CodeOf(err))}
+		if err == nil {
+			s.Events.Emit(ctx, "verification.run.completed", res.Profile, data)
+		} else {
+			s.Events.Emit(ctx, "verification.run.failed", res.Profile, data)
+		}
+	}
+	return res, err
+}
+
+func (s *Service) verify(ctx context.Context, o VerifyOptions) (VerifyResult, error) {
 	root, err := absRoot(o.Root)
 	if err != nil {
 		return VerifyResult{}, err

@@ -13,6 +13,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/artifact"
 	"github.com/sangehq/imprimatur/src/internal/backend"
 	"github.com/sangehq/imprimatur/src/internal/contract"
+	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 )
 
@@ -22,6 +23,8 @@ type Service struct {
 	Store   profile.Store
 	Version string
 	Log     io.Writer // human lines (stderr)
+	// Events receives what each run did; nil emits nothing.
+	Events *events.Bus
 	// BackendFor builds a backend; nil uses backend.For. Tests replace it.
 	BackendFor func(h backend.Host, p profile.Profile, platform string) (backend.Backend, error)
 }
@@ -82,6 +85,45 @@ type work struct {
 // purpose and allowed repositories, every file's digest, the host's
 // capability and every certificate's presence and expiry.
 func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
+	runID := events.NewID()
+	if s.Events != nil && s.Events.Env.NewID != nil {
+		runID = s.Events.Env.NewID()
+	}
+	subject := o.Profile
+	if id := profile.RepoIdentity(o.Repo); id != "" {
+		subject = id
+	}
+	started := false
+	res, err := s.sign(ctx, o, func(bm artifact.Loaded, platforms []string) {
+		started = true
+		s.Events.Emit(ctx, "signing.run.started", subject, map[string]any{"runId": runID, "profile": o.Profile,
+			"purpose": o.Purpose, "platforms": platforms, "commit": bm.Commit, "tree": bm.Tree, "buildManifestDigest": bm.Digest})
+	})
+	if !started {
+		return res, err
+	}
+	for _, a := range res.Manifest.Artifacts {
+		s.Events.Emit(ctx, "signing.artifact.signed", subject, map[string]any{"runId": runID, "path": a.Path, "platform": a.Platform,
+			"kind": a.Kind, "signer": a.Signer, "inputSha256": a.InputSHA256, "outputSha256": a.OutputSHA256})
+	}
+	end := map[string]any{"runId": runID, "profile": o.Profile, "artifacts": len(res.Manifest.Artifacts),
+		"outputs": len(res.Manifest.Outputs), "manifestSha256": res.ManifestSHA256, "exitCode": int(contract.CodeOf(err))}
+	switch code := contract.CodeOf(err); {
+	case err == nil:
+		s.Events.Emit(ctx, "signing.run.completed", subject, end)
+	case code == contract.Skipped:
+		end["skipped"] = res.Skipped
+		s.Events.Emit(ctx, "signing.run.skipped", subject, end)
+	default:
+		end["reason"] = err.Error()
+		s.Events.Emit(ctx, "signing.run.failed", subject, end)
+	}
+	return res, err
+}
+
+// sign is the run itself; onStart is called once every pre-check has passed,
+// just before the first signature.
+func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artifact.Loaded, platforms []string)) (Result, error) {
 	root, err := absRoot(o.Root)
 	if err != nil {
 		return Result{}, err
@@ -197,6 +239,7 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 		plan = append(plan, w)
 	}
 
+	onStart(bm, platforms)
 	m := Manifest{Schema: ManifestSchema, Signer: "imprimatur " + s.Version, Profile: p.Name, Purpose: purpose, Identity: p.Pinned(),
 		Commit: bm.Commit, Tree: bm.Tree, Repo: o.Repo, BuildManifestDigest: bm.Digest,
 		Artifacts: []SignedArtifact{}, Outputs: []SignedArtifact{}, Skipped: skipped}

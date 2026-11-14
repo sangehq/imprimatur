@@ -251,6 +251,25 @@ func TestSignAndVerifyWithRealSSH(t *testing.T) {
 		t.Fatalf("verify: %s %v", vout, err)
 	}
 
+	// The run is in the event log, chained, typed and free of key material.
+	var evs EventsList
+	if err := json.Unmarshal([]byte(h.ok("events", "tail", "--json", "--type", "signing.*")), &evs); err != nil {
+		t.Fatal(err)
+	}
+	var types []string
+	for _, ev := range evs.Events {
+		types = append(types, ev.Short())
+		if ev.Subject != "github.com/acme/tool" || strings.Contains(string(ev.Data), key) {
+			t.Errorf("event %s: subject %q, data %s", ev.Type, ev.Subject, ev.Data)
+		}
+	}
+	if strings.Join(types, ",") != "signing.run.started,signing.run.completed" {
+		t.Fatalf("events: %v", types)
+	}
+	if out := h.ok("events", "verify", "--json"); !strings.Contains(out, `"ok":true`) {
+		t.Fatalf("events verify: %s", out)
+	}
+
 	// A changed artifact fails: the signed checksum file is not enough on its
 	// own, every file it lists is re-hashed.
 	art := filepath.Join(root, "build", "linux", "tool_linux_amd64")

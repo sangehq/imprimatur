@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/backend"
 	"github.com/sangehq/imprimatur/src/internal/contract"
+	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/profile"
@@ -232,7 +234,24 @@ func (a *App) service() (*signing.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr}, nil
+	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr, Events: a.bus()}, nil
+}
+
+// bus is the event bus for this run: the hash-chained log in the state dir.
+// An unusable state dir costs the events, never the command (a warning says
+// so), so signing still works on a read-only home.
+func (a *App) bus() *events.Bus {
+	d, err := a.dirs()
+	if err != nil {
+		return nil
+	}
+	id, err := events.InstallID(d.State)
+	if err != nil {
+		a.say("events    not recorded: %v", err)
+		return nil
+	}
+	return &events.Bus{Env: events.Env{Now: a.Now, NewID: events.NewID, InstallID: id},
+		Sinks: []events.Sink{events.Log{Dir: filepath.Join(d.State, "events")}}, Warn: a.say}
 }
 
 // ---- dispatch ------------------------------------------------------------------
@@ -280,6 +299,7 @@ func init() {
 		"sign":      cmdSign,
 		"verify":    cmdVerify,
 		"rules":     cmdRules,
+		"events":    cmdEvents,
 	}
 }
 
@@ -299,6 +319,7 @@ Usage:
             [--platforms windows,macos,checksums,containers] [--root DIR] [--repo URL] [--json] [--strict]
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules --request FILE [--json] [--strict] [--out-dir DIR]
+  impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
   impr version
 
 Exit codes: 0 ok, 1 usage, 2 skipped (without --strict), 3 signing failed,
