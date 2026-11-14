@@ -68,8 +68,8 @@ impr webhooks retry              # send what is due (--all: everything pending)
 impr webhooks deliveries --json  # pending, dead and done, with attempts and the last error
 ```
 
-`companion info` reports the `webhooks` capability. Receiving webhooks belongs to the server (`impr serve`),
-which is planned.
+`companion info` reports the `webhooks` capability. Receiving webhooks from other apps is part of
+[`impr serve`](serve.md#inbound-webhooks).
 
 ---
 

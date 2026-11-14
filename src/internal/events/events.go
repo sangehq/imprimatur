@@ -69,6 +69,8 @@ var Catalogue = map[string]string{
 	"config.changed":             ClassLocal,
 	"hook.failed":                ClassLocal,
 	"hook.vetoed":                ClassLocal,
+	"server.started":             ClassLocal,
+	"server.stopped":             ClassLocal,
 }
 
 var typeRe = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+){1,2}$`)

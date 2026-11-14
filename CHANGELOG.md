@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr serve`: a REST API over the same commands, answering with exactly the
+  `--json` document each command prints.
+  - **Endpoints.** `GET /v1/health|companion|doctor|profiles|profiles/{name}|certs|events`,
+    `POST /v1/verify`, `POST /v1/sign`.
+  - **Transport.** It listens on a Unix socket (`<state>/server/impr.sock`,
+    0600 in a 0700 dir) or a loopback port; other addresses are refused.
+  - **Auth.** Every endpoint but `/v1/health` needs a scoped bearer token
+    (`read`, `verify`, `sign`, `events`). `impr server token add|list|revoke`
+    shows a token once and stores only its sha256. Every refusal returns the
+    same 401 body.
+  - **Request limits.** A rate limit per token, a 1 MiB body cap, and strict
+    JSON.
+  - **Where artifacts come from.** verify and sign read artifacts only under
+    `server.roots`.
+  - **Signing.** `/v1/sign` is off unless `server.allowSign` is set. It then
+    needs the `sign` scope and the same commit- and tree-bound manifest as the
+    CLI, and runs one signing at a time.
+  - **Inbound webhooks.** Other apps can call `POST /v1/hooks/{name}` with a
+    Standard Webhooks signature. A replay ledger persists across restarts, and
+    each endpoint has an allow-list of actions (`verify`, `doctor`,
+    `cert.list`, `profile.list`); signing is never one of them.
+  - **Lifecycle and capability.** `server.started` and `server.stopped` are
+    recorded, Ctrl-C or SIGTERM shuts it down gracefully, and `companion info`
+    reports `server`.
+
 - Outbound webhooks: `config.json` `webhooks.outbound` sends impr's events to
   other apps as Standard Webhooks 1.0 deliveries. Each delivery carries
   `webhook-id`, `webhook-timestamp` and a `v1` HMAC-SHA256 signature, checked

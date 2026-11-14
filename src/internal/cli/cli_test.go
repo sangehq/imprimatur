@@ -8,6 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path"
@@ -18,7 +20,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/execx"
+	"github.com/sangehq/imprimatur/src/internal/paths"
+	"github.com/sangehq/imprimatur/src/internal/server"
 )
 
 func randHex(t *testing.T, n int) string {
@@ -609,4 +614,47 @@ func TestPreSignHookVetoSignsNothing(t *testing.T) {
 	if ev := h.ok("events", "tail", "--json"); !strings.Contains(ev, "hook.vetoed") || strings.Contains(ev, "signing.run.started") {
 		t.Fatalf("events after a veto: %s", ev)
 	}
+}
+
+// TestServerAnswersWhatTheCLIPrints: a token made by `impr server token add`
+// is stored as a digest only, and GET /v1/profiles over the real command code
+// returns the same document `impr profile list --json` prints.
+func TestServerAnswersWhatTheCLIPrints(t *testing.T) {
+	h := newHarness(t)
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://K",
+		"--set", "platforms.checksums.fingerprint=SHA256:"+strings.Repeat("A", 43))
+	tok := strings.TrimSpace(h.ok("server", "token", "add", "--scopes", "read"))
+	cfgRaw, _ := os.ReadFile(filepath.Join(h.env["IMPR_CONFIG_DIR"], "config.json"))
+	if !strings.HasPrefix(tok, "impr_") || strings.Contains(string(cfgRaw), tok) {
+		t.Fatalf("token %q, config %s", tok, cfgRaw)
+	}
+	h.ok("serve", "--check-config")
+	cli := strings.TrimSpace(h.ok("profile", "list", "--json"))
+
+	d, _ := paths.Resolve(paths.Env{GOOS: h.os, Getenv: func(k string) string { return h.env[k] }})
+	cfg, err := config.Load(d.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &App{Stdout: io.Discard, Stderr: io.Discard, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: t.TempDir(),
+		User: "tester", Runner: h.run, Now: func() time.Time { return h.now }}
+	srv := server.Handler(server.Options{Config: cfg, Run: a.runCaptured, StateDir: d.State, Now: time.Now})
+	req := httptest.NewRequest("GET", "/v1/profiles", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != cli {
+		t.Fatalf("API %d\n%s\nCLI\n%s", rec.Code, rec.Body, cli)
+	}
+	var list struct {
+		Tokens []struct {
+			ID string `json:"id"`
+		} `json:"tokens"`
+	}
+	if err := json.Unmarshal([]byte(h.ok("server", "token", "list", "--json")), &list); err != nil || len(list.Tokens) != 1 {
+		t.Fatalf("token list: %+v %v", list, err)
+	}
+	h.ok("server", "token", "revoke", list.Tokens[0].ID)
+	h.exits(1, "serve", "--check-config") // no token left: nothing could call the server
 }

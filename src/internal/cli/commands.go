@@ -47,12 +47,16 @@ const HooksCapability = "hooks"
 // apps as signed Standard Webhooks deliveries (impr webhooks list).
 const WebhooksCapability = "webhooks"
 
+// ServerCapability tells a caller that `impr serve` exposes these commands
+// as a REST API, with signed inbound webhooks.
+const ServerCapability = "server"
+
 // readFlags are the flags of the read commands.
 var readFlags = flagSpec{"json": boolFlag, "strict": boolFlag}
 
 func (a *App) companionInfo() CompanionInfo {
 	platforms, backends := signing.HostCapabilities(a.host())
-	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true, WebhooksCapability: true}
+	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true, WebhooksCapability: true, ServerCapability: true}
 	list := []string{}
 	for k, v := range platforms {
 		caps[k] = v

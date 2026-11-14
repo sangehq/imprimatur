@@ -73,6 +73,7 @@ else is in the [documentation](#documentation) below.
 - [`impr rules`](docs/tools/rules.md) — AppLocker and WDAC supplemental policies from a request
 - [`impr doctor`](docs/tools/doctor.md) — a health report of profiles and host capability
 - [`impr hooks`](docs/tools/hooks.md) — pinned programs that gate signing and verification or react to events
+- [`impr serve`](docs/tools/serve.md) — the REST API and signed inbound webhooks, over a private socket
 - [`impr webhooks`](docs/tools/webhooks.md) — signed Standard Webhooks deliveries of impr's events to other apps
 - [`impr events`](docs/tools/events.md) — the CloudEvents log of signing and verification runs, and its hash chain
 - [Backends](docs/tools/backends.md) — every signing backend, the tools it runs and what it pins

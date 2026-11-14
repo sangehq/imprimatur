@@ -325,6 +325,8 @@ func init() {
 		"events":    cmdEvents,
 		"hooks":     cmdHooks,
 		"webhooks":  cmdWebhooks,
+		"serve":     cmdServe,
+		"server":    cmdServer,
 	}
 }
 
@@ -347,6 +349,8 @@ Usage:
   impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
   impr hooks list [--json] | pin FILE | test NAME
   impr webhooks list [--json] | secret | retry [--all] | deliveries [--json]
+  impr serve [--listen unix|127.0.0.1:PORT] [--check-config]
+  impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
   impr version
 
 Exit codes: 0 ok, 1 usage, 2 skipped (without --strict), 3 signing failed,
