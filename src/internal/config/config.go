@@ -101,9 +101,16 @@ type Server struct {
 	Inbound   []Inbound `json:"inbound,omitempty"`
 }
 
-// Config is config.json.
+// Config is config.json, and the effective configuration its layers merge
+// into (layers.go).
 type Config struct {
-	Schema   string   `json:"schema"`
+	Schema string `json:"schema"`
+	// ActiveProfile names the configuration profile (config.d/<name>.json)
+	// layered over this file; IMPR_CONFIG_PROFILE overrides it.
+	ActiveProfile string `json:"activeProfile,omitempty"`
+	// Locked lists dotted keys no lower layer may set. Only the system
+	// config may lock.
+	Locked   []string `json:"locked,omitempty"`
 	Hooks    []Hook   `json:"hooks,omitempty"`
 	Webhooks Webhooks `json:"webhooks,omitempty"`
 	Server   Server   `json:"server,omitempty"`
@@ -224,6 +231,15 @@ func (c Config) Validate() []string {
 			if !events.KnownGlob(g) {
 				ps = append(ps, at+": "+g+" matches no event type")
 			}
+		}
+	}
+	if c.ActiveProfile != "" && !ProfileNameOK(c.ActiveProfile) {
+		ps = append(ps, "activeProfile must be a configuration profile name")
+	}
+	for _, k := range c.Locked {
+		top, _, _ := strings.Cut(k, ".")
+		if !slices.Contains([]string{"hooks", "webhooks", "server", "activeProfile"}, top) {
+			ps = append(ps, "locked key "+k+" is not under hooks, webhooks, server or activeProfile")
 		}
 	}
 	subs := map[string]bool{}

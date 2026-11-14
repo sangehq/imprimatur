@@ -72,6 +72,7 @@ else is in the [documentation](#documentation) below.
 - [`impr cert list`](docs/tools/cert.md) — the certificates and keys profiles use, with expiry
 - [`impr rules`](docs/tools/rules.md) — AppLocker and WDAC supplemental policies from a request
 - [`impr doctor`](docs/tools/doctor.md) — a health report of profiles and host capability
+- [`impr config`](docs/tools/config.md) — layered configuration (system, user, configuration profiles) and locked keys
 - [`impr hooks`](docs/tools/hooks.md) — pinned programs that gate signing and verification or react to events
 - [`impr serve`](docs/tools/serve.md) — the REST API and signed inbound webhooks, over a private socket
 - [`impr webhooks`](docs/tools/webhooks.md) — signed Standard Webhooks deliveries of impr's events to other apps

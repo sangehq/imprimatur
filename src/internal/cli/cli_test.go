@@ -46,7 +46,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	return &harness{t: t, os: runtime.GOOS, run: execx.OS{Timeout: time.Minute}, now: time.Now(),
-		env: map[string]string{"IMPR_CONFIG_DIR": t.TempDir(), "IMPR_STATE_DIR": t.TempDir(), "IMPR_LEGACY_CONFIG": "off"}}
+		env: map[string]string{"IMPR_CONFIG_DIR": t.TempDir(), "IMPR_STATE_DIR": t.TempDir(), "IMPR_LEGACY_CONFIG": "off", "IMPR_SYSTEM_CONFIG_DIR": "off"}}
 }
 
 func (h *harness) impr(args ...string) (code int, stdout, stderr string) {
@@ -657,4 +657,55 @@ func TestServerAnswersWhatTheCLIPrints(t *testing.T) {
 	}
 	h.ok("server", "token", "revoke", list.Tokens[0].ID)
 	h.exits(1, "serve", "--check-config") // no token left: nothing could call the server
+}
+
+// TestConfigProfiles: create a configuration profile, set a key in it,
+// activate it, and read the effective value; a change the system config
+// locks is refused and leaves the file as it was.
+func TestConfigProfiles(t *testing.T) {
+	h := newHarness(t)
+	sys := t.TempDir()
+	h.env["IMPR_SYSTEM_CONFIG_DIR"] = sys
+	if err := os.WriteFile(filepath.Join(sys, "config.json"), []byte(`{"locked":["server.allowSign"],"server":{"roots":["/srv/builds"]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.ok("config", "profile", "create", "ci")
+	h.ok("config", "set", "server.listen", "127.0.0.1:8743", "--profile", "ci")
+	h.exits(1, "config", "get", "server.listen")
+	h.ok("config", "profile", "use", "ci")
+	if got := strings.TrimSpace(h.ok("config", "get", "server.listen")); got != `"127.0.0.1:8743"` {
+		t.Fatalf("effective listen %s", got)
+	}
+	if got := strings.TrimSpace(h.ok("config", "get", "server.roots")); got != `["/srv/builds"]` {
+		t.Fatalf("system roots not inherited: %s", got)
+	}
+	// IMPR_CONFIG_PROFILE overrides activeProfile.
+	h.ok("config", "profile", "create", "dev")
+	h.env["IMPR_CONFIG_PROFILE"] = "dev"
+	h.exits(1, "config", "get", "server.listen")
+	delete(h.env, "IMPR_CONFIG_PROFILE")
+
+	prof := filepath.Join(h.env["IMPR_CONFIG_DIR"], "config.d", "ci.json")
+	before, _ := os.ReadFile(prof)
+	h.exits(1, "config", "set", "server.allowSign", "true", "--profile", "ci")
+	if after, _ := os.ReadFile(prof); string(after) != string(before) {
+		t.Fatalf("a refused change was kept:\n%s", after)
+	}
+	h.exits(1, "config", "set", "locked", `["hooks"]`)
+	h.exits(1, "config", "profile", "rm", "ci") // active
+	h.ok("config", "profile", "use", "--none")
+	h.ok("config", "profile", "rm", "ci")
+	var show struct {
+		Contract int `json:"contract"`
+		Layers   []struct {
+			Name string `json:"name"`
+		} `json:"layers"`
+		Locked []string `json:"locked"`
+	}
+	if err := json.Unmarshal([]byte(h.ok("config", "show", "--json")), &show); err != nil || show.Contract != 1 || len(show.Layers) != 2 || len(show.Locked) != 1 {
+		t.Fatalf("show: %+v %v", show, err)
+	}
+	if ev := h.ok("events", "tail", "--json", "--type", "config.*"); strings.Count(ev, "config.changed") < 2 {
+		t.Fatalf("config changes were not recorded: %s", ev)
+	}
 }

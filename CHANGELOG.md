@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Layered configuration with configuration profiles.** The effective
+  configuration merges three layers, each over the one before, as a JSON
+  merge patch:
+  1. the machine's system config (`/etc/imprimatur`,
+     `/Library/Application Support/imprimatur`, `%ProgramData%\imprimatur`;
+     `IMPR_SYSTEM_CONFIG_DIR` overrides it);
+  2. the user's `config.json`;
+  3. the active configuration profile, `config.d/<name>.json`, chosen by
+     `IMPR_CONFIG_PROFILE` or `activeProfile`.
+
+  How it behaves:
+  - **Locks.** The system config can lock keys; a lower layer that sets one,
+    or replaces its parent, is refused. Only the system config may lock.
+  - **Profiles.** A selected profile that does not exist is an error, never
+    "no profile".
+  - **Checks.** Every layer must be owner-only and is decoded strictly.
+  - **Commands.** `impr config path|show|validate|get|set|unset` and
+    `impr config profile list|create|use|rm`. A change that would not load,
+    or that touches a locked key, is rolled back and the file left as it was.
+  - **Events and capability.** Changes are recorded as `config.changed`, and
+    `companion info` reports `configProfiles`.
+
 - **Multi-certificate Windows signing.** `platforms.windows.signers` lists several
   certificates. Each signer has its own backend, pin, references and dates, and
   a selector (`arch`: 386, amd64, arm, arm64; `glob` on the file name or path).

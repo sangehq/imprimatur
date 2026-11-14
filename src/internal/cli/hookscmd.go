@@ -62,7 +62,8 @@ func cmdHooks(ctx context.Context, a *App, args []string) (int, error) {
 		}
 		return 0, nil
 	}
-	cfg, err := config.Load(d.Config)
+	eff, err := a.effective(d)
+	cfg := eff.Config
 	if err != nil {
 		return 0, contract.Wrap(contract.Usage, err, "the imprimatur config cannot be read")
 	}

@@ -150,3 +150,26 @@ func copyTree(from, to string) error {
 		}
 	})
 }
+
+// SystemConfig is the machine-wide, read-only config dir an administrator
+// manages: /etc/imprimatur, /Library/Application Support/imprimatur on macOS,
+// %ProgramData%\imprimatur on Windows. IMPR_SYSTEM_CONFIG_DIR overrides it
+// (tests and CI); "off" disables the system layer.
+func SystemConfig(e Env) string {
+	if v := e.Getenv("IMPR_SYSTEM_CONFIG_DIR"); v != "" {
+		if v == "off" {
+			return ""
+		}
+		return v
+	}
+	switch e.GOOS {
+	case "windows":
+		if v := e.Getenv("ProgramData"); v != "" {
+			return filepath.Join(v, App)
+		}
+		return ""
+	case "darwin":
+		return filepath.Join("/Library", "Application Support", App)
+	}
+	return filepath.Join("/etc", App)
+}

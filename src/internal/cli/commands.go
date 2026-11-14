@@ -56,12 +56,16 @@ const ServerCapability = "server"
 // identity pins every signer, and its records name the signer (signerId).
 const MultiSignerCapability = "multiSigner"
 
+// ConfigProfilesCapability tells a caller that config.json is layered
+// (system < user < configuration profile) and `impr config` reads and edits it.
+const ConfigProfilesCapability = "configProfiles"
+
 // readFlags are the flags of the read commands.
 var readFlags = flagSpec{"json": boolFlag, "strict": boolFlag}
 
 func (a *App) companionInfo() CompanionInfo {
 	platforms, backends := signing.HostCapabilities(a.host())
-	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true, WebhooksCapability: true, ServerCapability: true, MultiSignerCapability: true}
+	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true, WebhooksCapability: true, ServerCapability: true, MultiSignerCapability: true, ConfigProfilesCapability: true}
 	list := []string{}
 	for k, v := range platforms {
 		caps[k] = v

@@ -182,6 +182,12 @@ func (a *App) fail(err error, asJSON bool) int {
 
 // ---- wiring --------------------------------------------------------------------
 
+// effective is the merged configuration: system < user < active profile.
+func (a *App) effective(d paths.Dirs) (config.Effective, error) {
+	sys := paths.SystemConfig(paths.Env{GOOS: a.GOOS, Getenv: a.Getenv, Home: a.Home})
+	return config.LoadEffective(config.Sources{SystemDir: sys, UserDir: d.Config, Profile: a.Getenv("IMPR_CONFIG_PROFILE")})
+}
+
 func (a *App) dirs() (paths.Dirs, error) {
 	return paths.Resolve(paths.Env{GOOS: a.GOOS, Getenv: a.Getenv, Home: a.Home})
 }
@@ -241,7 +247,8 @@ func (a *App) service() (*signing.Service, error) {
 	if err != nil {
 		return nil, contract.Wrap(contract.Unavailable, err, "locate the imprimatur config")
 	}
-	cfg, err := config.Load(d.Config)
+	eff, err := a.effective(d)
+	cfg := eff.Config
 	if err != nil {
 		// config.json decides which gates run; a broken one never means "no gates".
 		return nil, contract.Wrap(contract.Unavailable, err, "the imprimatur config cannot be read").
@@ -327,6 +334,7 @@ func init() {
 		"webhooks":  cmdWebhooks,
 		"serve":     cmdServe,
 		"server":    cmdServer,
+		"config":    cmdConfig,
 	}
 }
 
@@ -349,6 +357,8 @@ Usage:
   impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
   impr hooks list [--json] | pin FILE | test NAME
   impr webhooks list [--json] | secret | retry [--all] | deliveries [--json]
+  impr config path|show|validate [--json] | get KEY | set KEY VALUE [--profile NAME] | unset KEY [--profile NAME]
+  impr config profile list [--json] | create NAME | use NAME | use --none | rm NAME
   impr serve [--listen unix|127.0.0.1:PORT] [--check-config]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
   impr version

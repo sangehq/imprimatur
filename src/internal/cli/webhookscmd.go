@@ -78,7 +78,8 @@ func cmdWebhooks(ctx context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, contract.Wrap(contract.Unavailable, err, "locate the imprimatur config")
 	}
-	cfg, err := config.Load(d.Config)
+	eff, err := a.effective(d)
+	cfg := eff.Config
 	if err != nil {
 		return 0, contract.Wrap(contract.Usage, err, "the imprimatur config cannot be read")
 	}
