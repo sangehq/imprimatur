@@ -196,7 +196,7 @@ func cmdPath(_ context.Context, a *App, args []string) (int, error) {
 
 // aliases are the PowerShell toolkit's short command names that still have
 // a command to run.
-var aliases = map[string]string{"s": "sign", "v": "verify", "d": "doctor", "h": "help"}
+var aliases = map[string]string{"s": "sign", "v": "verify", "d": "doctor", "h": "help", "b": "build", "r": "release"}
 
 func resolveAlias(cmd string) string {
 	if full, ok := aliases[cmd]; ok && !slices.Contains(commandNames(), cmd) {

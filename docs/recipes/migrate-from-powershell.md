@@ -37,7 +37,7 @@ Parity is measured against this list. Each line is a PowerShell feature the Go
 
 | PowerShell feature | Status in the Go impr |
 | --- | --- |
-| `impr release`, `impr build` (GoReleaser builds, go-winres version info, the GoReleaser signing hook) | not ported: when sange drives a release its build stage is the only builder (SD-075), and impr signs that stage's manifest |
+| `impr release`, `impr build` (GoReleaser builds, go-winres version info, the GoReleaser signing hook) | **ported** for standalone use as [`impr build`](../tools/build.md) and [`impr release`](../tools/release.md): `go build` into `build/{os}/`, a commit-bound build manifest, then sign and verify. It never runs a repository's GoReleaser config or hooks, and never tags, pushes or publishes. Windows version resources (go-winres) are not ported. When sange drives a release, its build stage stays the only builder (SD-075) |
 | `impr init` (project template, `.gitignore` edits, `.goreleaser.yaml`) | not ported: project setup moves to sange (companion design §2) |
 | `impr sign FILE` (one loose file) and `--signer` | not ported on purpose: impr signs build-manifest entries only, so it is not a signing oracle |
 | `impr config list/get/set/unset/path` (the settings file) | **ported** as [`impr config`](../tools/config.md) for the application config (layers, configuration profiles, locked keys); the signing settings became signing profiles and are imported once |

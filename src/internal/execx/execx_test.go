@@ -12,7 +12,7 @@ import (
 // TestAllowListIsExactly pins the allow-list: adding a tool is a reviewed
 // change to this test, never a side effect.
 func TestAllowListIsExactly(t *testing.T) {
-	want := []string{"certutil", "codesign", "cosign", "ditto", "gpg", "minisign", "osslsigncode", "secret-tool", "security",
+	want := []string{"certutil", "codesign", "cosign", "ditto", "git", "go", "gpg", "minisign", "osslsigncode", "secret-tool", "security",
 		"signtool", "spctl", "ssh-keygen", "xcrun"}
 	if got := Names(); !slices.Equal(got, want) {
 		t.Fatalf("allow-list %v, want %v", got, want)
@@ -26,13 +26,26 @@ func TestCheckRefuses(t *testing.T) {
 		{Tool: "/usr/bin/codesign"},
 		{Tool: "xcrun", Args: []string{"clang"}},
 		{Tool: "xcrun"},
+		{Tool: "git", Args: []string{"status", "--porcelain"}}, // fsmonitor not forced off
+		{Tool: "git", Args: []string{"-c", "core.sshCommand=x", "fetch"}},
+		{Tool: "git"},
+		{Tool: "go", Args: []string{"run", "."}},
+		{Tool: "go", Args: []string{"build", "-toolexec", "x", "."}},
+		{Tool: "go", Args: []string{"build", "-overlay=o.json", "."}},
+		{Tool: "go"},
 	} {
 		if err := Check(c); !errors.Is(err, ErrNotAllowed) {
 			t.Errorf("%v: want ErrNotAllowed, got %v", c, err)
 		}
 	}
-	if err := Check(Cmd{Tool: "xcrun", Args: []string{"notarytool", "submit"}}); err != nil {
-		t.Fatal(err)
+	for _, ok := range []Cmd{
+		{Tool: "xcrun", Args: []string{"notarytool", "submit"}},
+		{Tool: "git", Args: []string{"rev-parse", "HEAD^{tree}"}},
+		{Tool: "go", Args: []string{"build", "-trimpath", "-o", "x", "./cmd/x"}},
+	} {
+		if err := Check(ok); err != nil {
+			t.Fatalf("%v: %v", ok, err)
+		}
 	}
 }
 

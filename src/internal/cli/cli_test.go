@@ -885,3 +885,115 @@ func TestMenu(t *testing.T) {
 		t.Fatal("no impr-manifest.json after signing")
 	}
 }
+
+// goRepo makes a git repository holding a tiny Go module, committed.
+func goRepo(t *testing.T) string {
+	t.Helper()
+	for _, tool := range []string{"git", "go"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skip("needs " + tool)
+		}
+	}
+	dir := t.TempDir()
+	files := map[string]string{
+		"src/go.mod":            "module example.com/hello/src\n\ngo 1.23\n",
+		"src/cmd/hello/main.go": "package main\n\nimport \"fmt\"\n\nvar version = \"dev\"\n\nfunc main() { fmt.Println(version) }\n",
+		"build/targets.txt":     "linux amd64\n",
+	}
+	for p, body := range files {
+		full := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "init"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		// A throwaway repository: none of the machine's global or system git
+		// config (hooks included) applies to it.
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	return dir
+}
+
+func TestBuildWritesTheEstateLayoutAndABoundManifest(t *testing.T) {
+	repo := goRepo(t)
+	h := newHarness(t)
+	host := runtime.GOOS + "/" + runtime.GOARCH
+	out := h.ok("build", "--repo-root", repo, "--targets", "linux/amd64,windows/arm64,"+host,
+		"--version", "v1.2.3", "--version-var", "main.version", "--json")
+	var r BuildResult
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatal(err)
+	}
+	if r.Manifest.Schema != "sange.build-manifest/v1" || len(r.Manifest.Commit) != 40 || len(r.Manifest.Artifacts) != 3 || r.Manifest.Dirty {
+		t.Fatalf("manifest: %+v", r.Manifest)
+	}
+	paths := []string{}
+	for _, a := range r.Manifest.Artifacts {
+		paths = append(paths, a.Path)
+		b, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(a.Path)))
+		s := sha256.Sum256(b)
+		if err != nil || hex.EncodeToString(s[:]) != a.SHA256 {
+			t.Errorf("%s: digest does not match", a.Path)
+		}
+	}
+	for _, want := range []string{"build/linux/hello_linux_amd64", "build/windows/hello_windows_arm64.exe"} {
+		if !slices.Contains(paths, want) {
+			t.Errorf("missing %s in %v", want, paths)
+		}
+	}
+	hostName := runtime.GOOS
+	if hostName == "darwin" {
+		hostName = "macos"
+	}
+	bin := filepath.Join(repo, "build", hostName, "hello_"+hostName+"_"+runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	if got, err := exec.Command(bin).Output(); err != nil || strings.TrimSpace(string(got)) != "v1.2.3" {
+		t.Fatalf("the version was not stamped: %q %v", got, err)
+	}
+
+	// Refusals, each before anything is built.
+	h.exits(1, "build", "--repo-root", repo, "--version", "1.0 -X main.version=pwned", "--version-var", "main.version")
+	h.exits(1, "build", "--repo-root", repo, "--main", "../elsewhere")
+	if err := os.WriteFile(filepath.Join(repo, "src", "cmd", "hello", "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(1, "build", "--repo-root", repo) // uncommitted changes
+	h.exits(1, "release", "--repo-root", repo, "--profile", "p", "--purpose", "internal", "--allow-dirty")
+	h.ok("build", "--repo-root", repo, "--allow-dirty")
+}
+
+func TestReleaseBuildsSignsAndVerifies(t *testing.T) {
+	repo := goRepo(t)
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("needs ssh-keygen")
+	}
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+	code, _, e := h.impr("release", "--repo-root", repo, "--profile", "p", "--purpose", "internal", "--platforms", "checksums")
+	if code != 0 || !strings.Contains(e, "nothing was tagged, pushed or published") {
+		t.Fatalf("release: %d\n%s", code, e)
+	}
+	for _, f := range []string{"build-manifest.json", "impr-manifest.json", "SHA256SUMS", "SHA256SUMS.sig"} {
+		if _, err := os.Stat(filepath.Join(repo, "build", f)); err != nil {
+			t.Errorf("release did not write build/%s", f)
+		}
+	}
+}

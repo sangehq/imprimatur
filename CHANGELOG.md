@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr build` cross-compiles a Go module into the estate layout
+  (`build/{os}/{binary}_{os}_{arch}[.exe]`, `macos` for darwin) from
+  `build/targets.txt` or `--targets`, and writes `build/build-manifest.json`
+  (`sange.build-manifest/v1`) bound to the git commit and tree.
+  - **Fixed `go build`.** It runs `go build` itself: CGO off, the user's go env
+    file off, no workspace, local toolchain, `-trimpath`.
+  - **No repository code runs.** It never runs a repository's GoReleaser
+    config or hooks.
+  - **Refusals.** It refuses a version that is not semantic (it goes into
+    `-ldflags`), a main package outside the module, and uncommitted changes
+    unless `--allow-dirty`.
+  - **`--clean`.** It removes only this binary's earlier files under `build/`.
+- `impr release` runs build, then `sign` and `verify --signed --manifest`
+  with a profile and purpose. It never builds from uncommitted changes, and
+  never tags, pushes or publishes.
+- The allow-list gains `go` (only `go build`; `-toolexec`, `-exec`,
+  `-overlay`, `-modfile` and `-pkgdir` are refused) and `git` (four exact
+  read-only forms; `status` runs with fsmonitor off).
+- Aliases `b` (build) and `r` (release).
+
 - The interactive menu: `impr menu`, and `impr` with no arguments at a terminal.
   Its entries run the same commands as the CLI. Signing shows the build
   manifest's commit, tree and file count, and signs only after a typed `yes`.

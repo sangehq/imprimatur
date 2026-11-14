@@ -355,6 +355,8 @@ func init() {
 		"uninstall":  cmdUninstall,
 		"path":       cmdPath,
 		"menu":       cmdMenu,
+		"build":      cmdBuild,
+		"release":    cmdRelease,
 	}
 }
 
@@ -374,6 +376,9 @@ Usage:
             [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules --request FILE [--json] [--strict] [--out-dir DIR]
+  impr build [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z --version-var PKG.VAR]
+            [--targets os/arch,...] [--clean] [--allow-dirty] [--json]
+  impr release --profile NAME --purpose release|test|internal [--repo URL] [--platforms ...] [build options] [--json]
   impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
   impr hooks list [--json] | pin FILE | test NAME
   impr webhooks list [--json] | secret | retry [--all] | deliveries [--json]
@@ -388,7 +393,7 @@ Usage:
   impr menu
   impr version
 
-Aliases: s sign, v verify, d doctor, h help.
+Aliases: s sign, v verify, d doctor, h help, b build, r release.
 
 Exit codes: 0 ok, 1 usage, 2 skipped (without --strict), 3 signing failed,
 4 verification failed, 5 unavailable.`

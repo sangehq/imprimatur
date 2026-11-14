@@ -33,7 +33,21 @@ var Allowed = map[string]string{
 	"minisign":     "minisign checksum signatures",
 	"ssh-keygen":   "SSH checksum signatures (ssh-keygen -Y)",
 	"cosign":       "Sigstore cosign blob signatures, key and keyless",
+	"go":           "impr build: go build only, never -toolexec, -exec, -overlay or -modfile",
+	"git":          "impr build: the commit, tree, remote and whether the tree is clean (exact forms only)",
 }
+
+// gitForms are the only git command lines impr runs. status turns fsmonitor
+// off, so a repository's config cannot make git start a program.
+var gitForms = [][]string{
+	{"rev-parse", "HEAD"},
+	{"rev-parse", "HEAD^{tree}"},
+	{"remote", "get-url", "origin"},
+	{"-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=no"},
+}
+
+// goRefused are go build flags that run or substitute programs or files.
+var goRefused = []string{"-toolexec", "-exec", "-overlay", "-modfile", "-pkgdir"}
 
 // xcrunTools are the only subcommands xcrun may start.
 var xcrunTools = []string{"notarytool", "stapler"}
@@ -89,6 +103,21 @@ func Check(c Cmd) error {
 	if _, ok := Allowed[c.Tool]; !ok {
 		return fmt.Errorf("%q: %w", c.Tool, ErrNotAllowed)
 	}
+	if c.Tool == "git" && !slices.ContainsFunc(gitForms, func(f []string) bool { return slices.Equal(f, c.Args) }) {
+		return fmt.Errorf("git %s: %w (only %d exact forms)", strings.Join(c.Args, " "), ErrNotAllowed, len(gitForms))
+	}
+	if c.Tool == "go" {
+		if len(c.Args) == 0 || c.Args[0] != "build" {
+			return fmt.Errorf("go %s: %w (only go build)", strings.Join(c.Args, " "), ErrNotAllowed)
+		}
+		for _, a := range c.Args {
+			for _, r := range goRefused {
+				if a == r || strings.HasPrefix(a, r+"=") {
+					return fmt.Errorf("go build %s: %w", r, ErrNotAllowed)
+				}
+			}
+		}
+	}
 	if c.Tool == "xcrun" && (len(c.Args) == 0 || !slices.Contains(xcrunTools, c.Args[0])) {
 		return fmt.Errorf("xcrun %s: %w (only %s)", strings.Join(c.Args, " "), ErrNotAllowed, strings.Join(xcrunTools, ", "))
 	}
@@ -109,14 +138,16 @@ var baseEnv = []string{
 
 // toolEnv is what one tool needs beyond baseEnv, and why.
 var toolEnv = map[string][]string{
-	"gpg":         {"GNUPGHOME", "GPG_TTY"},                          // keyring location, pinentry
-	"ssh-keygen":  {"SSH_AUTH_SOCK"},                                 // agent-held keys
-	"secret-tool": {"DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"},   // the Secret Service bus
-	"cosign":      {"SIGSTORE_*", "TUF_ROOT", "COSIGN_EXPERIMENTAL"}, // keyless endpoints and trust root
-	"xcrun":       {"DEVELOPER_DIR", "SDKROOT"},                      // which Xcode
-	"codesign":    {"DEVELOPER_DIR"},                                 //
-	"signtool":    {},                                                //
-	"security":    {},                                                //
+	"gpg":         {"GNUPGHOME", "GPG_TTY"},                                                                                                                 // keyring location, pinentry
+	"ssh-keygen":  {"SSH_AUTH_SOCK"},                                                                                                                        // agent-held keys
+	"secret-tool": {"DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"},                                                                                          // the Secret Service bus
+	"cosign":      {"SIGSTORE_*", "TUF_ROOT", "COSIGN_EXPERIMENTAL"},                                                                                        // keyless endpoints and trust root
+	"xcrun":       {"DEVELOPER_DIR", "SDKROOT"},                                                                                                             // which Xcode
+	"codesign":    {"DEVELOPER_DIR"},                                                                                                                        //
+	"signtool":    {},                                                                                                                                       //
+	"security":    {},                                                                                                                                       //
+	"go":          {"GOPATH", "GOCACHE", "GOMODCACHE", "GOROOT", "GOPROXY", "GOPRIVATE", "GONOPROXY", "GONOSUMDB", "GONOSUMCHECK", "GOSUMDB", "GOINSECURE"}, // module and build caches, proxies
+	"git":         {},
 }
 
 // ChildEnv filters environ down to baseEnv and the tool's own names, then
