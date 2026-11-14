@@ -54,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The action-pin guard expects a shared workflow (`owner/.github/.github/workflows/*.yml`) pinned to a commit with a `# vX.Y.Z` comment naming its release tag, in place of the `# owner/.github#N` pull-request comment, now that simtabi/.github tags its releases.
-- `release.yml` calls simtabi/.github's shared `go-release.yml` at its `v1.0.0` release (`767e0c0`), pinned as `@<commit>  # v1.0.0` so Dependabot can advance the commit and the tag comment together. The release adds optional inputs only (`node-version` among them) and changes nothing a caller passes.
+- `release.yml` calls simtabi/.github's shared `go-release.yml` at its `v0.1.0` release (`b3388da`), pinned as `@<commit>  # v0.1.0` so Dependabot can advance the commit and the tag comment together. v0.1.0 replaces the withdrawn `v1.0.0` and `v1.0.1`: it adds optional inputs only (`node-version` among them), fetches every owned org's Go modules from git rather than proxy.golang.org, and changes nothing a caller passes.
 - `make check-build` is new, and `make build` and `make cross` run it after they write: it fails when `build/` holds anything but `targets.txt`, `checksums.txt` and the OS folders, and when it inspected fewer files than the build wrote (`BUILD_LAYOUT_MIN`: 2 after `make build`, one per target plus two after `make cross`).
 - Releases build on a pushed `vX.Y.Z` tag, or on request with
   `gh workflow run release.yml --repo sangehq/imprimatur -f tag=vX.Y.Z`, through
