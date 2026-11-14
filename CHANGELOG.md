@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multi-certificate Windows signing.** `platforms.windows.signers` lists several
+  certificates. Each signer has its own backend, pin, references and dates, and
+  a selector (`arch`: 386, amd64, arm, arm64; `glob` on the file name or path).
+  - **One signer per file.** Each Windows file is signed by exactly the one
+    signer that may sign it now. A file no signer covers, or one that several
+    signers match, fails the run before anything is signed. There is never a
+    first match.
+  - **Rotation.** When every matching signer declares `notBefore`, the newest
+    one wins, and an expired signer is never chosen.
+  - **Record and verify.** The record names each file's `signerId`, and verify
+    checks that file against exactly that signer.
+  - **Reporting.** `cert list` reports each signer, and `profile capabilities`
+    reports the platform ready only when every signer can sign on the host.
+  - **Compatibility.** A single-certificate profile is unchanged, and so is its
+    pinned identity digest, which sange computes too.
+  - **Not yet.** Dual signing (`mode: all`) is refused until the backends can
+    append signatures.
+  - **Capability.** `companion info` reports `multiSigner`.
+
 - `impr serve`: a REST API over the same commands, answering with exactly the
   `--json` document each command prints.
   - **Endpoints.** `GET /v1/health|companion|doctor|profiles|profiles/{name}|certs|events`,

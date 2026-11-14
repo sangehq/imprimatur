@@ -30,6 +30,7 @@ type SignedArtifact struct {
 	Platform     string `json:"platform"`
 	Kind         string `json:"kind"`
 	Signer       string `json:"signer"`
+	SignerID     string `json:"signerId,omitempty"` // the profile's windows signer, when it lists several
 	Timestamp    string `json:"timestamp,omitempty"`
 	Notarization string `json:"notarization,omitempty"`
 }
@@ -70,6 +71,7 @@ type Verified struct {
 	OK       bool     `json:"ok"`
 	Found    string   `json:"found,omitempty"`
 	Problems []string `json:"problems,omitempty"`
+	SignerID string   `json:"signerId,omitempty"`
 }
 
 // VerifyResult is `impr verify --json`.

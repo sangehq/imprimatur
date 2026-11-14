@@ -88,6 +88,7 @@ type CertEntry struct {
 	NotAfter    *time.Time `json:"notAfter,omitempty"`
 	Present     bool       `json:"present"`
 	Source      string     `json:"source,omitempty"` // store | keychain | gpg | file | declared | unknown
+	Signer      string     `json:"signer,omitempty"` // the windows signer id, for a multi-certificate profile
 }
 
 // Backend signs and verifies for one platform of a profile.

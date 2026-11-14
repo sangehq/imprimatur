@@ -82,6 +82,47 @@ type work struct {
 	platform string
 	be       backend.Backend
 	files    []backend.Artifact // windows and macos: the manifest files of that kind
+	prof     profile.Profile    // the profile the backend signs with: one certificate's variant for windows
+	signerID string             // the windows signer chosen for these files ("" elsewhere)
+}
+
+// unit is a set of files one certificate signs.
+type unit struct {
+	prof     profile.Profile
+	signerID string
+	files    []backend.Artifact
+}
+
+// windowsUnits assigns each Windows file to exactly one signer of the
+// profile (design ID-07) and groups the files by signer, in a stable order.
+// Any file with no signer, or an ambiguous one, fails the run before anything
+// is signed.
+func (s *Service) windowsUnits(p profile.Profile, files []backend.Artifact) ([]unit, error) {
+	vs := p.WindowsVariants()
+	byID := map[string]*unit{}
+	var order []string
+	for _, f := range files {
+		v, err := profile.Choose(vs, f.Rel, artifact.PEArch(f.Path), s.Host.Now())
+		if err != nil {
+			return nil, contract.Wrap(contract.SignFailed, err, "signing profile %s cannot sign %s; nothing was signed", p.Name, f.Rel).
+				WithFix("impr profile show " + p.Name)
+		}
+		u := byID[v.ID]
+		if u == nil {
+			u = &unit{prof: v.Profile}
+			if v.Dated { // a listed signer; a single-certificate record stays as it was
+				u.signerID = v.ID
+			}
+			byID[v.ID] = u
+			order = append(order, v.ID)
+		}
+		u.files = append(u.files, f)
+	}
+	out := make([]unit, 0, len(order))
+	for _, id := range order {
+		out = append(out, *byID[id])
+	}
+	return out, nil
 }
 
 // Sign signs the files a build manifest lists. Nothing is signed until every
@@ -220,36 +261,46 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 	var plan []work
 	var skipped []string
 	for _, pl := range platforms {
-		w := work{platform: pl}
+		units := []unit{{prof: p}}
 		switch pl {
 		case profile.Windows, profile.MacOS:
-			w.files = files[pl]
-			if len(w.files) == 0 {
+			if len(files[pl]) == 0 {
 				s.logf("sign      %s: no %s files in the build manifest", pl, pl)
 				continue
 			}
-		}
-		be, err := s.backendFor(p, pl)
-		if err != nil {
-			return Result{}, err
-		}
-		w.be = be
-		c := be.Capability(s.Host)
-		if !c.Sign {
-			if o.Strict {
-				return Result{}, contract.New(contract.Unavailable, "%s signing is not available on this host: %s; nothing was signed", pl, c.Reason).
-					WithFix("run the sign stage on a host or runner that can sign " + pl)
+			units[0].files = files[pl]
+			if pl == profile.Windows {
+				us, err := s.windowsUnits(p, files[pl])
+				if err != nil {
+					return Result{}, err
+				}
+				units = us
 			}
-			skipped = append(skipped, pl+": "+c.Reason)
-			continue
 		}
-		if err := backend.Preflight(ctx, be, p); err != nil {
-			return Result{}, err
+		for _, u := range units {
+			w := work{platform: pl, files: u.files, prof: u.prof, signerID: u.signerID}
+			be, err := s.backendFor(u.prof, pl)
+			if err != nil {
+				return Result{}, err
+			}
+			w.be = be
+			c := be.Capability(s.Host)
+			if !c.Sign {
+				if o.Strict {
+					return Result{}, contract.New(contract.Unavailable, "%s signing is not available on this host: %s; nothing was signed", pl, c.Reason).
+						WithFix("run the sign stage on a host or runner that can sign " + pl)
+				}
+				skipped = append(skipped, pl+": "+c.Reason)
+				continue
+			}
+			if err := backend.Preflight(ctx, be, u.prof); err != nil {
+				return Result{}, err
+			}
+			if err := s.certificateUsable(ctx, be, u.prof, pl); err != nil {
+				return Result{}, err
+			}
+			plan = append(plan, w)
 		}
-		if err := s.certificateUsable(ctx, be, p, pl); err != nil {
-			return Result{}, err
-		}
-		plan = append(plan, w)
 	}
 
 	if err := onStart(bm, platforms); err != nil {
@@ -267,13 +318,13 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 			continue
 		}
 		for _, f := range w.files {
-			sig, err := w.be.Sign(ctx, f, p)
+			sig, err := w.be.Sign(ctx, f, w.prof)
 			if err != nil {
 				return Result{}, err
 			}
 			signed[f.Rel] = len(m.Artifacts)
 			m.Artifacts = append(m.Artifacts, SignedArtifact{Path: f.Rel, InputSHA256: inputs[f.Rel], Platform: w.platform,
-				Kind: sig.Kind, Signer: sig.Signer, Timestamp: sig.Timestamp})
+				Kind: sig.Kind, Signer: sig.Signer, SignerID: w.signerID, Timestamp: sig.Timestamp})
 			s.logf("sign      %s  %s, %s", f.Rel, sig.Kind, sig.Signer)
 		}
 		if ap, ok := w.be.(*backend.Apple); ok && ap.Spec.Notary != nil {

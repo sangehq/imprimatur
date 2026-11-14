@@ -48,6 +48,42 @@ impr profile import-legacy [--from PATH] [--json]
 - A profile cannot be renamed with `--set name=...`; export it, change the name,
   and import it.
 
+## Several certificates
+
+A profile's Windows spec can list several certificates. For example, Certum for `.exe` files on amd64 and
+Azure Artifact Signing for arm64, or an old and a new certificate during a renewal:
+
+```json
+"windows": {
+  "kind": "authenticode",
+  "signers": [
+    {"id": "ev-2026", "backend": "certum", "thumbprint": "3F…", "notBefore": "2026-01-01T00:00:00Z",
+     "notAfter": "2027-01-01T00:00:00Z", "select": {"arch": ["amd64", "386"]}},
+    {"id": "azure-arm", "backend": "azure-artifact-signing", "subject": "CN=Acme Ltd",
+     "dlibPath": "…", "metadataPath": "…", "select": {"arch": ["arm64"]}},
+    {"id": "installers", "backend": "certum", "thumbprint": "3F…", "select": {"glob": ["*.msi"]}}
+  ]
+}
+```
+
+- **Each signer is a whole certificate.** It has its own backend, pin (`thumbprint` or exact `subject`),
+  references, timestamp server, and `notBefore` and `notAfter` dates.
+- **Selectors.** `select.arch` matches the PE machine (386, amd64, arm, arm64). `select.glob` matches the
+  file name or its path in the manifest. An empty selector matches every file.
+- **One signer per file.** impr signs each Windows file with exactly one signer: the one whose selector
+  matches and whose dates include now. A file with no such signer stops the whole run before anything is
+  signed. So does a file that several signers match, unless every one of them has a `notBefore`; then the
+  newest wins, which is how a renewal overlaps.
+- **Recording and verifying.** `impr-manifest.json` records each file's `signerId`, and `impr verify
+  --signed` checks the file against exactly that signer. A loose file passes if any signer whose selector
+  matches it verifies it.
+- **Pinned identity.** The profile's pinned identity lists every signer, so adding or re-pinning one
+  changes the identity digest. A profile without `signers` keeps exactly the pin and digest it had.
+- **Not supported yet.** `mode: "all"` (dual signing) is refused for now.
+
+Edit signers as JSON, for example
+`impr profile edit acme-release --set 'platforms.windows.signers=[{"id":"ev-2026",…}]'`.
+
 ## What is refused
 
 - An unknown field, or anything that looks like key material, in a profile.

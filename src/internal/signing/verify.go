@@ -28,6 +28,7 @@ type item struct {
 	rel, want, platform string
 	notarized           bool
 	sums                bool     // a SHA256SUMS file: every file it lists is re-hashed too
+	signerID            string   // the windows signer the record names
 	require             []string // with --manifest: build-manifest files the checksum file must list
 }
 
@@ -120,7 +121,7 @@ func (s *Service) verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 				WithDetails("An empty record proves nothing, so it never passes.")
 		}
 		for _, a := range m.Artifacts {
-			items = append(items, item{rel: a.Path, want: a.OutputSHA256, platform: a.Platform, notarized: a.Notarization != ""})
+			items = append(items, item{rel: a.Path, want: a.OutputSHA256, platform: a.Platform, notarized: a.Notarization != "", signerID: a.SignerID})
 		}
 		for _, out := range m.Outputs {
 			if out.Kind == "sha256sums" {
@@ -228,6 +229,10 @@ func (s *Service) verifyOne(ctx context.Context, root string, p profile.Profile,
 		}
 		v.Platform = pl
 	}
+	if pl == profile.Windows && p.Platforms.Windows != nil && len(p.Platforms.Windows.Signers) > 0 {
+		art := backend.Artifact{Path: path, Rel: it.rel, Notarized: it.notarized}
+		return s.verifyWindowsSigners(ctx, p, it, art, v)
+	}
 	be, err := s.backendFor(p, pl)
 	if err != nil {
 		return err
@@ -235,7 +240,8 @@ func (s *Service) verifyOne(ctx context.Context, root string, p profile.Profile,
 	if c := be.Capability(s.Host); !c.Verify {
 		return contract.New(contract.Unavailable, "%s signatures cannot be verified on this host: %s", pl, c.Reason)
 	}
-	if err := be.Verify(ctx, backend.Artifact{Path: path, Rel: it.rel, Notarized: it.notarized}, p); err != nil {
+	art := backend.Artifact{Path: path, Rel: it.rel, Notarized: it.notarized}
+	if err := be.Verify(ctx, art, p); err != nil {
 		return err
 	}
 	if it.sums {
@@ -312,4 +318,48 @@ func found(p profile.Profile, platform string) string {
 		return id.Containers
 	}
 	return ""
+}
+
+// verifyWindowsSigners checks a file against a multi-certificate profile.
+// A record naming its signer is checked against exactly that signer. A loose
+// file passes if any signer whose selector matches it verifies it; dates are
+// not applied, because a timestamped signature outlives its certificate's
+// signing window.
+func (s *Service) verifyWindowsSigners(ctx context.Context, p profile.Profile, it item, art backend.Artifact, v *Verified) error {
+	vs := p.WindowsVariants()
+	var cands []profile.Variant
+	if it.signerID != "" {
+		sv, ok := profile.VariantByID(vs, it.signerID)
+		if !ok {
+			return contract.New(contract.VerifyFailed, "the record names signer %s, which profile %s no longer lists", it.signerID, p.Name)
+		}
+		cands = []profile.Variant{sv}
+	} else {
+		arch := artifact.PEArch(art.Path)
+		for _, sv := range vs {
+			if sv.Select.Matches(it.rel, arch) {
+				cands = append(cands, sv)
+			}
+		}
+		if len(cands) == 0 {
+			return contract.New(contract.VerifyFailed, "no signer of profile %s covers %s", p.Name, it.rel)
+		}
+	}
+	var problems []string
+	for _, sv := range cands {
+		be, err := s.backendFor(sv.Profile, profile.Windows)
+		if err != nil {
+			return err
+		}
+		if c := be.Capability(s.Host); !c.Verify {
+			return contract.New(contract.Unavailable, "windows signatures cannot be verified on this host: %s", c.Reason)
+		}
+		err = be.Verify(ctx, art, sv.Profile)
+		if err == nil {
+			v.SignerID = sv.ID
+			return nil
+		}
+		problems = append(problems, sv.ID+": "+err.Error())
+	}
+	return contract.New(contract.VerifyFailed, "%s is not signed by any signer of profile %s: %s", it.rel, p.Name, strings.Join(problems, "; "))
 }

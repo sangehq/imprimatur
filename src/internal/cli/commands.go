@@ -51,12 +51,17 @@ const WebhooksCapability = "webhooks"
 // as a REST API, with signed inbound webhooks.
 const ServerCapability = "server"
 
+// MultiSignerCapability tells a caller that a profile's Windows spec may list
+// several certificates (signers), one chosen per file. Such a profile's
+// identity pins every signer, and its records name the signer (signerId).
+const MultiSignerCapability = "multiSigner"
+
 // readFlags are the flags of the read commands.
 var readFlags = flagSpec{"json": boolFlag, "strict": boolFlag}
 
 func (a *App) companionInfo() CompanionInfo {
 	platforms, backends := signing.HostCapabilities(a.host())
-	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true, WebhooksCapability: true, ServerCapability: true}
+	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true, WebhooksCapability: true, ServerCapability: true, MultiSignerCapability: true}
 	list := []string{}
 	for k, v := range platforms {
 		caps[k] = v

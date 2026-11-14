@@ -6,6 +6,7 @@ package artifact
 import (
 	"bytes"
 	"crypto/sha256"
+	"debug/pe"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -241,4 +242,25 @@ func WriteFile(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmp, path)
+}
+
+// PEArch is a PE file's machine as a Go architecture name ("386", "amd64",
+// "arm", "arm64"), or "" for anything else, including an .msi.
+func PEArch(path string) string {
+	f, err := pe.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	switch f.Machine {
+	case pe.IMAGE_FILE_MACHINE_I386:
+		return "386"
+	case pe.IMAGE_FILE_MACHINE_AMD64:
+		return "amd64"
+	case pe.IMAGE_FILE_MACHINE_ARMNT, pe.IMAGE_FILE_MACHINE_ARM:
+		return "arm"
+	case pe.IMAGE_FILE_MACHINE_ARM64:
+		return "arm64"
+	}
+	return ""
 }

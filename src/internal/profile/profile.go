@@ -154,6 +154,36 @@ type WindowsSpec struct {
 	PasswordRef string `json:"passwordRef,omitempty"`
 	// NotAfter is a declared expiry, for certificates this host cannot read.
 	NotAfter *time.Time `json:"notAfter,omitempty"`
+	// Signers lists several certificates (design ID-07). When present, the
+	// fields above that name a certificate stay empty and each file is signed
+	// by exactly one signer its selector matches; see Variants and Choose.
+	Signers []WindowsSigner `json:"signers,omitempty"`
+	// Mode is "select" (the default): one signer per file. "all" (dual
+	// signing) is reserved and refused until the backends append signatures.
+	Mode string `json:"mode,omitempty"`
+}
+
+// WindowsSigner is one certificate of a multi-certificate Windows spec.
+type WindowsSigner struct {
+	ID           string     `json:"id"`
+	Backend      string     `json:"backend"`
+	CertRef      string     `json:"certRef,omitempty"`
+	Subject      string     `json:"subject,omitempty"`
+	Thumbprint   string     `json:"thumbprint,omitempty"`
+	Timestamp    string     `json:"timestamp,omitempty"`
+	DlibPath     string     `json:"dlibPath,omitempty"`
+	MetadataPath string     `json:"metadataPath,omitempty"`
+	PasswordRef  string     `json:"passwordRef,omitempty"`
+	NotBefore    *time.Time `json:"notBefore,omitempty"`
+	NotAfter     *time.Time `json:"notAfter,omitempty"`
+	Select       *Selector  `json:"select,omitempty"`
+}
+
+// Selector picks the files a signer signs. An empty selector matches every
+// file; each list that is set must match.
+type Selector struct {
+	Arch []string `json:"arch,omitempty"` // PE machine: 386, amd64, arm, arm64
+	Glob []string `json:"glob,omitempty"` // matched against the base name and the manifest path
 }
 
 // MacOSSpec is Developer ID signing and notarisation.
@@ -311,9 +341,17 @@ func (p Profile) Validate() Problems {
 			ps.add(field, "must be a reference (%s), never the credential itself", strings.Join(RefSchemes, ", "))
 		}
 	}
-	if w := p.Platforms.Windows; w != nil {
+	if w := p.Platforms.Windows; w != nil && len(w.Signers) > 0 {
 		if w.Kind != "authenticode" {
 			ps.add("platforms.windows.kind", "%q is not authenticode", w.Kind)
+		}
+		ps = append(ps, w.validateSigners(ref)...)
+	} else if w != nil {
+		if w.Kind != "authenticode" {
+			ps.add("platforms.windows.kind", "%q is not authenticode", w.Kind)
+		}
+		if w.Mode != "" && w.Mode != "select" {
+			ps.add("platforms.windows.mode", "mode %q needs signers", w.Mode)
 		}
 		if !slices.Contains(WindowsBackends(), w.Backend) {
 			ps.add("platforms.windows.backend", "%q is not %s", w.Backend, strings.Join(WindowsBackends(), ", "))
@@ -450,6 +488,17 @@ func (p Profile) Pinned() PinnedIdentity {
 	sort.Strings(id.AllowedRepos)
 	if w := p.Platforms.Windows; w != nil {
 		id.Windows = "thumbprint=" + strings.ToUpper(w.Thumbprint) + ";subject=" + w.Subject
+		if len(w.Signers) > 0 {
+			// A multi-certificate spec pins every signer, in id order. A
+			// single-certificate profile keeps the form above, so its digest
+			// (which sange computes too) does not change.
+			var parts []string
+			for _, sg := range w.Signers {
+				parts = append(parts, "id="+sg.ID+";thumbprint="+strings.ToUpper(sg.Thumbprint)+";subject="+sg.Subject)
+			}
+			sort.Strings(parts)
+			id.Windows = strings.Join(parts, "|")
+		}
 	}
 	if m := p.Platforms.MacOS; m != nil {
 		id.MacOS = "team=" + m.TeamID + ";identity=" + m.Identity
