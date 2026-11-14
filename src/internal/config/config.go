@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/events"
+	"github.com/sangehq/imprimatur/src/internal/webhook"
 )
 
 // Schema identifies config.json.
@@ -47,10 +48,29 @@ type Hook struct {
 	Veto bool `json:"veto,omitempty"`
 }
 
+// Outbound is one webhook subscription: where impr sends events (design §6.1).
+type Outbound struct {
+	Name  string   `json:"name"`
+	URL   string   `json:"url"`
+	Types []string `json:"types,omitempty"` // event type globs; default every internal-class type
+	// SecretRef holds the whsec_ signing secret, as a reference (secret://,
+	// env://); impr webhooks secret makes one. PreviousSecretRef signs too
+	// while a rotation overlaps, so the receiver can switch keys.
+	SecretRef         string `json:"secretRef"`
+	PreviousSecretRef string `json:"previousSecretRef,omitempty"`
+	AllowPrivate      bool   `json:"allowPrivate,omitempty"`
+}
+
+// Webhooks is the webhooks section.
+type Webhooks struct {
+	Outbound []Outbound `json:"outbound,omitempty"`
+}
+
 // Config is config.json.
 type Config struct {
-	Schema string `json:"schema"`
-	Hooks  []Hook `json:"hooks,omitempty"`
+	Schema   string   `json:"schema"`
+	Hooks    []Hook   `json:"hooks,omitempty"`
+	Webhooks Webhooks `json:"webhooks,omitempty"`
 }
 
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
@@ -125,6 +145,28 @@ func (c Config) Validate() []string {
 			if !events.KnownGlob(g) {
 				ps = append(ps, at+": "+g+" matches no event type")
 			}
+		}
+	}
+	subs := map[string]bool{}
+	for i, w := range c.Webhooks.Outbound {
+		at := fmt.Sprintf("webhooks.outbound[%d]", i)
+		if !nameRe.MatchString(w.Name) || subs[w.Name] {
+			ps = append(ps, at+": name must be unique lower-case letters, digits and dashes")
+		}
+		subs[w.Name] = true
+		if !regexp.MustCompile(`^(secret|env)://.+`).MatchString(w.SecretRef) {
+			ps = append(ps, at+": secretRef must be a secret:// or env:// reference (impr webhooks secret makes one)")
+		}
+		if w.PreviousSecretRef != "" && !regexp.MustCompile(`^(secret|env)://.+`).MatchString(w.PreviousSecretRef) {
+			ps = append(ps, at+": previousSecretRef must be a secret:// or env:// reference")
+		}
+		for _, g := range w.Types {
+			if !events.KnownGlob(g) {
+				ps = append(ps, at+": "+g+" matches no event type")
+			}
+		}
+		if _, err := webhook.CheckURL(w.URL, w.AllowPrivate); err != nil {
+			ps = append(ps, at+": "+err.Error())
 		}
 	}
 	return ps

@@ -26,6 +26,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/profile"
 	"github.com/sangehq/imprimatur/src/internal/secrets"
 	"github.com/sangehq/imprimatur/src/internal/signing"
+	"github.com/sangehq/imprimatur/src/internal/webhook"
 )
 
 // Build metadata, stamped with -ldflags -X.
@@ -250,6 +251,11 @@ func (a *App) service() (*signing.Service, error) {
 	bus := a.bus()
 	if bus != nil {
 		bus.Sinks = append(bus.Sinks, hk)
+		if subs, err := a.subscriptions(ctxBackground(), cfg); err != nil {
+			a.say("webhooks  not sending: %v", err)
+		} else if len(subs) > 0 {
+			bus.Sinks = append(bus.Sinks, webhook.Sink{Outbox: a.outbox(d), Subs: subs})
+		}
 	}
 	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk}, nil
 }
@@ -318,6 +324,7 @@ func init() {
 		"rules":     cmdRules,
 		"events":    cmdEvents,
 		"hooks":     cmdHooks,
+		"webhooks":  cmdWebhooks,
 	}
 }
 
@@ -339,6 +346,7 @@ Usage:
   impr rules --request FILE [--json] [--strict] [--out-dir DIR]
   impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
   impr hooks list [--json] | pin FILE | test NAME
+  impr webhooks list [--json] | secret | retry [--all] | deliveries [--json]
   impr version
 
 Exit codes: 0 ok, 1 usage, 2 skipped (without --strict), 3 signing failed,

@@ -43,12 +43,16 @@ const EventsCapability = "events"
 // pre-sign, pre-verify and event hooks from config.json (impr hooks list).
 const HooksCapability = "hooks"
 
+// WebhooksCapability tells a caller that impr can send its events to other
+// apps as signed Standard Webhooks deliveries (impr webhooks list).
+const WebhooksCapability = "webhooks"
+
 // readFlags are the flags of the read commands.
 var readFlags = flagSpec{"json": boolFlag, "strict": boolFlag}
 
 func (a *App) companionInfo() CompanionInfo {
 	platforms, backends := signing.HostCapabilities(a.host())
-	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true}
+	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true, WebhooksCapability: true}
 	list := []string{}
 	for k, v := range platforms {
 		caps[k] = v

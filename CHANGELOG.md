@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Outbound webhooks: `config.json` `webhooks.outbound` sends impr's events to
+  other apps as Standard Webhooks 1.0 deliveries. Each delivery carries
+  `webhook-id`, `webhook-timestamp` and a `v1` HMAC-SHA256 signature, checked
+  against the reference test vector; the body is the structured CloudEvent.
+  - **Secrets.** Every secret is a `whsec_` value impr generates
+    (`impr webhooks secret`) and holds by reference. During a rotation a
+    previous secret signs alongside the new one.
+  - **Targets.** Only https is used; private, loopback and link-local targets
+    (cloud metadata included) are refused unless `allowPrivate` is set. The
+    check is made on the address actually dialled. No redirects are followed,
+    and the timeout is 15 s.
+  - **Outbox.** Every delivery goes through a durable outbox in the state dir:
+    a retry schedule, `410` sends straight to the dead letter, and
+    `impr webhooks list|secret|retry|deliveries` manage it.
+  - **What is sent.** Local-class events never leave the machine.
+  - **Capability.** `companion info` reports `webhooks`.
+
 - Hooks: `<config>/config.json` (`imprimatur.config/v1`) can name `pre-sign`,
   `pre-verify` and `event` hooks. Each is an absolute path pinned by sha256, and
   runs with no shell, the CloudEvent on stdin, a minimal environment and a
