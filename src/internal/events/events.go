@@ -54,6 +54,7 @@ type Event struct {
 // docs, the schema test and `impr events types` read.
 var Catalogue = map[string]string{
 	"signing.run.started":        ClassInternal,
+	"verification.run.started":   ClassInternal,
 	"signing.artifact.signed":    ClassInternal,
 	"signing.run.completed":      ClassInternal,
 	"signing.run.failed":         ClassInternal,
@@ -70,13 +71,15 @@ var Catalogue = map[string]string{
 	"hook.vetoed":                ClassLocal,
 }
 
-var typeRe = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+){2}$`)
+var typeRe = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+){1,2}$`)
 
 // Source is the CloudEvents source for an install id.
 func Source(installID string) string { return "https://sange.sh/imprimatur/install/" + installID }
 
 // SchemaURL is the published JSON Schema for a type at major version 1.
-func SchemaURL(short string) string { return "https://sange.sh/schemas/imprimatur/events/" + short + "/v1.json" }
+func SchemaURL(short string) string {
+	return "https://sange.sh/schemas/imprimatur/events/" + short + "/v1.json"
+}
 
 // Env supplies time and ids; tests pass fixed ones.
 type Env struct {
@@ -141,6 +144,15 @@ func (b *Bus) Emit(ctx context.Context, short, subject string, data any) {
 		b.warn("events    %v", err)
 		return
 	}
+	b.Publish(ctx, ev)
+}
+
+// Publish sends an event that is already built (one a pre-hook has seen) to
+// every sink.
+func (b *Bus) Publish(ctx context.Context, ev Event) {
+	if b == nil {
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, s := range b.Sinks {
@@ -189,4 +201,15 @@ func InstallID(stateDir string) (string, error) {
 		return "", err
 	}
 	return id, nil
+}
+
+// KnownGlob reports whether a type glob matches at least one catalogued type,
+// so a misspelt filter is refused instead of silently matching nothing.
+func KnownGlob(glob string) bool {
+	for short := range Catalogue {
+		if Matches(glob, TypePrefix+short) {
+			return true
+		}
+	}
+	return false
 }

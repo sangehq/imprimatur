@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
@@ -558,5 +559,54 @@ func TestReadCommandsAcceptStrict(t *testing.T) {
 	}
 	if len(reads) != 3 {
 		t.Fatal("read command list was cut")
+	}
+}
+
+// TestPreSignHookVetoSignsNothing: a pre-sign hook in the user's config.json
+// that exits non-zero with veto stops the run before the first signature.
+func TestPreSignHookVetoSignsNothing(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil || runtime.GOOS == "windows" {
+		t.Skip("needs ssh-keygen and a Unix shell")
+	}
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+
+	hook := filepath.Join(t.TempDir(), "deny.sh")
+	body := []byte("#!/bin/sh\necho 'release freeze' >&2\nexit 1\n")
+	if err := os.WriteFile(hook, body, 0o700); err != nil { //nolint:gosec // G306: a test hook must be executable
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	cfg := fmt.Sprintf(`{"schema":"imprimatur.config/v1","hooks":[{"name":"freeze","phase":"pre-sign","exec":%q,"sha256":%q,"veto":true}]}`,
+		hook, hex.EncodeToString(sum[:]))
+	if err := os.WriteFile(filepath.Join(h.env["IMPR_CONFIG_DIR"], "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out := h.ok("hooks", "list", "--json"); !strings.Contains(out, `"pinOk":true`) {
+		t.Fatalf("hooks list: %s", out)
+	}
+
+	root, manifest, commit, tree := build(t)
+	out := h.exits(3, "sign", "--json", "--strict", "--root", root, "--manifest", manifest, "--commit", commit, "--tree", tree,
+		"--profile", "p", "--purpose", "internal", "--platforms", "checksums")
+	if !strings.Contains(out, "release freeze") && !strings.Contains(out, "freeze") {
+		t.Fatalf("the refusal does not name the hook: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(root, "build", "impr-manifest.json")); err == nil {
+		t.Fatal("a vetoed run wrote impr-manifest.json")
+	}
+	if _, err := os.Stat(filepath.Join(root, "build", "SHA256SUMS")); err == nil {
+		t.Fatal("a vetoed run wrote SHA256SUMS")
+	}
+	if ev := h.ok("events", "tail", "--json"); !strings.Contains(ev, "hook.vetoed") || strings.Contains(ev, "signing.run.started") {
+		t.Fatalf("events after a veto: %s", ev)
 	}
 }

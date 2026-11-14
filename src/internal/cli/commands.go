@@ -39,12 +39,16 @@ const StrictReadsCapability = "strictReads"
 // --json documents are unchanged.
 const EventsCapability = "events"
 
+// HooksCapability tells a caller that impr runs the host owner's pinned
+// pre-sign, pre-verify and event hooks from config.json (impr hooks list).
+const HooksCapability = "hooks"
+
 // readFlags are the flags of the read commands.
 var readFlags = flagSpec{"json": boolFlag, "strict": boolFlag}
 
 func (a *App) companionInfo() CompanionInfo {
 	platforms, backends := signing.HostCapabilities(a.host())
-	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true}
+	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true}
 	list := []string{}
 	for k, v := range platforms {
 		caps[k] = v

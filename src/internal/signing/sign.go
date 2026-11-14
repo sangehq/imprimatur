@@ -12,8 +12,10 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/artifact"
 	"github.com/sangehq/imprimatur/src/internal/backend"
+	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/events"
+	"github.com/sangehq/imprimatur/src/internal/hooks"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 )
 
@@ -25,6 +27,8 @@ type Service struct {
 	Log     io.Writer // human lines (stderr)
 	// Events receives what each run did; nil emits nothing.
 	Events *events.Bus
+	// Hooks runs the user's pre-sign and pre-verify gates; nil runs none.
+	Hooks *hooks.Runner
 	// BackendFor builds a backend; nil uses backend.For. Tests replace it.
 	BackendFor func(h backend.Host, p profile.Profile, platform string) (backend.Backend, error)
 }
@@ -94,10 +98,19 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 		subject = id
 	}
 	started := false
-	res, err := s.sign(ctx, o, func(bm artifact.Loaded, platforms []string) {
-		started = true
-		s.Events.Emit(ctx, "signing.run.started", subject, map[string]any{"runId": runID, "profile": o.Profile,
+	res, err := s.sign(ctx, o, func(bm artifact.Loaded, platforms []string) error {
+		ev, err := s.event("signing.run.started", subject, map[string]any{"runId": runID, "profile": o.Profile,
 			"purpose": o.Purpose, "platforms": platforms, "commit": bm.Commit, "tree": bm.Tree, "buildManifestDigest": bm.Digest})
+		if err != nil {
+			return err
+		}
+		if err := s.Hooks.Pre(ctx, config.PhasePreSign, ev); err != nil {
+			s.Events.Emit(ctx, "hook.vetoed", subject, map[string]any{"runId": runID, "phase": config.PhasePreSign, "reason": err.Error()})
+			return contract.Wrap(contract.SignFailed, err, "a pre-sign hook refused the run; nothing was signed")
+		}
+		started = true
+		s.Events.Publish(ctx, ev)
+		return nil
 	})
 	if !started {
 		return res, err
@@ -123,7 +136,7 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 
 // sign is the run itself; onStart is called once every pre-check has passed,
 // just before the first signature.
-func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artifact.Loaded, platforms []string)) (Result, error) {
+func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artifact.Loaded, platforms []string) error) (Result, error) {
 	root, err := absRoot(o.Root)
 	if err != nil {
 		return Result{}, err
@@ -239,7 +252,9 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 		plan = append(plan, w)
 	}
 
-	onStart(bm, platforms)
+	if err := onStart(bm, platforms); err != nil {
+		return Result{}, err
+	}
 	m := Manifest{Schema: ManifestSchema, Signer: "imprimatur " + s.Version, Profile: p.Name, Purpose: purpose, Identity: p.Pinned(),
 		Commit: bm.Commit, Tree: bm.Tree, Repo: o.Repo, BuildManifestDigest: bm.Digest,
 		Artifacts: []SignedArtifact{}, Outputs: []SignedArtifact{}, Skipped: skipped}
@@ -388,4 +403,14 @@ func repoLabel(u string) string {
 		return id
 	}
 	return "that push target"
+}
+
+// event builds an event with the bus's environment, or a local one when no
+// bus is configured, so pre-hooks always see the same shape.
+func (s *Service) event(short, subject string, data any) (events.Event, error) {
+	env := events.Env{Now: s.Host.Now, NewID: events.NewID, InstallID: "0000000000000000"}
+	if s.Events != nil {
+		env = s.Events.Env
+	}
+	return env.New(short, subject, data)
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/artifact"
 	"github.com/sangehq/imprimatur/src/internal/backend"
+	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 )
@@ -34,6 +35,17 @@ type item struct {
 // The report is returned with the error, so a failed verification still
 // prints what failed.
 func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, error) {
+	if s.Hooks != nil {
+		ev, err := s.event("verification.run.started", o.Profile, map[string]any{"profile": o.Profile, "signed": o.Signed != "", "files": len(o.Files)})
+		if err != nil {
+			return VerifyResult{}, err
+		}
+		if err := s.Hooks.Pre(ctx, config.PhasePreVerify, ev); err != nil {
+			s.Events.Emit(ctx, "hook.vetoed", o.Profile, map[string]any{"phase": config.PhasePreVerify, "reason": err.Error()})
+			return VerifyResult{}, contract.Wrap(contract.VerifyFailed, err, "a pre-verify hook refused the run")
+		}
+		s.Events.Publish(ctx, ev)
+	}
 	res, err := s.verify(ctx, o)
 	if res.Profile != "" {
 		failed := []string{}

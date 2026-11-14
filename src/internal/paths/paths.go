@@ -144,7 +144,7 @@ func copyTree(from, to string) error {
 			if err != nil {
 				return err
 			}
-			return os.WriteFile(dst, b, 0o600)
+			return os.WriteFile(dst, b, 0o600) //nolint:gosec // G703: dst is rel-joined under the new config dir from WalkDir of the legacy one
 		default:
 			return fmt.Errorf("%s is not a regular file or directory; not copied", p)
 		}

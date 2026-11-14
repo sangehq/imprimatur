@@ -46,6 +46,11 @@ func TestCatalogueShape(t *testing.T) {
 		if !re.MatchString(TypePrefix+short) || (class != ClassInternal && class != ClassLocal) {
 			t.Errorf("%s: class %q", short, class)
 		}
+		// Every catalogued type can actually be built: a catalogue entry New
+		// refuses would be dropped with only a warning at emit time.
+		if _, err := fixedEnv().New(short, "s", map[string]any{}); err != nil {
+			t.Errorf("%s cannot be emitted: %v", short, err)
+		}
 	}
 }
 

@@ -17,9 +17,11 @@ import (
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/backend"
+	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/execx"
+	"github.com/sangehq/imprimatur/src/internal/hooks"
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 	"github.com/sangehq/imprimatur/src/internal/secrets"
@@ -234,7 +236,22 @@ func (a *App) service() (*signing.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr, Events: a.bus()}, nil
+	d, err := a.dirs()
+	if err != nil {
+		return nil, contract.Wrap(contract.Unavailable, err, "locate the imprimatur config")
+	}
+	cfg, err := config.Load(d.Config)
+	if err != nil {
+		// config.json decides which gates run; a broken one never means "no gates".
+		return nil, contract.Wrap(contract.Unavailable, err, "the imprimatur config cannot be read").
+			WithFix("impr hooks list", "fix or remove "+filepath.Join(d.Config, config.File))
+	}
+	hk := &hooks.Runner{Hooks: cfg.Hooks, Warn: a.say}
+	bus := a.bus()
+	if bus != nil {
+		bus.Sinks = append(bus.Sinks, hk)
+	}
+	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk}, nil
 }
 
 // bus is the event bus for this run: the hash-chained log in the state dir.
@@ -300,6 +317,7 @@ func init() {
 		"verify":    cmdVerify,
 		"rules":     cmdRules,
 		"events":    cmdEvents,
+		"hooks":     cmdHooks,
 	}
 }
 
@@ -320,6 +338,7 @@ Usage:
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules --request FILE [--json] [--strict] [--out-dir DIR]
   impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
+  impr hooks list [--json] | pin FILE | test NAME
   impr version
 
 Exit codes: 0 ok, 1 usage, 2 skipped (without --strict), 3 signing failed,

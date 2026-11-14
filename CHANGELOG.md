@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Hooks: `<config>/config.json` (`imprimatur.config/v1`) can name `pre-sign`,
+  `pre-verify` and `event` hooks. Each is an absolute path pinned by sha256, and
+  runs with no shell, the CloudEvent on stdin, a minimal environment and a
+  timeout. A `pre-*` hook with `veto` stops the run before anything is signed
+  or verified (exit 3 or 4) and records `hook.vetoed`. A pre-hook that fails its
+  pin also stops the run. Hooks come only from the user's own config, never from
+  a repository; a group- or world-writable `config.json` or hook is refused.
+  `impr hooks list|pin|test`; `companion info` reports the `hooks` capability.
+
 - Events: impr records a CloudEvents 1.0 event for every signing and
   verification run (`sh.sange.imprimatur.signing.run.started`, `.artifact.signed`,
   `.run.completed|skipped|failed`, `verification.run.completed|failed`) in a

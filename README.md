@@ -72,6 +72,7 @@ else is in the [documentation](#documentation) below.
 - [`impr cert list`](docs/tools/cert.md) — the certificates and keys profiles use, with expiry
 - [`impr rules`](docs/tools/rules.md) — AppLocker and WDAC supplemental policies from a request
 - [`impr doctor`](docs/tools/doctor.md) — a health report of profiles and host capability
+- [`impr hooks`](docs/tools/hooks.md) — pinned programs that gate signing and verification or react to events
 - [`impr events`](docs/tools/events.md) — the CloudEvents log of signing and verification runs, and its hash chain
 - [Backends](docs/tools/backends.md) — every signing backend, the tools it runs and what it pins
 
