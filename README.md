@@ -72,6 +72,7 @@ else is in the [documentation](#documentation) below.
 - [`impr cert list`](docs/tools/cert.md) — the certificates and keys profiles use, with expiry
 - [`impr rules`](docs/tools/rules.md) — AppLocker and WDAC supplemental policies from a request
 - [`impr doctor`](docs/tools/doctor.md) — a health report of profiles and host capability
+- [`impr menu`](docs/tools/menu.md) — the interactive menu, for a person at a terminal
 - [`impr completion`](docs/tools/completion.md) — tab completion for bash, zsh, fish and PowerShell
 - [`impr install`](docs/tools/install.md) — install, uninstall and `impr path`
 - [`make/impr.mk`](docs/tools/make.md) — impr's commands as Make targets for a project's Makefile

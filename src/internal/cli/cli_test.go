@@ -835,3 +835,53 @@ func TestInstallUninstallAndAliases(t *testing.T) {
 		t.Fatalf("alias d did not run doctor: %d %s", code, out)
 	}
 }
+
+// menuRun runs impr with no arguments as if at a terminal, typing input.
+func (h *harness) menuRun(input string) (int, string, string) {
+	var o, e bytes.Buffer
+	a := &App{Stdout: &o, Stderr: &e, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: h.t.TempDir(), User: "tester",
+		Runner: h.run, Now: func() time.Time { return h.now }, Stdin: strings.NewReader(input), Interactive: func() bool { return true }}
+	code := a.Run(context.Background(), nil)
+	return code, o.String(), e.String()
+}
+
+func TestMenu(t *testing.T) {
+	h := newHarness(t)
+	// Without a terminal, impr with no arguments is the usage text and exit 1.
+	if code, _, e := h.impr(); code != 1 || !strings.Contains(e, "Usage:") {
+		t.Fatalf("no terminal: %d %q", code, e)
+	}
+	code, out, e := h.menuRun("p\nzz\nq\n")
+	if code != 0 || !strings.Contains(e, "sign a build manifest") || !strings.Contains(e, `"zz" is not an entry`) {
+		t.Fatalf("menu: %d %q %q", code, out, e)
+	}
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("the signing flow needs ssh-keygen")
+	}
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+	root, manifest, _, _ := build(t)
+	record := filepath.Join(root, "build", "impr-manifest.json")
+
+	// Anything but "yes" signs nothing.
+	h.menuRun("s\n" + manifest + "\n\ninternal\n" + root + "\nno\nq\n")
+	if _, err := os.Stat(record); err == nil {
+		t.Fatal("the menu signed without a yes")
+	}
+	// The default profile is offered, the commit and tree come from the
+	// manifest shown, and "yes" signs.
+	code, _, e = h.menuRun("s\n" + manifest + "\n\ninternal\n" + root + "\nyes\nv\n" + record + "\np\n" + root + "\nq\n")
+	if code != 0 || !strings.Contains(e, "[p]") || strings.Count(e, "menu      exit 0") != 2 {
+		t.Fatalf("sign and verify through the menu: %d\n%s", code, e)
+	}
+	if _, err := os.Stat(record); err != nil {
+		t.Fatal("no impr-manifest.json after signing")
+	}
+}

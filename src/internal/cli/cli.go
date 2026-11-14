@@ -48,6 +48,11 @@ type App struct {
 	User           string
 	Runner         execx.Runner
 	Now            func() time.Time
+	// Stdin feeds the interactive menu; Interactive reports whether a person
+	// is at a terminal. Both nil means no menu: impr with no arguments prints
+	// its usage, as scripts and sange expect.
+	Stdin       io.Reader
+	Interactive func() bool
 }
 
 // Main runs impr with the real host and returns the exit code.
@@ -61,7 +66,7 @@ func Main(args []string) int {
 		name = u.Username
 	}
 	a := &App{Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv, GOOS: runtime.GOOS, Home: home, User: name,
-		Runner: execx.OS{}, Now: time.Now}
+		Runner: execx.OS{}, Now: time.Now, Stdin: os.Stdin, Interactive: stdinIsTerminal}
 	return a.Run(context.Background(), args)
 }
 
@@ -294,6 +299,9 @@ func (a *App) bus() *events.Bus {
 func (a *App) Run(ctx context.Context, args []string) int {
 	asJSON, wantHelp := scanGlobal(args)
 	if len(args) == 0 {
+		if a.Interactive != nil && a.Interactive() && a.Stdin != nil {
+			return a.menu(ctx)
+		}
 		a.usage()
 		return int(contract.Usage)
 	}
@@ -346,6 +354,7 @@ func init() {
 		"install":    cmdInstall,
 		"uninstall":  cmdUninstall,
 		"path":       cmdPath,
+		"menu":       cmdMenu,
 	}
 }
 
@@ -376,6 +385,7 @@ Usage:
   impr install [--dir DIR] [--force]
   impr uninstall [--dir DIR]
   impr path [--json]
+  impr menu
   impr version
 
 Aliases: s sign, v verify, d doctor, h help.
@@ -448,4 +458,20 @@ func (a *App) helpFor(cmd string) int {
 
 func systemDir(a *App) string {
 	return paths.SystemConfig(paths.Env{GOOS: a.GOOS, Getenv: a.Getenv, Home: a.Home})
+}
+
+// stdinIsTerminal reports whether stdin is a terminal, not a pipe or file.
+func stdinIsTerminal() bool {
+	st, err := os.Stdin.Stat()
+	return err == nil && st.Mode()&os.ModeCharDevice != 0 && os.Getenv("CI") == ""
+}
+
+func cmdMenu(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 {
+		return 0, contract.New(contract.Usage, "impr menu takes no arguments")
+	}
+	if a.Stdin == nil {
+		return 0, contract.New(contract.Usage, "the menu needs a terminal")
+	}
+	return a.menu(ctx), nil
 }

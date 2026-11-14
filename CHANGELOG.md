@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The interactive menu: `impr menu`, and `impr` with no arguments at a terminal.
+  Its entries run the same commands as the CLI. Signing shows the build
+  manifest's commit, tree and file count, and signs only after a typed `yes`.
+  Without a terminal (a pipe, CI, sange) `impr` alone still prints the usage and
+  exits 1.
+
 - `impr completion bash|zsh|fish|powershell`, and `impr completion install|uninstall`
   for bash, zsh and fish into the folders those shells load (no shell profile
   is edited). Completion is generated from the usage text; a test fails if a

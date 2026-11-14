@@ -49,7 +49,7 @@ Parity is measured against this list. Each line is a PowerShell feature the Go
 | Azure login check (`az account show`) before Artifact Signing | not ported: `az` is not on the exec allow-list; signtool fails instead |
 | GPG keys other than the agent's | not ported: `keyRef` must be `gpg-agent://<fingerprint>` |
 | `impr install`/`uninstall`, `impr path`, `impr completion`, `impr help <command>` | **ported**: [`impr install`](../tools/install.md) copies the binary to `~/.local/bin` (it never edits PATH), [`impr completion`](../tools/completion.md) for bash, zsh, fish and PowerShell, `impr help <command>` and `--help` on every command, and the aliases `s`, `v`, `d`, `h` |
-| The interactive menu | not ported yet: waiting on the owner's decision to port or retire it |
+| The interactive menu | **ported** as [`impr menu`](../tools/menu.md), also opened by `impr` alone at a terminal; build, release and init entries wait for those commands |
 | `make/impr.mk` Make integration | **ported**: [`make/impr.mk`](../tools/make.md), targets `impr-sign`, `impr-verify`, `impr-doctor` and more |
 | `impr doctor` checks for go, goreleaser, go-winres and git | not ported: they concern building, which impr no longer does |
 | Moving pre-1.4 files from the toolkit root into `config/` | not ported: run the PowerShell line once first, or `--from` the file |
