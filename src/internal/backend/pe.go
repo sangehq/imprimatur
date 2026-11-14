@@ -95,6 +95,15 @@ func ReadPESigner(path string) (PESigner, error) {
 	if dir.VirtualAddress == 0 || dir.Size < 8 {
 		return PESigner{}, errNotSigned
 	}
+	// The size comes from the file itself, so bound it by the file's real
+	// size and by a ceiling no Authenticode table reaches, before allocating.
+	st, err := f.Stat()
+	if err != nil {
+		return PESigner{}, err
+	}
+	if int64(dir.VirtualAddress)+int64(dir.Size) > st.Size() || dir.Size > maxCertTable {
+		return PESigner{}, fmt.Errorf("the certificate table (%d bytes at %d) does not fit the file (%d bytes)", dir.Size, dir.VirtualAddress, st.Size())
+	}
 	buf := make([]byte, dir.Size)
 	if _, err := f.ReadAt(buf, int64(dir.VirtualAddress)); err != nil && !errors.Is(err, io.EOF) {
 		return PESigner{}, fmt.Errorf("read the certificate table: %w", err)
@@ -106,6 +115,9 @@ func ReadPESigner(path string) (PESigner, error) {
 	}
 	return parsePKCS7(buf[8:length])
 }
+
+// maxCertTable bounds the Authenticode certificate table impr will read.
+const maxCertTable = 16 << 20
 
 func parsePKCS7(der []byte) (PESigner, error) {
 	var ci contentInfo

@@ -309,6 +309,44 @@ func TestGPGVerifiesThePinnedKey(t *testing.T) {
 	g.Spec.KeyRef = "env://GPG_KEY"
 	_, err := g.Sign(context.Background(), Artifact{Path: "/x/SHA256SUMS"}, profile.Profile{Name: "g"})
 	wantCode(t, err, contract.Usage)
+
+	// A revoked key, an expired signature or a non-zero exit fails even with
+	// a VALIDSIG line for the pinned key; a longer fingerprint that merely ends
+	// in a full pin does not match.
+	g.Spec = spec
+	for name, out := range map[string]execx.Result{
+		"revoked key":   {Stdout: []byte(fmt.Sprintf("[GNUPG:] REVKEYSIG X\n[GNUPG:] VALIDSIG %s x\n", fpr))},
+		"expired sig":   {Stdout: []byte(fmt.Sprintf("[GNUPG:] EXPSIG X\n[GNUPG:] VALIDSIG %s x\n", fpr))},
+		"non-zero exit": {Stdout: []byte(fmt.Sprintf("[GNUPG:] VALIDSIG %s x\n", fpr)), ExitCode: 2},
+		"suffix only":   {Stdout: []byte(fmt.Sprintf("[GNUPG:] VALIDSIG %s x\n", "AB"+fpr))},
+	} {
+		f.Handle = func(execx.Cmd) execx.Result { return out }
+		if err := g.Verify(context.Background(), Artifact{Path: "/x/SHA256SUMS", Rel: "SHA256SUMS"}, profile.Profile{}); contract.CodeOf(err) != contract.VerifyFailed {
+			t.Errorf("%s: %v, want verification failed", name, err)
+		}
+	}
+}
+
+func TestPEOversizedCertificateTableIsRefused(t *testing.T) {
+	// A minimal PE32+ whose security directory claims 1 GiB at offset 0x200.
+	b := make([]byte, 0x400)
+	copy(b, "MZ")
+	binary.LittleEndian.PutUint32(b[0x3c:], 0x80)
+	copy(b[0x80:], "PE\x00\x00")
+	binary.LittleEndian.PutUint16(b[0x84:], 0x8664) // machine
+	binary.LittleEndian.PutUint16(b[0x94:], 240)    // SizeOfOptionalHeader
+	opt := 0x98
+	binary.LittleEndian.PutUint16(b[opt:], 0x20b)           // PE32+
+	binary.LittleEndian.PutUint32(b[opt+108:], 16)          // NumberOfRvaAndSizes
+	binary.LittleEndian.PutUint32(b[opt+112+4*8:], 0x200)   // security dir VirtualAddress
+	binary.LittleEndian.PutUint32(b[opt+112+4*8+4:], 1<<30) // and Size
+	path := filepath.Join(t.TempDir(), "big.exe")
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadPESigner(path); err == nil || !strings.Contains(err.Error(), "does not fit") {
+		t.Fatalf("want a size refusal, got %v", err)
+	}
 }
 
 func slicesContains(xs []string, x string) bool {

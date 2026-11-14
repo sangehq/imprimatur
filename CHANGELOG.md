@@ -84,3 +84,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exited 0 having signed nothing.
 - `SHA256SUMS` and `impr-manifest.json` are written by atomic rename, so a
   symlink planted at either path is replaced rather than written through.
+- External tools no longer inherit impr's whole environment. Each sees a base
+  set (PATH, HOME, temp, locale, TLS roots, proxies, Windows system folders) plus
+  the few variables it needs (for example `GNUPGHOME` for gpg, `SSH_AUTH_SOCK`
+  for ssh-keygen), so a secret held in an `env://` variable reaches only the
+  backend that asked for it. cosign's `env://` key is passed to it explicitly.
+- gpg verification fails on a revoked or expired key, an expired, bad or
+  unverifiable signature, or a non-zero exit, even when a `VALIDSIG` line is
+  present, and a full 40- or 64-hex pin must equal the signing fingerprint (a
+  shorter long-key-id pin still matches as a suffix, as before).
+- Reading an Authenticode signature refuses a certificate table larger than
+  the file or 16 MiB, where a crafted PE could make impr allocate up to 4 GiB.

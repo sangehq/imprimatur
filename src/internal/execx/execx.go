@@ -95,6 +95,50 @@ func Check(c Cmd) error {
 	return nil
 }
 
+// baseEnv is what every child sees from impr's own environment: enough to
+// find programs, temp space, the user's home, locale, TLS roots and proxies,
+// and on Windows the system folders. Nothing else is inherited, so a secret
+// held in an env:// variable reaches a tool only when a backend passes it on
+// purpose (Cmd.Env).
+var baseEnv = []string{
+	"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP", "TZ", "LANG", "LC_*",
+	"SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
+	"SystemRoot", "SYSTEMROOT", "windir", "WINDIR", "SystemDrive", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "ProgramData",
+	"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CommonProgramFiles", "PATHEXT", "COMPUTERNAME", "USERNAME", "USERDOMAIN",
+}
+
+// toolEnv is what one tool needs beyond baseEnv, and why.
+var toolEnv = map[string][]string{
+	"gpg":         {"GNUPGHOME", "GPG_TTY"},                          // keyring location, pinentry
+	"ssh-keygen":  {"SSH_AUTH_SOCK"},                                 // agent-held keys
+	"secret-tool": {"DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"},   // the Secret Service bus
+	"cosign":      {"SIGSTORE_*", "TUF_ROOT", "COSIGN_EXPERIMENTAL"}, // keyless endpoints and trust root
+	"xcrun":       {"DEVELOPER_DIR", "SDKROOT"},                      // which Xcode
+	"codesign":    {"DEVELOPER_DIR"},                                 //
+	"signtool":    {},                                                //
+	"security":    {},                                                //
+}
+
+// ChildEnv filters environ down to baseEnv and the tool's own names, then
+// appends extra (which a backend sets on purpose and always wins).
+func ChildEnv(environ []string, tool string, extra []string) []string {
+	allow := append(append([]string{}, baseEnv...), toolEnv[tool]...)
+	out := make([]string, 0, len(allow)+len(extra))
+	for _, kv := range environ {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			continue
+		}
+		for _, a := range allow {
+			if a == k || (strings.HasSuffix(a, "*") && strings.HasPrefix(k, strings.TrimSuffix(a, "*"))) {
+				out = append(out, kv)
+				break
+			}
+		}
+	}
+	return append(out, extra...)
+}
+
 // maxOutput bounds what is kept from one call.
 const maxOutput = 4 << 20
 
@@ -138,7 +182,7 @@ func (o OS) Run(ctx context.Context, c Cmd) (Result, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, c.Args...) //nolint:gosec // G204: an allow-listed tool by absolute path, no shell
 	cmd.Dir = c.Dir
-	cmd.Env = append(os.Environ(), c.Env...)
+	cmd.Env = ChildEnv(os.Environ(), c.Tool, c.Env)
 	cmd.WaitDelay = time.Second
 	if c.Stdin != nil {
 		cmd.Stdin = bytes.NewReader(c.Stdin)

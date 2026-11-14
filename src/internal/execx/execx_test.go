@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -55,5 +56,29 @@ func TestFakeAppliesTheSameAllowList(t *testing.T) {
 	}
 	if _, err := f.Run(context.Background(), Cmd{Tool: "cosign"}); !errors.Is(err, ErrNotFound) {
 		t.Fatal("the fake ran a tool it was not given")
+	}
+}
+
+func TestChildEnvPassesOnlyWhatTheToolNeeds(t *testing.T) {
+	environ := []string{"PATH=/bin", "HOME=/h", "LC_ALL=C", "IMPR_RELEASE_KEY=secret-material", "AWS_SECRET_ACCESS_KEY=x",
+		"GNUPGHOME=/g", "SSH_AUTH_SOCK=/s", "SIGSTORE_REKOR_URL=https://r"}
+	got := strings.Join(ChildEnv(environ, "gpg", []string{"EXTRA=1"}), "\n")
+	for _, want := range []string{"PATH=/bin", "HOME=/h", "LC_ALL=C", "GNUPGHOME=/g", "EXTRA=1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("gpg env lacks %s", want)
+		}
+	}
+	for _, leak := range []string{"IMPR_RELEASE_KEY", "AWS_SECRET_ACCESS_KEY", "SSH_AUTH_SOCK", "SIGSTORE_REKOR_URL"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("gpg env leaks %s", leak)
+		}
+	}
+	if c := strings.Join(ChildEnv(environ, "cosign", nil), "\n"); !strings.Contains(c, "SIGSTORE_REKOR_URL") || strings.Contains(c, "GNUPGHOME") {
+		t.Errorf("cosign env: %s", c)
+	}
+	// The guard inspected every variable it was given (a filter that dropped
+	// everything would pass the leak checks above).
+	if n := len(ChildEnv(environ, "gpg", nil)); n != 4 {
+		t.Errorf("gpg kept %d variables, want 4", n)
 	}
 }

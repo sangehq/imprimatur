@@ -93,7 +93,15 @@ func (c *Cosign) Sign(ctx context.Context, art Artifact, p profile.Profile) (Sig
 			return Signature{}, err
 		}
 		keyArg := c.Spec.KeyRef // cosign reads env://NAME itself
-		if s, _, _ := secrets.Scheme(c.Spec.KeyRef); s != "env" {
+		if s, name, _ := secrets.Scheme(c.Spec.KeyRef); s == "env" {
+			// The child no longer inherits impr's environment, so the one
+			// variable cosign must read is passed on purpose.
+			v, err := c.H.Secrets.Resolve(ctx, c.Spec.KeyRef)
+			if err != nil {
+				return Signature{}, err
+			}
+			env = append(env, name+"="+v)
+		} else {
 			v, err := c.H.Secrets.Resolve(ctx, c.Spec.KeyRef)
 			if err != nil {
 				return Signature{}, err

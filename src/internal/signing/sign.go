@@ -284,7 +284,7 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 
 	if len(m.Artifacts) == 0 && len(m.Outputs) == 0 && len(skipped) == 0 {
 		return Result{}, contract.New(contract.SignFailed, "nothing was signed: no requested platform had files in the build manifest").
-			WithDetails("platforms requested: "+strings.Join(platforms, ", ")).
+			WithDetails("platforms requested: " + strings.Join(platforms, ", ")).
 			WithFix("check --platforms against the build manifest's files")
 	}
 	m.SignedAt = s.Host.Now().UTC()

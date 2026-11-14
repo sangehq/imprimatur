@@ -91,7 +91,22 @@ func (g *GPG) Verify(ctx context.Context, art Artifact, _ profile.Profile) error
 	if err != nil {
 		return contract.Wrap(contract.Unavailable, err, "gpg could not run")
 	}
-	for _, line := range strings.Split(string(r.Stdout), "\n") {
+	lines := strings.Split(string(r.Stdout), "\n")
+	// A revoked or expired key, an expired signature, or any bad or
+	// unverifiable signature fails, whatever else gpg printed.
+	for _, line := range lines {
+		f := strings.Fields(line)
+		if len(f) >= 2 && f[0] == "[GNUPG:]" {
+			switch f[1] {
+			case "REVKEYSIG", "EXPKEYSIG", "EXPSIG", "BADSIG", "ERRSIG", "KEYREVOKED", "KEYEXPIRED":
+				return contract.New(contract.VerifyFailed, "%s.sig: gpg reports %s", art.Rel, f[1])
+			}
+		}
+	}
+	if r.ExitCode != 0 {
+		return contract.New(contract.VerifyFailed, "%s.sig did not verify (gpg exit %d)", art.Rel, r.ExitCode).WithDetails(firstLine(r.Output()))
+	}
+	for _, line := range lines {
 		f := strings.Fields(line)
 		if len(f) < 3 || f[0] != "[GNUPG:]" || f[1] != "VALIDSIG" {
 			continue
@@ -101,7 +116,7 @@ func (g *GPG) Verify(ctx context.Context, art Artifact, _ profile.Profile) error
 			cands = append(cands, f[11]) // the primary key's fingerprint
 		}
 		for _, c := range cands {
-			if strings.HasSuffix(strings.ToUpper(c), g.fpr()) {
+			if gpgPinMatches(c, g.fpr()) {
 				return nil
 			}
 		}
@@ -403,3 +418,15 @@ func (g *GPG) Preflight(_ context.Context, p profile.Profile) error {
 
 // Preflight checks the public key is the pinned one.
 func (m *Minisign) Preflight(context.Context, profile.Profile) error { return m.checkPin() }
+
+// gpgPinMatches compares a VALIDSIG fingerprint with the pin. A full
+// fingerprint (40 or 64 hex) must be equal. A shorter pin (a 16-hex long key
+// id, which older profiles carry) still matches as a suffix, as before; doctor
+// and validate ask for the full fingerprint (audit N-B12).
+func gpgPinMatches(got, pin string) bool {
+	got, pin = strings.ToUpper(got), strings.ToUpper(pin)
+	if len(pin) >= 40 {
+		return got == pin
+	}
+	return pin != "" && strings.HasSuffix(got, pin)
+}
