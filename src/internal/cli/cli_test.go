@@ -709,3 +709,48 @@ func TestConfigProfiles(t *testing.T) {
 		t.Fatalf("config changes were not recorded: %s", ev)
 	}
 }
+
+// Audit N-B19 and N-B20: --json and --help are read only as options, and
+// help is per command.
+func TestArgvScanningAndPerCommandHelp(t *testing.T) {
+	for args, want := range map[string][2]bool{
+		"sign --json":                   {true, false},
+		"profile add p --notes --json":  {false, false}, // --json is the notes text
+		"verify --profile p -- --json":  {false, false}, // a file named --json
+		"profile --help":                {false, true},
+		"cert list --strict --json":     {true, false},
+		"profile edit p --notes --help": {false, false},
+	} {
+		j, h := scanGlobal(strings.Fields(args))
+		if j != want[0] || h != want[1] {
+			t.Errorf("%q: json %v help %v, want %v", args, j, h, want)
+		}
+	}
+	h := newHarness(t)
+	for _, args := range [][]string{{"profile", "--help"}, {"help", "profile"}} {
+		code, out, e := h.impr(args...)
+		if code != 0 || out != "" || !strings.Contains(e, "impr profile list") || strings.Contains(e, "impr sign") {
+			t.Fatalf("%v: %d %q %q", args, code, out, e)
+		}
+	}
+	h.exits(1, "profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal", "--set", "managed=true")
+}
+
+// Audit N-B18: a failed automatic import of the PowerShell settings is
+// recorded once, not retried (and re-warned) on every command.
+func TestFailedLegacyImportIsNotRetried(t *testing.T) {
+	h := newHarness(t)
+	legacy := t.TempDir()
+	if err := os.WriteFile(filepath.Join(legacy, "imprimatur.settings.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.env["IMPR_LEGACY_CONFIG"] = legacy
+	_, _, first := h.impr("profile", "list", "--json")
+	_, _, second := h.impr("profile", "list", "--json")
+	if !strings.Contains(first, "could not import") {
+		t.Skipf("the malformed settings did not fail the import here: %q", first)
+	}
+	if strings.Contains(second, "could not import") {
+		t.Fatalf("the import was retried: %q", second)
+	}
+}

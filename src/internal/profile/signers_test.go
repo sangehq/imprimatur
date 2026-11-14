@@ -122,3 +122,43 @@ func TestMultiSignerDigestGolden(t *testing.T) {
 		t.Fatalf("digest %s", got)
 	}
 }
+
+// Audit N-B7, N-B8, N-B15: validation agrees with what signing can do.
+func TestValidationMatchesSigning(t *testing.T) {
+	base := func() Profile {
+		return Profile{Name: "p", Scope: ScopeCompany, Owner: "acme", Purpose: []Purpose{PurposeRelease},
+			AllowedRepos: []string{"github.com/acme/**"},
+			Platforms:    Platforms{Windows: &WindowsSpec{Kind: "authenticode", Backend: BackendCertStore, Thumbprint: thumbA}}}
+	}
+	if ps := base().Validate(); len(ps) > 0 {
+		t.Fatalf("baseline: %v", ps)
+	}
+	for _, r := range []string{"github.com/acme/tool", "gitlab.example.com/team/*", "github.com/acme/tool-*"} {
+		p := base()
+		p.AllowedRepos = []string{r}
+		if ps := p.Validate(); len(ps) > 0 {
+			t.Errorf("%s refused: %v", r, ps)
+		}
+	}
+	for name, mutate := range map[string]func(*Profile){
+		"cert-store pinned by subject only": func(p *Profile) {
+			p.Platforms.Windows.Thumbprint, p.Platforms.Windows.Subject = "", "CN=Acme"
+		},
+		"certum signer by subject only": func(p *Profile) {
+			p.Platforms.Windows = &WindowsSpec{Kind: "authenticode", Signers: []WindowsSigner{{ID: "c", Backend: BackendCertum, Subject: "CN=Acme"}}}
+		},
+		"every repository on a host": func(p *Profile) { p.AllowedRepos = []string{"github.com"} },
+		"any host":                   func(p *Profile) { p.AllowedRepos = []string{"*/**"} },
+		"any owner":                  func(p *Profile) { p.AllowedRepos = []string{"github.com/*/tool"} },
+		"leading double star":        func(p *Profile) { p.AllowedRepos = []string{"**/tool"} },
+		"macOS certRef nothing reads": func(p *Profile) {
+			p.Platforms.MacOS = &MacOSSpec{Kind: "developer-id", TeamID: "ABCDE12345", Identity: "Developer ID Application: Acme (ABCDE12345)", CertRef: "env://P12"}
+		},
+	} {
+		p := base()
+		mutate(&p)
+		if len(p.Validate()) == 0 {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}

@@ -255,6 +255,9 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 		if err != nil {
 			return Result{}, err
 		}
+		if err := unsupportedFormat(a.Path, k, platforms); err != nil {
+			return Result{}, err
+		}
 		files[string(k)] = append(files[string(k)], backend.Artifact{Path: path, Rel: a.Path})
 	}
 
@@ -464,4 +467,22 @@ func (s *Service) event(short, subject string, data any) (events.Event, error) {
 		env = s.Events.Env
 	}
 	return env.New(short, subject, data)
+}
+
+// unsupportedFormat refuses, before anything is signed, the formats impr
+// cannot sign and check yet, instead of signing them in place and failing the
+// check afterwards: an .msi (the signer check reads PE files only, audit
+// N-B3) and a .pkg (it needs productsign and a Developer ID Installer
+// identity, not codesign, N-B4).
+func unsupportedFormat(rel string, k artifact.Kind, platforms []string) error {
+	ext := strings.ToLower(filepath.Ext(rel))
+	switch {
+	case k == artifact.KindWindows && ext == ".msi" && slices.Contains(platforms, profile.Windows):
+		return contract.New(contract.SignFailed, "%s is an .msi, which impr cannot sign and check yet; nothing was signed", rel).
+			WithFix("sign the .msi separately, or leave windows out of --platforms for this manifest")
+	case k == artifact.KindMacOS && ext == ".pkg" && slices.Contains(platforms, profile.MacOS):
+		return contract.New(contract.SignFailed, "%s is an installer package, which needs productsign and a Developer ID Installer identity; impr does not sign .pkg yet, and nothing was signed", rel).
+			WithFix("sign the .pkg with productsign, or leave macos out of --platforms for this manifest")
+	}
+	return nil
 }

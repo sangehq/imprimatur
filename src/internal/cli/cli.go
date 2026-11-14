@@ -221,6 +221,10 @@ func (a *App) migrateOnce(s profile.Store, d paths.Dirs) {
 	rep, err := profile.ImportLegacy(s, src, env)
 	if err != nil {
 		a.say("profiles  could not import the PowerShell settings from %s: %v (run impr profile import-legacy)", src, err)
+		// Write the index anyway, naming the source, so the import is not
+		// retried, and its warning not repeated, on every command (audit
+		// N-B18). impr profile import-legacy still runs it on request.
+		_ = s.SaveIndex(profile.Index{MigratedFrom: src + " (failed: run impr profile import-legacy)", MigratedAt: a.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 	a.say("profiles  imported the PowerShell line's settings from %s: %s", src, strings.Join(rep.Imported, ", "))
@@ -288,15 +292,18 @@ func (a *App) bus() *events.Bus {
 
 // Run runs one command line and returns the exit code.
 func (a *App) Run(ctx context.Context, args []string) int {
-	asJSON := false
-	for _, x := range args {
-		asJSON = asJSON || x == "--json"
-	}
+	asJSON, wantHelp := scanGlobal(args)
 	if len(args) == 0 {
 		a.usage()
 		return int(contract.Usage)
 	}
 	cmd, rest := args[0], args[1:]
+	if cmd == "help" && len(rest) > 0 {
+		return a.helpFor(rest[0])
+	}
+	if wantHelp && cmd != "-h" && cmd != "--help" {
+		return a.helpFor(cmd)
+	}
 	switch cmd {
 	case "-h", "--help", "help":
 		a.usage()
@@ -351,7 +358,7 @@ Usage:
   impr profile list|show|add|edit|rm|import|export|validate|default|capabilities|import-legacy ... [--json]
   impr cert list [--json]
   impr sign --manifest FILE --commit SHA --tree ID --profile NAME --purpose release|test|internal
-            [--platforms windows,macos,checksums,containers] [--root DIR] [--repo URL] [--json] [--strict]
+            [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules --request FILE [--json] [--strict] [--out-dir DIR]
   impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
@@ -373,4 +380,58 @@ func needNoArgs(p parsed, what string) error {
 		return contract.New(contract.Usage, "%s takes no arguments (got %s)", what, strings.Join(p.pos, " "))
 	}
 	return nil
+}
+
+// boolOptions are the options that take no value, across every command; any
+// other --option consumes the next word as its value.
+var boolOptions = map[string]bool{"--json": true, "--strict": true, "--force": true, "--requires-approval": true,
+	"--check-config": true, "--none": true, "--all": true, "--help": true, "-h": true}
+
+// scanGlobal finds --json and --help before "--", skipping a word that is
+// the value of the option before it, so `--notes --json` or a file named
+// --json after "--" does not switch modes (audit N-B19).
+func scanGlobal(args []string) (asJSON, help bool) {
+	for i := 0; i < len(args); i++ {
+		x := args[i]
+		if x == "--" {
+			break
+		}
+		if i > 0 {
+			prev := args[i-1]
+			if strings.HasPrefix(prev, "--") && !strings.Contains(prev, "=") && !boolOptions[prev] {
+				continue // x is prev's value
+			}
+		}
+		switch x {
+		case "--json":
+			asJSON = true
+		case "--help", "-h":
+			help = true
+		}
+	}
+	return asJSON, help
+}
+
+// helpFor prints the usage lines of one command (audit N-B20), or the whole
+// usage for an unknown one.
+func (a *App) helpFor(cmd string) int {
+	var out []string
+	keep := false
+	for _, line := range strings.Split(usageText, "\n") {
+		switch {
+		case strings.HasPrefix(line, "  impr "+cmd+" ") || line == "  impr "+cmd:
+			keep = true
+			out = append(out, line)
+		case keep && strings.HasPrefix(line, "            "):
+			out = append(out, line) // a continuation of the line above
+		default:
+			keep = false
+		}
+	}
+	if len(out) == 0 {
+		a.usage()
+		return int(contract.Usage)
+	}
+	_, _ = fmt.Fprintln(a.Stderr, "Usage:\n"+strings.Join(out, "\n")+"\n\nExit codes: 0 ok, 1 usage, 2 skipped, 3 signing failed, 4 verification failed, 5 unavailable.")
+	return 0
 }

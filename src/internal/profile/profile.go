@@ -326,8 +326,8 @@ func (p Profile) Validate() Problems {
 		ps.add("profile.allowedRepos", "a release profile lists the repositories it may sign (allowedRepos)")
 	}
 	for _, r := range p.AllowedRepos {
-		if t := strings.TrimSpace(r); t == "" || t == "**" || t == "*" {
-			ps.add("profile.allowedRepos", "%q would allow every repository", r)
+		if !repoPatternNarrow(r) {
+			ps.add("profile.allowedRepos", "%q is too broad: name the host and owner literally (host/owner/**), as in github.com/acme/**", r)
 		}
 	}
 	if len(p.Platforms.Names()) == 0 {
@@ -361,6 +361,11 @@ func (p Profile) Validate() Problems {
 		if w.Thumbprint == "" && w.Subject == "" {
 			ps.add("platforms.windows.pin", "pin the certificate by thumbprint or exact subject")
 		}
+		if (w.Backend == BackendCertStore || w.Backend == BackendCertum) && w.Thumbprint == "" {
+			// Signing refuses these without a thumbprint (signtool /n would take
+			// any matching certificate), so validation says so too (audit N-B7).
+			ps.add("platforms.windows.thumbprint", "a %s certificate is pinned by its SHA-1 thumbprint; a subject alone is ambiguous", w.Backend)
+		}
 		if w.Thumbprint != "" && !thumbprintRe.MatchString(w.Thumbprint) {
 			ps.add("platforms.windows.thumbprint", "%q is not a 40-hex SHA-1 thumbprint", w.Thumbprint)
 		}
@@ -376,6 +381,11 @@ func (p Profile) Validate() Problems {
 			ps.add("platforms.macos.identity", "pin the exact signing identity, which names the team ID in parentheses")
 		}
 		ref("platforms.macos.certRef", m.CertRef, false)
+		if m.CertRef != "" {
+			// No backend reads it: the identity must be in a keychain. Saying so
+			// beats silently ignoring it (audit N-B15).
+			ps.add("platforms.macos.certRef", "is not used: impr signs with an identity already in a keychain; import the .p12 there and remove certRef")
+		}
 		if m.Notary != nil {
 			ref("platforms.macos.notary.apiKeyRef", m.Notary.APIKeyRef, true)
 		}

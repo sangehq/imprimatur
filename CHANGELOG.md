@@ -195,3 +195,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shorter long-key-id pin still matches as a suffix, as before).
 - Reading an Authenticode signature refuses a certificate table larger than
   the file or 16 MiB, where a crafted PE could make impr allocate up to 4 GiB.
+- Validation now agrees with signing:
+  - A cert-store or Certum certificate must be pinned by thumbprint. Signing
+    already refused a subject-only pin, but validation passed it.
+  - An `allowedRepos` pattern must name its host and owner literally.
+    `github.com` (every repository on the host), `*/**` and
+    `github.com/*/tool` are refused.
+  - A macOS `certRef` is reported as unused rather than silently ignored.
+    The PowerShell import no longer maps `MACOS_SIGN_P12` to it, and tells you
+    to import the `.p12` into a keychain instead.
+- An `.msi` (which impr cannot check yet) or a `.pkg` (which needs
+  productsign) in a build manifest stops the run before anything is signed,
+  instead of being signed in place and failing afterwards.
+- Gatekeeper is asked `-t open` for a `.dmg` and `-t install` for a `.pkg`,
+  where `-t exec` rejected correctly notarised images.
+- Notarisation stages each file in its own folder, so two files with the same
+  name in different directories are both submitted.
+- A relative cosign `publicKey` resolves against the signing root, as
+  `entitlements` does, not the working directory.
+- `cert list` and the pre-sign check no longer write a PFX, minisign or SSH
+  private key to a temporary file just to report it present. An SSH key's
+  fingerprint is read from the unencrypted OpenSSH header.
+- A test certificate's signature may fail verification only on the exact
+  untrusted-root messages of signtool and OpenSSL. A digest mismatch, expiry,
+  revocation or invalid signature always fails.
+- A tool whose output passes the 4 MiB cap is an error, not a silently
+  truncated answer.
+- `--json` and `--help` are read only as options: not as another option's
+  value, and not after `--`. `--help` works on every command, and
+  `impr help <command>` prints that command's usage.
+- `--set managed=…` is refused: managed profiles come from an organisation.
+- A failed automatic import of the PowerShell settings is recorded once, not
+  retried and re-warned on every command.
+- Docs:
+  - `docs/release.md` says provenance is attested, now that the repository is
+    public.
+  - The doctor and companion examples list every capability.
+  - The usage text lists `attestations`.
+
+### Changed (CI)
+
+- CI runs the test suite on macOS and Windows weekly and on request. These
+  legs never run on pull requests.

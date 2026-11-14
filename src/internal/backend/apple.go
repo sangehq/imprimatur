@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -149,7 +150,7 @@ func (a *Apple) check(ctx context.Context, art Artifact, gatekeeper bool) error 
 		return contract.New(contract.VerifyFailed, "%s is not signed by the pinned identity %q", art.Rel, a.Spec.Identity)
 	}
 	if gatekeeper {
-		g, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "spctl", Args: []string{"-a", "-t", "exec", "-vv", art.Path}})
+		g, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "spctl", Args: spctlArgs(art.Path)})
 		if err != nil {
 			return contract.Wrap(contract.Unavailable, err, "spctl could not run")
 		}
@@ -193,12 +194,18 @@ func (a *Apple) Notarize(ctx context.Context, files []Artifact) (string, error) 
 	if err := os.Mkdir(stage, 0o700); err != nil {
 		return "", err
 	}
-	for _, f := range files {
+	for i, f := range files {
 		b, err := os.ReadFile(f.Path)
 		if err != nil {
 			return "", err
 		}
-		if err := os.WriteFile(filepath.Join(stage, filepath.Base(f.Path)), b, 0o600); err != nil { //nolint:gosec // G703: the base name of a manifest file, inside a fresh temporary directory
+		// One folder per file, so two files with the same base name in
+		// different directories are both submitted (audit N-B5).
+		dir := filepath.Join(stage, fmt.Sprintf("%03d", i))
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(dir, filepath.Base(f.Path)), b, 0o600); err != nil { //nolint:gosec // G703: the base name of a manifest file, inside a fresh temporary directory
 			return "", err
 		}
 	}
@@ -247,4 +254,18 @@ func (a *Apple) literalOrRef(ctx context.Context, v string) (string, error) {
 		return a.H.Secrets.Resolve(ctx, v)
 	}
 	return v, nil
+}
+
+// spctlArgs asks Gatekeeper the question that fits the format: a disk image
+// is opened (with its primary signature), an installer package is installed,
+// and anything else is executed. Asking "exec" of a .dmg rejects a correctly
+// notarised image (audit N-B4).
+func spctlArgs(path string) []string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".dmg":
+		return []string{"-a", "-t", "open", "--context", "context:primary-signature", "-vv", path}
+	case ".pkg":
+		return []string{"-a", "-t", "install", "-vv", path}
+	}
+	return []string{"-a", "-t", "exec", "-vv", path}
 }

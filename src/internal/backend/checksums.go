@@ -1,10 +1,12 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -148,10 +150,10 @@ func (m *Minisign) Capability(h Host) Capability {
 // reference resolves.
 func (m *Minisign) Certificate(ctx context.Context, p profile.Profile) CertEntry {
 	e := CertEntry{Profile: p.Name, Platform: profile.Checksums, Fingerprint: strings.ToUpper(m.Spec.Fingerprint), Source: "file", NotAfter: m.Spec.NotAfter}
+	// Present when the reference resolves; the key is never written to disk
+	// just to say so (audit N-B10).
 	if v, err := m.H.Secrets.Resolve(ctx, m.Spec.KeyRef); err == nil {
-		f, err := secrets.AsFile(v, false)
-		e.Present = err == nil
-		f.Close()
+		e.Present = strings.TrimSpace(v) != ""
 	}
 	return e
 }
@@ -284,12 +286,15 @@ func (s *SSH) Certificate(ctx context.Context, p profile.Profile) CertEntry {
 	if err != nil {
 		return e
 	}
-	f, err := secrets.AsFile(v, false)
-	if err != nil {
-		return e
-	}
-	defer f.Close()
-	if fp, err := s.keyFingerprint(ctx, f.Path); err == nil {
+	// A key file referenced by path is read where it is. Key text is not
+	// written to a temporary file just to report presence (audit N-B10): the
+	// public key sits unencrypted in the OpenSSH header, so its fingerprint
+	// is computed here without touching the secret part.
+	if fileExists(v) {
+		if fp, err := s.keyFingerprint(ctx, v); err == nil {
+			e.Present = fp == s.Spec.Fingerprint
+		}
+	} else if fp, err := OpenSSHPublicFingerprint(v); err == nil {
 		e.Present = fp == s.Spec.Fingerprint
 	}
 	return e
@@ -429,4 +434,47 @@ func gpgPinMatches(got, pin string) bool {
 		return got == pin
 	}
 	return pin != "" && strings.HasSuffix(got, pin)
+}
+
+// OpenSSHPublicFingerprint reads the public key from an "openssh-key-v1"
+// private key's unencrypted header and returns its SHA256 fingerprint in
+// ssh-keygen's form. The private part is never decoded.
+func OpenSSHPublicFingerprint(text string) (string, error) {
+	block, _ := pem.Decode([]byte(text))
+	if block == nil || block.Type != "OPENSSH PRIVATE KEY" {
+		return "", fmt.Errorf("not an OpenSSH private key")
+	}
+	b := block.Bytes
+	magic := []byte("openssh-key-v1\x00")
+	if !bytes.HasPrefix(b, magic) {
+		return "", fmt.Errorf("not an openssh-key-v1 key")
+	}
+	b = b[len(magic):]
+	next := func() ([]byte, error) {
+		if len(b) < 4 {
+			return nil, fmt.Errorf("truncated key")
+		}
+		n := binary.BigEndian.Uint32(b)
+		if uint64(n) > uint64(len(b)-4) { //nolint:gosec // G115: len(b) >= 4 was checked just above
+			return nil, fmt.Errorf("truncated key")
+		}
+		v := b[4 : 4+n]
+		b = b[4+n:]
+		return v, nil
+	}
+	for i := 0; i < 3; i++ { // cipher name, kdf name, kdf options
+		if _, err := next(); err != nil {
+			return "", err
+		}
+	}
+	if len(b) < 4 || binary.BigEndian.Uint32(b) != 1 {
+		return "", fmt.Errorf("expected exactly one key")
+	}
+	b = b[4:]
+	pub, err := next()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(pub)
+	return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]), nil
 }

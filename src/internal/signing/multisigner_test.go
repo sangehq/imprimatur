@@ -147,3 +147,27 @@ func TestAFileNoSignerCoversSignsNothing(t *testing.T) {
 		t.Fatalf("files were signed before the refusal: %v", signed)
 	}
 }
+
+// Audit N-B3: an .msi in the manifest stops the run before anything is
+// signed, instead of being signed in place and failing the PE check after.
+func TestMSIIsRefusedBeforeSigning(t *testing.T) {
+	svc, signed, root, manifest := setupMulti(t, map[string]uint16{"build/windows/tool_amd64.exe": 0x8664})
+	msi := filepath.Join(root, "build", "windows", "setup.msi")
+	if err := os.WriteFile(msi, append([]byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}, "x"...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(append([]byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}, "x"...))
+	var m map[string]any
+	b, _ := os.ReadFile(manifest)
+	_ = json.Unmarshal(b, &m)
+	m["artifacts"] = append(m["artifacts"].([]any), map[string]any{"path": "build/windows/setup.msi", "sha256": hex.EncodeToString(sum[:])})
+	b, _ = json.Marshal(m)
+	if err := os.WriteFile(manifest, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.Sign(context.Background(), SignOptions{Root: root, Manifest: manifest, Commit: strings.Repeat("1", 40),
+		Tree: strings.Repeat("2", 40), Profile: "acme", Purpose: "internal", Platforms: []string{"windows"}, Strict: true})
+	if contract.CodeOf(err) != contract.SignFailed || !strings.Contains(err.Error(), "setup.msi") || len(signed) != 0 {
+		t.Fatalf("err %v, signed %v", err, signed)
+	}
+}

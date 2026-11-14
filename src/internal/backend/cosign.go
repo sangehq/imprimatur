@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
@@ -67,7 +68,7 @@ func (c *Cosign) checkKeyPin() error {
 		return contract.New(contract.SignFailed, "key-mode cosign needs platforms.containers.publicKey, so the pinned key can be checked").
 			WithFix("cosign public-key --key <key> > cosign.pub, then --set platforms.containers.publicKey=<path to cosign.pub>")
 	}
-	b, err := os.ReadFile(c.Spec.PublicKey)
+	b, err := os.ReadFile(c.publicKey())
 	if err != nil {
 		return contract.Wrap(contract.Unavailable, err, "the cosign public key %s cannot be read", c.Spec.PublicKey)
 	}
@@ -145,7 +146,7 @@ func (c *Cosign) Verify(ctx context.Context, art Artifact, _ profile.Profile) er
 		if err := c.checkKeyPin(); err != nil {
 			return contract.New(contract.VerifyFailed, "%s", err.Error())
 		}
-		args = append(args, "--key", c.Spec.PublicKey)
+		args = append(args, "--key", c.publicKey())
 	} else {
 		args = append(args, "--certificate-identity", c.Spec.Identity, "--certificate-oidc-issuer", c.Spec.Issuer)
 	}
@@ -165,4 +166,14 @@ func (c *Cosign) Preflight(context.Context, profile.Profile) error {
 		return c.checkKeyPin()
 	}
 	return nil
+}
+
+// publicKey resolves the profile's publicKey path against the signing root,
+// as entitlements are, so a relative path means the same file whatever the
+// working directory (audit N-B16).
+func (c *Cosign) publicKey() string {
+	if c.Spec.PublicKey == "" || filepath.IsAbs(c.Spec.PublicKey) || c.H.Root == "" {
+		return c.Spec.PublicKey
+	}
+	return filepath.Join(c.H.Root, filepath.FromSlash(c.Spec.PublicKey))
 }

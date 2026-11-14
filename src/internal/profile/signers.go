@@ -45,6 +45,9 @@ func (w WindowsSpec) validateSigners(ref func(field, v string, required bool)) P
 		if sg.Thumbprint == "" && sg.Subject == "" {
 			ps.add(at+".pin", "pin the certificate by thumbprint or exact subject")
 		}
+		if (sg.Backend == BackendCertStore || sg.Backend == BackendCertum) && sg.Thumbprint == "" {
+			ps.add(at+".thumbprint", "a %s certificate is pinned by its SHA-1 thumbprint; a subject alone is ambiguous", sg.Backend)
+		}
 		if sg.Thumbprint != "" && !thumbprintRe.MatchString(sg.Thumbprint) {
 			ps.add(at+".thumbprint", "%q is not a 40-hex SHA-1 thumbprint", sg.Thumbprint)
 		}

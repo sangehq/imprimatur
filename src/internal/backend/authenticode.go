@@ -78,10 +78,10 @@ func (a *Authenticode) Certificate(ctx context.Context, p profile.Profile) CertE
 		e.Present = fileExists(a.Spec.DlibPath) && fileExists(a.Spec.MetadataPath)
 		e.Source = "declared"
 	case profile.BackendPFX:
+		// Present when the reference resolves; the .pfx is not written to a
+		// temporary file just to say so (audit N-B10).
 		if v, err := a.H.Secrets.Resolve(ctx, a.Spec.CertRef); err == nil {
-			f, ferr := secrets.AsFile(v, true)
-			e.Present = ferr == nil
-			f.Close()
+			e.Present = strings.TrimSpace(v) != ""
 		}
 		e.Source = "file"
 	default:
@@ -274,7 +274,7 @@ func (a *Authenticode) check(ctx context.Context, art Artifact, p profile.Profil
 	}
 	if r.ExitCode != 0 {
 		out := r.Output()
-		untrustedRoot := !strings.Contains(out, "MISMATCH") && regexp.MustCompile(`(?i)not trusted|untrusted|self[- ]signed|unable to get local issuer`).MatchString(out)
+		untrustedRoot := untrustedRootOnly(out)
 		if !p.HasPurpose(profile.PurposeTest) || !untrustedRoot {
 			return "", contract.New(contract.VerifyFailed, "the signature on %s did not verify", art.Rel).WithDetails(firstLine(out))
 		}
@@ -322,4 +322,32 @@ func (a *Authenticode) Preflight(ctx context.Context, _ profile.Profile) error {
 	}
 	_, err := a.signArgs()
 	return err
+}
+
+// untrustedRootMessages are the exact reports of a chain that ends in a root
+// this host does not trust, which is all a test certificate is allowed to
+// fail on. Anything else in a failing verify stays a failure (audit N-B13).
+var untrustedRootMessages = []string{
+	"terminated in a root certificate which is not trusted by the trust provider", // signtool
+	"self-signed certificate in certificate chain",                                // osslsigncode / OpenSSL
+	"self signed certificate in certificate chain",
+	"unable to get local issuer certificate",
+}
+
+// untrustedRootOnly reports whether a failing verify's output is an
+// untrusted root and nothing worse: no digest mismatch, no bad signature, no
+// expiry or revocation.
+func untrustedRootOnly(out string) bool {
+	low := strings.ToLower(out)
+	for _, bad := range []string{"mismatch", "invalid", "revoked", "expired", "bad signature", "not signed", "no signature"} {
+		if strings.Contains(low, bad) {
+			return false
+		}
+	}
+	for _, m := range untrustedRootMessages {
+		if strings.Contains(low, m) {
+			return true
+		}
+	}
+	return false
 }

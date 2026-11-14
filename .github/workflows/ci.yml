@@ -65,3 +65,25 @@ jobs:
         run: make test
       - name: build the host binary
         run: make build
+
+  # Windows and macOS run the code paths Linux only reaches through fakes
+  # (paths, the PE and Mach-O checks, the real codesign test). Weekly and on
+  # request, never on every pull request.
+  test-os:
+    name: test (${{ matrix.os }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+      - name: go test
+        run: go -C src test -count=1 ./...

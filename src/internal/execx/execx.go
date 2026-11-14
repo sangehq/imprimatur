@@ -195,6 +195,11 @@ func (o OS) Run(ctx context.Context, c Cmd) (Result, error) {
 	if ctx.Err() == context.DeadlineExceeded {
 		return res, fmt.Errorf("%s timed out after %s", c.Tool, d)
 	}
+	if stdout.truncated || stderr.truncated {
+		// A cut-off answer (notarytool's JSON, a gpg status stream) must not
+		// be read as a whole one (audit N-B24).
+		return res, fmt.Errorf("%s printed more than %d bytes; its output was cut off, so it is not trusted", c.Tool, maxOutput)
+	}
 	if err != nil {
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -208,7 +213,8 @@ func (o OS) Run(ctx context.Context, c Cmd) (Result, error) {
 
 type limited struct {
 	bytes.Buffer
-	max int
+	max       int
+	truncated bool
 }
 
 func (b *limited) Write(p []byte) (int, error) {
@@ -216,6 +222,7 @@ func (b *limited) Write(p []byte) (int, error) {
 		if room > 0 {
 			b.Buffer.Write(p[:room])
 		}
+		b.truncated = true
 		return len(p), nil
 	}
 	return b.Buffer.Write(p)

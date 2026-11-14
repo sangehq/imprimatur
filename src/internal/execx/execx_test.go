@@ -82,3 +82,18 @@ func TestChildEnvPassesOnlyWhatTheToolNeeds(t *testing.T) {
 		t.Errorf("gpg kept %d variables, want 4", n)
 	}
 }
+
+// Audit N-B24: output past the cap marks the buffer truncated, which Run
+// turns into an error instead of handing back a cut-off answer.
+func TestLimitedMarksTruncation(t *testing.T) {
+	var b limited
+	b.max = 8
+	_, _ = b.Write([]byte("12345"))
+	if b.truncated {
+		t.Fatal("truncated too early")
+	}
+	_, _ = b.Write([]byte("67890"))
+	if !b.truncated || b.Len() != 8 {
+		t.Fatalf("truncated %v len %d", b.truncated, b.Len())
+	}
+}

@@ -489,3 +489,108 @@ func TestCosignReal(t *testing.T) {
 	realTool(t, "cosign")
 	t.Skip("real cosign: a key-mode run uploads to the public transparency log; not run from unit tests")
 }
+
+// Audit N-B5: two files with the same base name in different directories
+// are both staged for notarisation, not one over the other.
+func TestNotarizeStagesSameNamedFilesApart(t *testing.T) {
+	root := t.TempDir()
+	var arts []Artifact
+	for _, d := range []string{"amd64", "arm64"} {
+		p := filepath.Join(root, d, "tool")
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte{0xcf, 0xfa, 0xed, 0xfe, d[0], d[1]}, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		arts = append(arts, Artifact{Path: p, Rel: d + "/tool"})
+	}
+	staged := 0
+	f := execx.NewFake("ditto", "xcrun")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Tool == "ditto" {
+			_ = filepath.WalkDir(c.Args[3], func(_ string, de os.DirEntry, _ error) error {
+				if de != nil && de.Type().IsRegular() {
+					staged++
+				}
+				return nil
+			})
+		}
+		if c.Tool == "xcrun" {
+			return execx.Result{Stdout: []byte(`{"id":"sub-1","status":"Accepted"}`)}
+		}
+		return execx.Result{}
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte(randHex(t, 16))})
+	a := &Apple{H: fakeHost("darwin", f, map[string]string{"IMPR_NOTARY_KEY": string(keyPEM), "IMPR_NOTARY_KEY_ID": randHex(t, 5), "IMPR_NOTARY_ISSUER": randHex(t, 8)}), Spec: macSpec()}
+	if _, err := a.Notarize(context.Background(), arts); err != nil {
+		t.Fatal(err)
+	}
+	if staged != 2 {
+		t.Fatalf("staged %d files, want 2", staged)
+	}
+}
+
+// Audit N-B4: Gatekeeper is asked the question that fits each format.
+func TestSpctlArgsPerFormat(t *testing.T) {
+	for path, want := range map[string]string{
+		"/x/tool": "-a -t exec -vv /x/tool", "/x/App.dmg": "-a -t open --context context:primary-signature -vv /x/App.dmg",
+		"/x/Setup.PKG": "-a -t install -vv /x/Setup.PKG",
+	} {
+		if got := strings.Join(spctlArgs(path), " "); got != want {
+			t.Errorf("%s: %s", path, got)
+		}
+	}
+}
+
+// Audit N-B16: a relative cosign public key resolves against the signing root.
+func TestCosignPublicKeyIsRootRelative(t *testing.T) {
+	c := &Cosign{H: Host{Root: "/builds/tool"}, Spec: profile.ContainerSpec{PublicKey: "keys/cosign.pub"}}
+	if got := c.publicKey(); got != filepath.Join("/builds/tool", "keys", "cosign.pub") {
+		t.Fatalf("publicKey %s", got)
+	}
+	c.Spec.PublicKey = "/etc/cosign.pub"
+	if c.publicKey() != "/etc/cosign.pub" {
+		t.Fatal("an absolute path changed")
+	}
+}
+
+// Audit N-B10: an SSH key's fingerprint for `cert list` is read from the
+// OpenSSH header in Go and equals ssh-keygen's, so the key need not be
+// written anywhere to report it present.
+func TestOpenSSHPublicFingerprintMatchesSSHKeygen(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("real ssh-keygen: not installed")
+	}
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	out, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	want := strings.Fields(string(out))[1]
+	text, _ := os.ReadFile(key)
+	got, err := OpenSSHPublicFingerprint(string(text))
+	if err != nil || got != want {
+		t.Fatalf("fingerprint %s %v, ssh-keygen %s", got, err, want)
+	}
+	if _, err := OpenSSHPublicFingerprint("-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n"); err == nil {
+		t.Fatal("a truncated key was read")
+	}
+}
+
+// Audit N-B13: a test certificate may fail verification only on an
+// untrusted root, never on a digest mismatch, expiry or revocation.
+func TestUntrustedRootOnly(t *testing.T) {
+	for out, want := range map[string]bool{
+		"SignTool Error: A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider.": true,
+		"Signature verification: failed\nself-signed certificate in certificate chain":                                                    true,
+		"Message digest MISMATCH; self-signed certificate in certificate chain":                                                           false,
+		"the certificate has expired; unable to get local issuer certificate":                                                             false,
+		"SignTool Error: The signature is invalid.":                                                                                       false,
+		"untrusted": false,
+	} {
+		if got := untrustedRootOnly(out); got != want {
+			t.Errorf("%q: %v, want %v", out, got, want)
+		}
+	}
+}
