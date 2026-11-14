@@ -297,9 +297,9 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		a.usage()
 		return int(contract.Usage)
 	}
-	cmd, rest := args[0], args[1:]
+	cmd, rest := resolveAlias(args[0]), args[1:]
 	if cmd == "help" && len(rest) > 0 {
-		return a.helpFor(rest[0])
+		return a.helpFor(resolveAlias(rest[0]))
 	}
 	if wantHelp && cmd != "-h" && cmd != "--help" {
 		return a.helpFor(cmd)
@@ -329,19 +329,23 @@ var commands map[string]handler
 
 func init() {
 	commands = map[string]handler{
-		"companion": cmdCompanion,
-		"doctor":    cmdDoctor,
-		"profile":   cmdProfile,
-		"cert":      cmdCert,
-		"sign":      cmdSign,
-		"verify":    cmdVerify,
-		"rules":     cmdRules,
-		"events":    cmdEvents,
-		"hooks":     cmdHooks,
-		"webhooks":  cmdWebhooks,
-		"serve":     cmdServe,
-		"server":    cmdServer,
-		"config":    cmdConfig,
+		"companion":  cmdCompanion,
+		"doctor":     cmdDoctor,
+		"profile":    cmdProfile,
+		"cert":       cmdCert,
+		"sign":       cmdSign,
+		"verify":     cmdVerify,
+		"rules":      cmdRules,
+		"events":     cmdEvents,
+		"hooks":      cmdHooks,
+		"webhooks":   cmdWebhooks,
+		"serve":      cmdServe,
+		"server":     cmdServer,
+		"config":     cmdConfig,
+		"completion": cmdCompletion,
+		"install":    cmdInstall,
+		"uninstall":  cmdUninstall,
+		"path":       cmdPath,
 	}
 }
 
@@ -368,7 +372,13 @@ Usage:
   impr config profile list [--json] | create NAME | use NAME | use --none | rm NAME
   impr serve [--listen unix|127.0.0.1:PORT] [--check-config]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
+  impr completion bash|zsh|fish|powershell | install bash|zsh|fish | uninstall bash|zsh|fish
+  impr install [--dir DIR] [--force]
+  impr uninstall [--dir DIR]
+  impr path [--json]
   impr version
+
+Aliases: s sign, v verify, d doctor, h help.
 
 Exit codes: 0 ok, 1 usage, 2 skipped (without --strict), 3 signing failed,
 4 verification failed, 5 unavailable.`
@@ -434,4 +444,8 @@ func (a *App) helpFor(cmd string) int {
 	}
 	_, _ = fmt.Fprintln(a.Stderr, "Usage:\n"+strings.Join(out, "\n")+"\n\nExit codes: 0 ok, 1 usage, 2 skipped, 3 signing failed, 4 verification failed, 5 unavailable.")
 	return 0
+}
+
+func systemDir(a *App) string {
+	return paths.SystemConfig(paths.Env{GOOS: a.GOOS, Getenv: a.Getenv, Home: a.Home})
 }

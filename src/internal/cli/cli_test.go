@@ -754,3 +754,84 @@ func TestFailedLegacyImportIsNotRetried(t *testing.T) {
 		t.Fatalf("the import was retried: %q", second)
 	}
 }
+
+// Completion is generated from the usage text, so every command the
+// dispatcher knows must have a usage line, and each shell's script must
+// parse where that shell is installed.
+func TestCompletionCoversEveryCommand(t *testing.T) {
+	m := completionModel()
+	if len(commands) < 15 {
+		t.Fatalf("the dispatch table has %d commands; the guard is not looking at it", len(commands))
+	}
+	for name := range commands {
+		if _, ok := m[name]; !ok {
+			t.Errorf("command %s has no usage line, so completion cannot offer it", name)
+		}
+	}
+	for _, want := range []string{"--manifest", "--purpose", "--platforms"} {
+		if !slices.Contains(m["sign"], want) {
+			t.Errorf("sign completion lacks %s", want)
+		}
+	}
+	if !slices.Contains(m["profile"], "import-legacy") || slices.Contains(m["install"], "uninstall") {
+		t.Errorf("profile %v, install %v", m["profile"], m["install"])
+	}
+	for _, sh := range []string{"bash", "zsh", "fish"} {
+		script, err := CompletionScript(sh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exec.LookPath(sh); err != nil {
+			continue
+		}
+		f := filepath.Join(t.TempDir(), "c")
+		if err := os.WriteFile(f, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command(sh, "-n", f).CombinedOutput(); err != nil {
+			t.Errorf("%s does not parse its completion: %v %s", sh, err, out)
+		}
+	}
+	if _, err := CompletionScript("tcsh"); err == nil {
+		t.Error("an unknown shell was accepted")
+	}
+}
+
+func TestInstallUninstallAndAliases(t *testing.T) {
+	h := newHarness(t)
+	dir := t.TempDir()
+	h.ok("install", "--dir", dir)
+	bin := filepath.Join(dir, "impr")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	if st, err := os.Stat(bin); err != nil || st.Mode().Perm()&0o100 == 0 {
+		t.Fatalf("installed binary: %v %v", st, err)
+	}
+	_, _, e := h.impr("install", "--dir", dir)
+	if !strings.Contains(e, "already this impr") {
+		t.Fatalf("a second install: %q", e)
+	}
+	// Something else at the target is never replaced or removed.
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(other, filepath.Base(bin)), []byte("#!/bin/sh\necho not impr\n"), 0o700); err != nil { //nolint:gosec // G306: an executable stand-in
+		t.Fatal(err)
+	}
+	h.exits(1, "install", "--dir", other)
+	h.exits(1, "uninstall", "--dir", other)
+	if _, err := os.Stat(filepath.Join(other, filepath.Base(bin))); err != nil {
+		t.Fatal("uninstall removed a program that is not impr")
+	}
+	h.ok("uninstall", "--dir", dir)
+	if _, err := os.Stat(bin); err == nil {
+		t.Fatal("uninstall left impr")
+	}
+	var info PathInfo
+	if err := json.Unmarshal([]byte(h.ok("path", "--json", "--dir", dir)), &info); err != nil || info.Installed || info.Config == "" {
+		t.Fatalf("path: %+v %v", info, err)
+	}
+	// d is doctor, which exits 1 here only because no default profile exists.
+	if code, out, _ := h.impr("d", "--json"); code != 1 || !strings.Contains(out, `"contract":1`) || !strings.Contains(out, `"defaultProfile"`) {
+		t.Fatalf("alias d did not run doctor: %d %s", code, out)
+	}
+}

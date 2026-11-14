@@ -40,16 +40,17 @@ Parity is measured against this list. Each line is a PowerShell feature the Go
 | `impr release`, `impr build` (GoReleaser builds, go-winres version info, the GoReleaser signing hook) | not ported: when sange drives a release its build stage is the only builder (SD-075), and impr signs that stage's manifest |
 | `impr init` (project template, `.gitignore` edits, `.goreleaser.yaml`) | not ported: project setup moves to sange (companion design §2) |
 | `impr sign FILE` (one loose file) and `--signer` | not ported on purpose: impr signs build-manifest entries only, so it is not a signing oracle |
-| `impr config list/get/set/unset/path` (the settings file) | replaced by profiles; the settings are imported once |
+| `impr config list/get/set/unset/path` (the settings file) | **ported** as [`impr config`](../tools/config.md) for the application config (layers, configuration profiles, locked keys); the signing settings became signing profiles and are imported once |
 | `impr cert show` and `impr cert create` (the Windows self-signed test certificate) | not ported: creating a store certificate needs the Windows certificate APIs. `impr cert list` is ported |
 | `impr rules` reading signed `.exe` files on Windows, with `--scope publisher/product/file/version`, `--include-default-rules`, base WDAC policies, compiling `.cip` with ConvertFrom-CIPolicy, `Test-AppLockerPolicy`, `DEPLOY.md` | not ported: `impr rules --request` renders from facts sange supplies, supplemental WDAC only, and compiles nothing |
 | Signing with a Certum or test certificate chosen by subject alone (exactly one match) | not ported on purpose: `cert-store` and `certum` need a pinned thumbprint |
 | Windows store certificate expiry in `cert list` | partly: presence is checked with `certutil`; expiry comes from a declared `notAfter` |
-| macOS signing from `MACOS_SIGN_P12` and `MACOS_SIGN_PASSWORD` (a temporary keychain) | not ported: the identity must already be in a keychain |
+| macOS signing from `MACOS_SIGN_P12` and `MACOS_SIGN_PASSWORD` (a temporary keychain) | not ported: the identity must already be in a keychain; a `certRef` is reported as unused, and the import tells you to import the `.p12` |
 | Azure login check (`az account show`) before Artifact Signing | not ported: `az` is not on the exec allow-list; signtool fails instead |
 | GPG keys other than the agent's | not ported: `keyRef` must be `gpg-agent://<fingerprint>` |
-| The interactive menu, `impr install`/`uninstall`, `impr path`, `impr completion`, `impr help <command>` | not ported: impr prints one usage text |
-| `make/impr.mk` Make integration | not ported |
+| `impr install`/`uninstall`, `impr path`, `impr completion`, `impr help <command>` | **ported**: [`impr install`](../tools/install.md) copies the binary to `~/.local/bin` (it never edits PATH), [`impr completion`](../tools/completion.md) for bash, zsh, fish and PowerShell, `impr help <command>` and `--help` on every command, and the aliases `s`, `v`, `d`, `h` |
+| The interactive menu | not ported yet: waiting on the owner's decision to port or retire it |
+| `make/impr.mk` Make integration | **ported**: [`make/impr.mk`](../tools/make.md), targets `impr-sign`, `impr-verify`, `impr-doctor` and more |
 | `impr doctor` checks for go, goreleaser, go-winres and git | not ported: they concern building, which impr no longer does |
 | Moving pre-1.4 files from the toolkit root into `config/` | not ported: run the PowerShell line once first, or `--from` the file |
 

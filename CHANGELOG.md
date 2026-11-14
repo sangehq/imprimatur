@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr completion bash|zsh|fish|powershell`, and `impr completion install|uninstall`
+  for bash, zsh and fish into the folders those shells load (no shell profile
+  is edited). Completion is generated from the usage text; a test fails if a
+  command has none.
+- `impr install` copies the running binary to `~/.local/bin` (every OS), never
+  replaces a program that is not impr, and never edits PATH (it prints what to
+  add). `impr uninstall` removes only impr; `impr path` shows every location.
+- `make/impr.mk`: the commands as `impr-*` Make targets for a project's
+  Makefile (`impr-sign`, `impr-verify`, `impr-doctor`, `impr-cert`, `impr-rules`,
+  `impr-events`, and the aliases `impr-s`, `impr-v`, `impr-d`).
+- The PowerShell toolkit's aliases `s` (sign), `v` (verify), `d` (doctor), `h`
+  (help).
+
 - **Layered configuration with configuration profiles.** The effective
   configuration merges three layers, each over the one before, as a JSON
   merge patch:
