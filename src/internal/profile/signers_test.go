@@ -106,6 +106,11 @@ func TestPinnedIdentityWithSigners(t *testing.T) {
 // strings, so "id=a-b;…" comes before "id=a;…" (- is 0x2D, ; is 0x3B), a
 // signer's subject is kept verbatim (empty included), and thumbprints are
 // upper-cased.
+//
+// sange mirrors this vector byte for byte as TestMultiSignerSharedGoldenVector
+// (sangehq/sange, domain/signing). A change to the rule changes both tests in
+// the same change, or the two tools stop agreeing on every multi-signer
+// profile's identity.
 func TestMultiSignerDigestGolden(t *testing.T) {
 	p := Profile{Name: "acme-release", Scope: ScopeCompany, Owner: "Acme", Purpose: []Purpose{PurposeRelease},
 		AllowedRepos: []string{"github.com/acme/**"},
