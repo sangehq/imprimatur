@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -97,5 +98,27 @@ func TestPinnedIdentityWithSigners(t *testing.T) {
 	m.Platforms.Windows.Signers[0].Thumbprint = strings.Repeat("C", 40)
 	if m.Pinned().Digest() == d1 {
 		t.Fatal("re-pinning one signer did not change the identity digest")
+	}
+}
+
+// TestMultiSignerDigestGolden pins the multi-signer identity bytes and digest
+// for sange's domain/signing to mirror. The entries are sorted as whole
+// strings, so "id=a-b;…" comes before "id=a;…" (- is 0x2D, ; is 0x3B), a
+// signer's subject is kept verbatim (empty included), and thumbprints are
+// upper-cased.
+func TestMultiSignerDigestGolden(t *testing.T) {
+	p := Profile{Name: "acme-release", Scope: ScopeCompany, Owner: "Acme", Purpose: []Purpose{PurposeRelease},
+		AllowedRepos: []string{"github.com/acme/**"},
+		Platforms: Platforms{Windows: &WindowsSpec{Kind: "authenticode", Signers: []WindowsSigner{
+			{ID: "a-b", Backend: BackendCertStore, Thumbprint: "0123456789abcdef0123456789abcdef01234567", Subject: "CN=Acme Ltd"},
+			{ID: "a", Backend: BackendCertum, Thumbprint: "89abcdef0123456789abcdef0123456789abcdef"},
+		}}}}
+	b, _ := json.Marshal(p.Pinned())
+	const wantJSON = `{"profile":"acme-release","scope":"company","owner":"acme","purpose":["release"],"allowedRepos":["github.com/acme/**"],"windows":"id=a-b;thumbprint=0123456789ABCDEF0123456789ABCDEF01234567;subject=CN=Acme Ltd|id=a;thumbprint=89ABCDEF0123456789ABCDEF0123456789ABCDEF;subject="}`
+	if string(b) != wantJSON {
+		t.Fatalf("identity JSON\n got %s\nwant %s", b, wantJSON)
+	}
+	if got := p.Pinned().Digest(); got != "sha256:bc9a45a250fb6c8831abecc12efe58f669bb0c919c8d75f36f638284382571c9" {
+		t.Fatalf("digest %s", got)
 	}
 }
