@@ -256,7 +256,7 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 			lines = append(lines, [2]string{sum, a.Path})
 		}
 		sumsPath := filepath.Join(bm.Dir, SumsFile)
-		if err := os.WriteFile(sumsPath, artifact.Checksums(lines), 0o644); err != nil { //nolint:gosec // G306: a published checksum file
+		if err := artifact.WriteFile(sumsPath, artifact.Checksums(lines), 0o644); err != nil {
 			return Result{}, err
 		}
 		sumsRel := artifact.RelToRoot(root, sumsPath)
@@ -282,13 +282,18 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 		}
 	}
 
+	if len(m.Artifacts) == 0 && len(m.Outputs) == 0 && len(skipped) == 0 {
+		return Result{}, contract.New(contract.SignFailed, "nothing was signed: no requested platform had files in the build manifest").
+			WithDetails("platforms requested: "+strings.Join(platforms, ", ")).
+			WithFix("check --platforms against the build manifest's files")
+	}
 	m.SignedAt = s.Host.Now().UTC()
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return Result{}, err
 	}
 	mpath := filepath.Join(bm.Dir, ManifestFile)
-	if err := os.WriteFile(mpath, append(b, '\n'), 0o644); err != nil { //nolint:gosec // G306: the chain-of-custody record is published with the release
+	if err := artifact.WriteFile(mpath, append(b, '\n'), 0o644); err != nil {
 		return Result{}, err
 	}
 	msum, err := artifact.SHA256(mpath)

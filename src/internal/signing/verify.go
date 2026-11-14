@@ -3,7 +3,6 @@ package signing
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +26,8 @@ type VerifyOptions struct {
 type item struct {
 	rel, want, platform string
 	notarized           bool
+	sums                bool     // a SHA256SUMS file: every file it lists is re-hashed too
+	require             []string // with --manifest: build-manifest files the checksum file must list
 }
 
 // Verify checks signed files against exactly one profile's pinned identity.
@@ -60,6 +61,7 @@ func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 			return VerifyResult{}, contract.New(contract.VerifyFailed, "profile %s has been re-pinned since %s was signed", p.Name, o.Signed).
 				WithDetails("signed with "+m.Identity.Digest(), "profile now "+p.Pinned().Digest())
 		}
+		var require []string
 		if o.Manifest != "" {
 			bm, err := artifact.ReadManifest(o.Manifest)
 			if err != nil {
@@ -68,6 +70,23 @@ func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 			if bm.Digest != m.BuildManifestDigest || bm.Commit != m.Commit || bm.Tree != m.Tree {
 				return VerifyResult{}, contract.New(contract.VerifyFailed, "%s belongs to another build manifest", o.Signed)
 			}
+			binaries := map[string]bool{}
+			for _, a := range m.Artifacts {
+				binaries[a.Path] = true
+			}
+			for _, a := range bm.Artifacts {
+				if !binaries[a.Path] {
+					require = append(require, a.Path)
+				}
+			}
+			if len(require) > 0 && !hasSums(m.Outputs) {
+				return VerifyResult{}, contract.New(contract.VerifyFailed, "%d file(s) of the build manifest are covered by no signature in %s", len(require), o.Signed).
+					WithDetails(require...)
+			}
+		}
+		if len(m.Artifacts) == 0 && len(m.Outputs) == 0 {
+			return VerifyResult{}, contract.New(contract.VerifyFailed, "%s records no signed artifacts or outputs; there is nothing to verify", o.Signed).
+				WithDetails("An empty record proves nothing, so it never passes.")
 		}
 		for _, a := range m.Artifacts {
 			items = append(items, item{rel: a.Path, want: a.OutputSHA256, platform: a.Platform, notarized: a.Notarization != ""})
@@ -76,7 +95,7 @@ func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 			if out.Kind == "sha256sums" {
 				for _, pl := range []string{profile.Checksums, profile.Containers} {
 					if hasOutput(m.Outputs, pl) {
-						items = append(items, item{rel: out.Path, want: out.OutputSHA256, platform: pl})
+						items = append(items, item{rel: out.Path, want: out.OutputSHA256, platform: pl, sums: true, require: require})
 					}
 				}
 			}
@@ -123,6 +142,15 @@ func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 	return res, contract.New(contract.VerifyFailed, "verification failed")
 }
 
+func hasSums(outs []SignedArtifact) bool {
+	for _, o := range outs {
+		if o.Kind == "sha256sums" {
+			return true
+		}
+	}
+	return false
+}
+
 func hasOutput(outs []SignedArtifact, platform string) bool {
 	for _, o := range outs {
 		if o.Platform == platform && o.Kind != "sha256sums" {
@@ -137,7 +165,7 @@ func (s *Service) verifyOne(ctx context.Context, root string, p profile.Profile,
 	if !filepath.IsAbs(path) {
 		r, err := artifact.Resolve(root, it.rel)
 		if err != nil {
-			return errors.New(strings.TrimSpace(err.Error()))
+			return contract.Wrap(contract.VerifyFailed, err, "cannot verify %s", it.rel)
 		}
 		path = r
 	}
@@ -176,7 +204,55 @@ func (s *Service) verifyOne(ctx context.Context, root string, p profile.Profile,
 	if c := be.Capability(s.Host); !c.Verify {
 		return contract.New(contract.Unavailable, "%s signatures cannot be verified on this host: %s", pl, c.Reason)
 	}
-	return be.Verify(ctx, backend.Artifact{Path: path, Rel: it.rel, Notarized: it.notarized}, p)
+	if err := be.Verify(ctx, backend.Artifact{Path: path, Rel: it.rel, Notarized: it.notarized}, p); err != nil {
+		return err
+	}
+	if it.sums {
+		return verifyListed(root, path, it.require)
+	}
+	return nil
+}
+
+// verifyListed re-hashes every file a signed SHA256SUMS lists. A valid
+// signature over the checksum file proves nothing about the files on disk
+// until each one is compared with its line.
+func verifyListed(root, sumsPath string, require []string) error {
+	b, err := os.ReadFile(sumsPath) //nolint:gosec // G304: resolved under the signing root
+	if err != nil {
+		return contract.Wrap(contract.VerifyFailed, err, "cannot read the checksum file")
+	}
+	lines, err := artifact.ParseChecksums(b)
+	if err != nil {
+		return contract.Wrap(contract.VerifyFailed, err, "the checksum file is malformed")
+	}
+	if len(lines) == 0 {
+		return contract.New(contract.VerifyFailed, "the checksum file lists no files")
+	}
+	var bad []string
+	listed := map[string]bool{}
+	for _, l := range lines {
+		listed[l[1]] = true
+	}
+	for _, r := range require {
+		if !listed[r] {
+			bad = append(bad, r+": in the build manifest but not in the signed checksum file")
+		}
+	}
+	for _, l := range lines {
+		path, err := artifact.Resolve(root, l[1])
+		if err != nil {
+			bad = append(bad, l[1]+": missing or outside the root")
+			continue
+		}
+		sum, err := artifact.SHA256(path)
+		if err != nil || sum != l[0] {
+			bad = append(bad, l[1]+": does not match the signed checksum")
+		}
+	}
+	if len(bad) > 0 {
+		return contract.New(contract.VerifyFailed, "%d check(s) of the checksum file's %d entries fail: %s", len(bad), len(lines), strings.Join(bad, "; ")).WithDetails(bad...)
+	}
+	return nil
 }
 
 func checksumSuffix(p profile.Profile) string {

@@ -251,6 +251,41 @@ func TestSignAndVerifyWithRealSSH(t *testing.T) {
 		t.Fatalf("verify: %s %v", vout, err)
 	}
 
+	// A changed artifact fails: the signed checksum file is not enough on its
+	// own, every file it lists is re-hashed.
+	art := filepath.Join(root, "build", "linux", "tool_linux_amd64")
+	orig, _ := os.ReadFile(art)
+	if err := os.WriteFile(art, append([]byte{}, append(orig, 'x')...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vout = h.exits(4, "verify", "--json", "--strict", "--root", root, "--signed", res.ManifestPath, "--profile", "acme-release")
+	if !strings.Contains(vout, "tool_linux_amd64: does not match the signed checksum") {
+		t.Fatalf("a tampered artifact was not reported: %s", vout)
+	}
+	if err := os.WriteFile(art, orig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A forged record that lists nothing never passes.
+	var forged map[string]any
+	_ = json.Unmarshal(rec, &forged)
+	forged["artifacts"], forged["outputs"] = []any{}, []any{}
+	fb, _ := json.Marshal(forged)
+	forgedPath := filepath.Join(t.TempDir(), "impr-manifest.json")
+	if err := os.WriteFile(forgedPath, fb, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(4, "verify", "--json", "--strict", "--root", root, "--signed", forgedPath, "--profile", "acme-release")
+
+	// A missing file is a verification failure (4), not "unavailable" (5).
+	if err := os.Rename(art, art+".gone"); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(4, "verify", "--json", "--strict", "--root", root, "--signed", res.ManifestPath, "--profile", "acme-release")
+	if err := os.Rename(art+".gone", art); err != nil {
+		t.Fatal(err)
+	}
+
 	// A changed checksum file fails verification, and the report still prints.
 	sums := filepath.Join(root, filepath.FromSlash(m.Outputs[0].Path))
 	if err := os.WriteFile(sums, []byte("tampered\n"), 0o600); err != nil {
