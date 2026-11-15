@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr rules FILE...` builds allow rules from signed `.exe` and `.dll` files
+  on any host. The publisher, leaf and issuing CA (pinned by its TBS hash)
+  come from the files' own Authenticode signatures.
+  - **Scopes.** `--scope publisher|product|version`, with `--product`,
+    `--file-version`, `--base-policy`, `--eku`, `--applocker`, `--wdac`,
+    `--enforce` and `--sid`.
+  - **Signer check.** Files signed by another publisher or CA are refused.
+
 - `impr cert create` makes a self-signed code-signing certificate and a
   `test` profile that signs with it through osslsigncode on any host.
   - **Files.** The key goes in an owner-only PEM bundle, referenced as

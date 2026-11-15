@@ -302,26 +302,31 @@ func cmdVerify(ctx context.Context, a *App, args []string) (int, error) {
 }
 
 func cmdRules(_ context.Context, a *App, args []string) (int, error) {
-	p, err := parse(args, flagSpec{"json": boolFlag, "strict": boolFlag, "request": stringFlag, "out-dir": stringFlag})
+	p, err := parse(args, rulesFlags)
 	if err != nil {
 		return 0, err
 	}
-	if err := needNoArgs(p, "impr rules"); err != nil {
-		return 0, err
-	}
-	if p.str("request") == "" {
-		return 0, contract.New(contract.Usage, "--request is required").
-			WithDetails("impr rules renders allow rules for the signed files a request lists (sange writes it from a signed manifest).").
-			WithFix("impr rules --json --strict --request rules-request.json")
-	}
-	b, err := os.ReadFile(p.str("request"))
-	if err != nil {
-		return 0, contract.Wrap(contract.Usage, err, "read the request")
-	}
-	// Shapes only ever gain fields, so a newer caller's extra fields are ignored.
 	var req rules.Request
-	if err := json.Unmarshal(b, &req); err != nil {
-		return 0, contract.Wrap(contract.Usage, err, "the request is not an allow-rules request")
+	switch {
+	case len(p.pos) > 0 && p.str("request") != "":
+		return 0, contract.New(contract.Usage, "name signed files or --request, not both")
+	case len(p.pos) > 0:
+		if req, err = rulesFromFiles(a, p); err != nil {
+			return 0, err
+		}
+	case p.str("request") == "":
+		return 0, contract.New(contract.Usage, "--request or signed files are required").
+			WithDetails("impr rules renders allow rules for signed files: named on the command line, or listed in a request (sange writes one from a signed manifest).").
+			WithFix("impr rules build/windows/tool.exe --base-policy {GUID}", "impr rules --json --strict --request rules-request.json")
+	default:
+		b, err := os.ReadFile(p.str("request"))
+		if err != nil {
+			return 0, contract.Wrap(contract.Usage, err, "read the request")
+		}
+		// Shapes only ever gain fields, so a newer caller's extra fields are ignored.
+		if err := json.Unmarshal(b, &req); err != nil {
+			return 0, contract.Wrap(contract.Usage, err, "the request is not an allow-rules request")
+		}
 	}
 	res, err := rules.Render(req, "imprimatur "+version)
 	if err != nil {

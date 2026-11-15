@@ -3,6 +3,8 @@ package backend
 import (
 	"bytes"
 	"crypto/sha1" //nolint:gosec // G505: the Authenticode thumbprint is SHA-1 by definition; it identifies, it does not protect
+	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"debug/pe"
@@ -11,6 +13,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"math/big"
 	"os"
@@ -19,10 +22,13 @@ import (
 
 // PESigner is what the embedded Authenticode signature of a PE file names.
 type PESigner struct {
-	Thumbprint  string // SHA-1 of the leaf certificate, upper-case hex
-	Subject     string // the leaf's subject, as Windows shows it
-	SubjectRFC  string // the leaf's subject, RFC 2253
-	Leaf        *x509.Certificate
+	Thumbprint string // SHA-1 of the leaf certificate, upper-case hex
+	Subject    string // the leaf's subject, as Windows shows it
+	SubjectRFC string // the leaf's subject, RFC 2253
+	Leaf       *x509.Certificate
+	// Issuer is the certificate that issued the leaf, when the signature
+	// carries it (WDAC rules pin it by its TBS hash).
+	Issuer      *x509.Certificate
 	Timestamped bool
 }
 
@@ -156,6 +162,12 @@ func parsePKCS7(der []byte) (PESigner, error) {
 	sum := sha1.Sum(leaf.Raw) //nolint:gosec // G401: thumbprint, see the import
 	out := PESigner{Thumbprint: strings.ToUpper(hex.EncodeToString(sum[:])), Leaf: leaf,
 		Subject: WindowsName(leaf.RawSubject), SubjectRFC: leaf.Subject.String()}
+	for _, c := range certs {
+		if c != leaf && bytes.Equal(c.RawSubject, leaf.RawIssuer) && leaf.CheckSignatureFrom(c) == nil {
+			out.Issuer = c
+			break
+		}
+	}
 	rest := si.UnauthAttrs.Bytes
 	for len(rest) > 0 {
 		var a attribute
@@ -256,4 +268,25 @@ func dnParts(s string) []string {
 	}
 	flush()
 	return parts
+}
+
+// TBSHash is the hash WDAC pins a certificate by: the digest of its
+// to-be-signed part, using the hash of the certificate's own signature
+// algorithm (SHA-256 for a SHA-256 signature, and so on).
+func TBSHash(c *x509.Certificate) (string, error) {
+	var h hash.Hash
+	switch c.SignatureAlgorithm {
+	case x509.SHA1WithRSA, x509.ECDSAWithSHA1:
+		h = sha1.New() //nolint:gosec // G401: the hash the certificate itself was signed with
+	case x509.SHA256WithRSA, x509.SHA256WithRSAPSS, x509.ECDSAWithSHA256:
+		h = sha256.New()
+	case x509.SHA384WithRSA, x509.SHA384WithRSAPSS, x509.ECDSAWithSHA384:
+		h = sha512.New384()
+	case x509.SHA512WithRSA, x509.SHA512WithRSAPSS, x509.ECDSAWithSHA512:
+		h = sha512.New()
+	default:
+		return "", fmt.Errorf("the issuing certificate's signature algorithm %v has no TBS hash WDAC accepts", c.SignatureAlgorithm)
+	}
+	h.Write(c.RawTBSCertificate)
+	return strings.ToUpper(hex.EncodeToString(h.Sum(nil))), nil
 }

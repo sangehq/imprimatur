@@ -6,9 +6,11 @@ import (
 	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // G505: certificate thumbprints are SHA-1 identifiers, not a security check
 	"crypto/sha256"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/sangehq/imprimatur/src/internal/testpe"
 	"io"
 	"net/http/httptest"
 	"os"
@@ -1110,4 +1112,39 @@ func TestCertCreateMakesATestOnlyProfile(t *testing.T) {
 		t.Fatalf("profile: %s", out)
 	}
 	h.exits(1, "cert", "create", "--name", "tsign")
+}
+
+// impr rules FILE... reads the publisher, leaf and issuing CA from the files'
+// own signatures (the PowerShell toolkit's way), with scopes.
+func TestRulesFromSignedFiles(t *testing.T) {
+	h := newHarness(t)
+	dir := t.TempDir()
+	ca := testpe.NewCA(t, "Acme Code Signing CA")
+	sub := pkix.Name{CommonName: "Acme Ltd", Organization: []string{"Acme Ltd"}, Country: []string{"GB"}}
+	exe, _ := testpe.Signed(t, dir, "tool.exe", sub, ca)
+	dll, _ := testpe.Signed(t, filepath.Join(dir), "core.dll", sub, ca)
+	guid := "{6b2a1c3d-0000-4000-8000-00000000abcd}"
+	out := h.ok("rules", exe, dll, "--scope", "version", "--product", "Acme Tool", "--file-version", "1.2.0.0", "--base-policy", guid, "--json")
+	var res struct {
+		AppLocker string   `json:"appLocker"`
+		WDAC      string   `json:"wdac"`
+		Notes     []string `json:"notes"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatal(err)
+	}
+	tbs := sha256.Sum256(ca.Cert.RawTBSCertificate)
+	if !strings.Contains(res.AppLocker, "Acme Tool") || !strings.Contains(res.AppLocker, "TOOL.EXE") || !strings.Contains(res.AppLocker, "1.2.0.0") ||
+		!strings.Contains(strings.ToUpper(res.WDAC), strings.ToUpper(hex.EncodeToString(tbs[:]))) || !strings.Contains(res.WDAC, "Acme Ltd") {
+		t.Fatalf("rules do not carry the files' signer:\n%s\n%s", res.AppLocker, res.WDAC)
+	}
+	// Without a base policy there is no WDAC supplemental, only AppLocker.
+	if out := h.ok("rules", exe, "--scope", "publisher", "--json"); strings.Contains(out, `"wdac"`) || !strings.Contains(out, "AppLockerPolicy") {
+		t.Fatalf("no base policy: %s", out)
+	}
+	other := testpe.NewCA(t, "Other CA")
+	stranger, _ := testpe.Signed(t, t.TempDir(), "x.exe", pkix.Name{CommonName: "Someone Else"}, other)
+	h.exits(1, "rules", exe, stranger, "--scope", "publisher")
+	h.exits(1, "rules", exe, "--scope", "file")
+	h.exits(1, "rules", exe, "--scope", "product") // no --product
 }

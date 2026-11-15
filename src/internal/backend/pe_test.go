@@ -6,12 +6,14 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // G505: the thumbprint under test is SHA-1 by definition
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"debug/pe"
 	"encoding/asn1"
 	"encoding/binary"
 	"encoding/hex"
+	"github.com/sangehq/imprimatur/src/internal/testpe"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -131,5 +133,21 @@ func TestSubjectsEqual(t *testing.T) {
 		if got := SubjectsEqual(c.a, c.b); got != c.want {
 			t.Errorf("SubjectsEqual(%q, %q) = %v", c.a, c.b, got)
 		}
+	}
+}
+
+// The issuing CA travels in the signature; WDAC pins it by the hash of its
+// to-be-signed part, taken with its own signature's hash (SHA-256 here).
+func TestReadPESignerFindsTheIssuerAndItsTBSHash(t *testing.T) {
+	ca := testpe.NewCA(t, "Acme Code Signing CA")
+	path, leaf := testpe.Signed(t, t.TempDir(), "tool.exe", pkix.Name{CommonName: "Acme Ltd", Organization: []string{"Acme Ltd"}}, ca)
+	s, err := ReadPESigner(path)
+	if err != nil || s.Issuer == nil || !s.Issuer.Equal(ca.Cert) || !s.Leaf.Equal(leaf) {
+		t.Fatalf("signer %+v %v", s, err)
+	}
+	tbs, err := TBSHash(s.Issuer)
+	want := sha256.Sum256(ca.Cert.RawTBSCertificate)
+	if err != nil || tbs != strings.ToUpper(hex.EncodeToString(want[:])) {
+		t.Fatalf("tbs %s %v", tbs, err)
 	}
 }
