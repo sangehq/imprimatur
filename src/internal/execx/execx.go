@@ -177,12 +177,28 @@ const maxOutput = 4 << 20
 type OS struct {
 	// Timeout bounds one call; zero means 30 minutes (notarisation waits).
 	Timeout time.Duration
+	// Pins names exactly which file a tool is, by absolute path and sha256
+	// (config.json tools). A pinned tool is never looked up on PATH, and a
+	// file whose digest no longer matches is refused before it runs.
+	Pins map[string]Pin
+}
+
+// Pin is one pinned tool.
+type Pin struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
 }
 
 // LookPath resolves an allowed tool to an absolute path.
-func (OS) LookPath(tool string) (string, error) {
+func (o OS) LookPath(tool string) (string, error) {
 	if _, ok := Allowed[tool]; !ok {
 		return "", fmt.Errorf("%q: %w", tool, ErrNotAllowed)
+	}
+	if p, ok := o.Pins[tool]; ok {
+		if _, err := CheckPinned(p.Path, p.SHA256); err != nil {
+			return "", fmt.Errorf("pinned %s: %w", tool, err)
+		}
+		return p.Path, nil
 	}
 	p, err := exec.LookPath(tool)
 	if err != nil {

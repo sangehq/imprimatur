@@ -157,3 +157,27 @@ func TestConfigRefusesUnsafeHooks(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigToolPinsAndPolicy(t *testing.T) {
+	dir := t.TempDir()
+	good := `{"schema":"imprimatur.config/v1","policy":{"gpgFullFingerprint":true},"tools":{"gpg":{"path":"/opt/gpg","sha256":"` + strings.Repeat("a", 64) + `"}}}`
+	if err := os.WriteFile(filepath.Join(dir, config.File), []byte(good), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := config.Load(dir)
+	if err != nil || !c.Policy.GPGFullFingerprint || c.Tools["gpg"].Path != "/opt/gpg" {
+		t.Fatalf("%+v %v", c, err)
+	}
+	for name, body := range map[string]string{
+		"unknown tool":  `{"schema":"imprimatur.config/v1","tools":{"curl":{"path":"/usr/bin/curl","sha256":"` + strings.Repeat("a", 64) + `"}}}`,
+		"relative path": `{"schema":"imprimatur.config/v1","tools":{"gpg":{"path":"gpg","sha256":"` + strings.Repeat("a", 64) + `"}}}`,
+		"no digest":     `{"schema":"imprimatur.config/v1","tools":{"gpg":{"path":"/opt/gpg"}}}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, config.File), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := config.Load(dir); err == nil {
+			t.Errorf("%s was accepted", name)
+		}
+	}
+}

@@ -3,6 +3,8 @@ package execx
 import (
 	"context"
 	"errors"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -108,5 +110,37 @@ func TestLimitedMarksTruncation(t *testing.T) {
 	_, _ = b.Write([]byte("67890"))
 	if !b.truncated || b.Len() != 8 {
 		t.Fatalf("truncated %v len %d", b.truncated, b.Len())
+	}
+}
+
+// Audit N-B11: a pinned tool is the configured file, not whatever PATH finds,
+// and a file whose digest changed is refused before it runs.
+func TestPinnedToolsAreExactlyThatFile(t *testing.T) {
+	real, err := exec.LookPath("ssh-keygen")
+	if err != nil {
+		t.Skip("needs ssh-keygen")
+	}
+	b, err := os.ReadFile(real)
+	if err != nil {
+		t.Skip("cannot read ssh-keygen")
+	}
+	copyPath := filepath.Join(t.TempDir(), "ssh-keygen-pinned")
+	if err := os.WriteFile(copyPath, b, 0o700); err != nil { //nolint:gosec // G306: an executable copy
+		t.Fatal(err)
+	}
+	sum, err := CheckPinned(copyPath, "")
+	if sum == "" {
+		t.Fatalf("digest: %v", err)
+	}
+	o := OS{Pins: map[string]Pin{"ssh-keygen": {Path: copyPath, SHA256: sum}}}
+	if got, err := o.LookPath("ssh-keygen"); err != nil || got != copyPath {
+		t.Fatalf("pinned lookup: %s %v (PATH has %s)", got, err, real)
+	}
+	o.Pins["ssh-keygen"] = Pin{Path: copyPath, SHA256: strings.Repeat("0", 64)}
+	if _, err := o.LookPath("ssh-keygen"); err == nil {
+		t.Fatal("a tool whose digest does not match its pin was resolved")
+	}
+	if _, err := o.Run(context.Background(), Cmd{Tool: "ssh-keygen", Args: []string{"-V"}}); err == nil {
+		t.Fatal("a tool whose digest does not match its pin ran")
 	}
 }

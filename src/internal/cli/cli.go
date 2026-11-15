@@ -243,8 +243,25 @@ func (a *App) legacyEnv(d paths.Dirs) profile.LegacyEnv {
 }
 
 func (a *App) host() backend.Host {
-	return backend.Host{GOOS: a.GOOS, Runner: a.Runner, Now: a.Now,
-		Secrets: secrets.Resolver{Runner: a.Runner, Getenv: a.Getenv, GOOS: a.GOOS}}
+	r := a.runner()
+	return backend.Host{GOOS: a.GOOS, Runner: r, Now: a.Now,
+		Secrets: secrets.Resolver{Runner: r, Getenv: a.Getenv, GOOS: a.GOOS}}
+}
+
+// runner is the tool runner with the config's tool pins applied. A config
+// that does not load leaves the pins off here; every command that signs or
+// verifies loads the config itself and fails on it first.
+func (a *App) runner() execx.Runner {
+	o, ok := a.Runner.(execx.OS)
+	if !ok {
+		return a.Runner
+	}
+	if d, err := a.dirs(); err == nil {
+		if eff, err := a.effective(d); err == nil && len(eff.Config.Tools) > 0 {
+			o.Pins = eff.Config.Tools
+		}
+	}
+	return o
 }
 
 func (a *App) service() (*signing.Service, error) {
@@ -273,7 +290,8 @@ func (a *App) service() (*signing.Service, error) {
 			bus.Sinks = append(bus.Sinks, webhook.Sink{Outbox: a.outbox(d), Subs: subs})
 		}
 	}
-	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk}, nil
+	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk,
+		RequireFullGPG: cfg.Policy.GPGFullFingerprint}, nil
 }
 
 // bus is the event bus for this run: the hash-chained log in the state dir.
@@ -324,10 +342,12 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	if !ok {
 		return a.fail(contract.New(contract.Usage, "unknown command %q", cmd).WithFix("impr help"), asJSON)
 	}
+	start := a.Now()
 	code, err := h(ctx, a, rest)
 	if err != nil {
-		return a.fail(err, asJSON)
+		code = a.fail(err, asJSON)
 	}
+	a.audit(ctx, cmd, rest, code, start)
 	return code
 }
 
@@ -357,6 +377,8 @@ func init() {
 		"menu":       cmdMenu,
 		"build":      cmdBuild,
 		"release":    cmdRelease,
+		"tools":      cmdTools,
+		"audit":      cmdAudit,
 	}
 }
 
@@ -384,6 +406,8 @@ Usage:
   impr webhooks list [--json] | secret | retry [--all] | deliveries [--json]
   impr config path|show|validate [--json] | get KEY | set KEY VALUE [--profile NAME] | unset KEY [--profile NAME]
   impr config profile list [--json] | create NAME | use NAME | use --none | rm NAME
+  impr tools list [--json] | pin NAME
+  impr audit tail [--limit N] [--json] | verify [--json]
   impr serve [--listen unix|127.0.0.1:PORT] [--check-config]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
   impr completion bash|zsh|fish|powershell | install bash|zsh|fish | uninstall bash|zsh|fish

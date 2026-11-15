@@ -12,8 +12,9 @@ verification step it takes.
   - `subject`: the repository key, or the profile name. It is never a local path.
   - `imprclass`: `internal` or `local`, saying who may store the event.
 - **Location.** Events go to `<state>/events/YYYY-MM.jsonl`. Files are 0600, in a 0700 folder.
-- **Chain.** Each line carries `imprprev`, the sha256 of the line before it. `impr events verify` uses
-  this to detect an edited, removed or reordered line.
+- **Chain.** Each line carries `imprprev`, the sha256 of the line before it, and `<state>/events/head`
+  holds the hash of the newest line. `impr events verify` uses both to detect an edited, removed or
+  reordered line, the newest included.
 - **Not on stdout.** Events never appear on stdout, so every `--json` document is unchanged.
 - **Failure does not stop the command.** If the log cannot be written, impr prints a warning and the
   command carries on.

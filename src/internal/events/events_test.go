@@ -116,3 +116,20 @@ func TestMatches(t *testing.T) {
 		}
 	}
 }
+
+// The newest line has no successor to chain to it; the head file catches an
+// edit to it.
+func TestLogDetectsAnEditedNewestLine(t *testing.T) {
+	l := Log{Dir: filepath.Join(t.TempDir(), "events")}
+	bus := &Bus{Env: fixedEnv(), Sinks: []Sink{l}}
+	bus.Emit(context.Background(), "verification.run.completed", "p", map[string]any{"n": 1})
+	bus.Emit(context.Background(), "verification.run.completed", "p", map[string]any{"n": 2})
+	files, _ := l.files()
+	b, _ := os.ReadFile(files[0])
+	if err := os.WriteFile(files[0], bytes.Replace(b, []byte(`"n":2`), []byte(`"n":3`), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Verify(); err == nil {
+		t.Fatal("an edited newest line was not detected")
+	}
+}

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/events"
+	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/webhook"
 )
 
@@ -114,6 +115,18 @@ type Config struct {
 	Hooks    []Hook   `json:"hooks,omitempty"`
 	Webhooks Webhooks `json:"webhooks,omitempty"`
 	Server   Server   `json:"server,omitempty"`
+	// Tools pins external tools by absolute path and sha256 (audit N-B11).
+	Tools map[string]execx.Pin `json:"tools,omitempty"`
+	// Policy tightens what impr accepts beyond the defaults.
+	Policy Policy `json:"policy,omitempty"`
+}
+
+// Policy holds opt-in tightenings, off by default so older profiles keep
+// working until the owner turns them on.
+type Policy struct {
+	// GPGFullFingerprint refuses a gpg checksum pin shorter than a full
+	// 40- or 64-hex fingerprint (audit N-B12).
+	GPGFullFingerprint bool `json:"gpgFullFingerprint,omitempty"`
 }
 
 // Scopes are the API token scopes.
@@ -238,8 +251,8 @@ func (c Config) Validate() []string {
 	}
 	for _, k := range c.Locked {
 		top, _, _ := strings.Cut(k, ".")
-		if !slices.Contains([]string{"hooks", "webhooks", "server", "activeProfile"}, top) {
-			ps = append(ps, "locked key "+k+" is not under hooks, webhooks, server or activeProfile")
+		if !slices.Contains([]string{"hooks", "webhooks", "server", "activeProfile", "tools", "policy"}, top) {
+			ps = append(ps, "locked key "+k+" is not under hooks, webhooks, server, tools, policy or activeProfile")
 		}
 	}
 	subs := map[string]bool{}
@@ -265,6 +278,17 @@ func (c Config) Validate() []string {
 		}
 	}
 	ps = append(ps, c.Server.validate()...)
+	for name, pin := range c.Tools {
+		if _, ok := execx.Allowed[name]; !ok {
+			ps = append(ps, "tools."+name+": not a tool impr runs ("+strings.Join(execx.Names(), ", ")+")")
+		}
+		if !filepath.IsAbs(pin.Path) {
+			ps = append(ps, "tools."+name+".path must be absolute")
+		}
+		if !regexp.MustCompile(`^[0-9a-fA-F]{64}$`).MatchString(pin.SHA256) {
+			ps = append(ps, "tools."+name+".sha256 must be the file's 64-hex digest (impr tools pin "+name+")")
+		}
+	}
 	return ps
 }
 

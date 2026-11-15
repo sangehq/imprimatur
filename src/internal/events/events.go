@@ -70,6 +70,7 @@ var Catalogue = map[string]string{
 	"hook.failed":                ClassLocal,
 	"hook.vetoed":                ClassLocal,
 	"server.started":             ClassLocal,
+	"audit.command.completed":    ClassLocal,
 	"server.stopped":             ClassLocal,
 }
 

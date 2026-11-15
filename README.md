@@ -82,6 +82,7 @@ else is in the [documentation](#documentation) below.
 - [`impr hooks`](docs/tools/hooks.md) — pinned programs that gate signing and verification or react to events
 - [`impr serve`](docs/tools/serve.md) — the REST API and signed inbound webhooks, over a private socket
 - [`impr webhooks`](docs/tools/webhooks.md) — signed Standard Webhooks deliveries of impr's events to other apps
+- [`impr audit`](docs/tools/audit.md) — the hash-chained record of every command that signs or changes configuration
 - [`impr events`](docs/tools/events.md) — the CloudEvents log of signing and verification runs, and its hash chain
 - [Backends](docs/tools/backends.md) — every signing backend, the tools it runs and what it pins
 

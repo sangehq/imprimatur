@@ -43,9 +43,24 @@ func (l Log) Write(_ context.Context, ev Event) error {
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	_, err = f.Write(append(line, '\n'))
-	return err
+	if _, err := f.Write(append(line, '\n')); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	// The head file holds the last line's hash, so an edit to the newest
+	// line (which no later line chains to) is detected too.
+	return writeHead(filepath.Join(l.Dir, "head"), lineHash(line))
+}
+
+func writeHead(path, hash string) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(hash+"\n"), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // files lists the month files in order.
@@ -128,7 +143,17 @@ func (l Log) Verify() (int, error) {
 		prev = lineHash(raw)
 		return nil
 	})
-	return n, err
+	if err != nil || n == 0 {
+		return n, err
+	}
+	head, herr := os.ReadFile(filepath.Join(l.Dir, "head")) //nolint:gosec // G304: impr's own log
+	if herr != nil {
+		return n, fmt.Errorf("the log has no head record, so its newest line cannot be checked")
+	}
+	if strings.TrimSpace(string(head)) != prev {
+		return n, fmt.Errorf("the newest line (event %d) is not the one last written: the log was edited", n)
+	}
+	return n, nil
 }
 
 // Matches reports whether a type matches a glob over full or short type

@@ -997,3 +997,40 @@ func TestReleaseBuildsSignsAndVerifies(t *testing.T) {
 		}
 	}
 }
+
+// Audit N-B25: commands that change things are recorded in a hash-chained
+// audit trail, read-only ones are not, and secrets never reach it.
+func TestAuditTrail(t *testing.T) {
+	h := newHarness(t)
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://K",
+		"--set", "platforms.checksums.fingerprint=SHA256:"+strings.Repeat("A", 43))
+	h.ok("profile", "list")
+	secret := "whsec_" + strings.Repeat("Q", 43)
+	h.exits(1, "config", "set", "webhooks.outbound", secret)
+	var tail struct {
+		Records []struct {
+			Data json.RawMessage `json:"data"`
+		} `json:"records"`
+	}
+	out := h.ok("audit", "tail", "--json")
+	if err := json.Unmarshal([]byte(out), &tail); err != nil || len(tail.Records) != 2 {
+		t.Fatalf("audit records: %s %v", out, err)
+	}
+	if !strings.Contains(string(tail.Records[0].Data), `"command":"profile"`) || !strings.Contains(string(tail.Records[1].Data), `"exitCode":1`) {
+		t.Fatalf("records: %s", out)
+	}
+	if strings.Contains(out, secret) || !strings.Contains(out, "[redacted]") {
+		t.Fatalf("a secret reached the audit trail: %s", out)
+	}
+	h.ok("audit", "verify")
+	files, _ := filepath.Glob(filepath.Join(h.env["IMPR_STATE_DIR"], "audit", "*.jsonl"))
+	if len(files) != 1 {
+		t.Fatalf("audit files %v", files)
+	}
+	b, _ := os.ReadFile(files[0])
+	if err := os.WriteFile(files[0], bytes.Replace(b, []byte(`"exitCode":1`), []byte(`"exitCode":0`), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(4, "audit", "verify")
+}

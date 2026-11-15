@@ -171,3 +171,20 @@ func TestMSIIsRefusedBeforeSigning(t *testing.T) {
 		t.Fatalf("err %v, signed %v", err, signed)
 	}
 }
+
+// Audit N-B12: with policy.gpgFullFingerprint, a short gpg pin is refused
+// when a profile is loaded to sign or verify; without it, it still loads.
+func TestFullGPGFingerprintPolicy(t *testing.T) {
+	store := profile.Store{Dir: t.TempDir()}
+	p := profile.Profile{Name: "g", Scope: profile.ScopePersonal, Owner: "me", Purpose: []profile.Purpose{profile.PurposeInternal},
+		Platforms: profile.Platforms{Checksums: &profile.ChecksumSpec{Kind: "gpg", KeyRef: "gpg-agent://0123456789ABCDEF", Fingerprint: "0123456789ABCDEF"}}}
+	if err := store.Save(p, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&Service{Store: store}).LoadProfile("g", contract.SignFailed); err != nil {
+		t.Fatalf("without the policy: %v", err)
+	}
+	if _, err := (&Service{Store: store, RequireFullGPG: true}).LoadProfile("g", contract.SignFailed); contract.CodeOf(err) != contract.SignFailed {
+		t.Fatalf("with the policy a short pin loaded: %v", err)
+	}
+}

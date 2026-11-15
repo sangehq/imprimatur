@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Tool pins.** `config.json` `tools.<name>` pins an external tool to an
+  absolute path and sha256. A pinned tool is never looked up on PATH, and is
+  refused before it runs if its digest changed. `impr tools list|pin` shows
+  and prints pins.
+- **`policy.gpgFullFingerprint`** (opt-in) refuses gpg pins shorter than a
+  full fingerprint.
+- **Audit trail.** Every command that signs, verifies, builds, releases,
+  installs, or changes profiles, configuration, tokens or completion appends
+  one record to `<state>/audit/` (hash-chained, 0600). A record holds the
+  user, command, arguments with secret-shaped values redacted, exit code and
+  duration. `impr audit tail|verify` reads it.
+- **Head files.** The event log and the audit trail keep a `head` file with
+  the newest line's hash, so an edit to the newest record is detected too.
+
 - `impr build` cross-compiles a Go module into the estate layout
   (`build/{os}/{binary}_{os}_{arch}[.exe]`, `macos` for darwin) from
   `build/targets.txt` or `--targets`, and writes `build/build-manifest.json`

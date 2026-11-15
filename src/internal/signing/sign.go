@@ -29,6 +29,9 @@ type Service struct {
 	Events *events.Bus
 	// Hooks runs the user's pre-sign and pre-verify gates; nil runs none.
 	Hooks *hooks.Runner
+	// RequireFullGPG refuses a gpg pin shorter than a full fingerprint
+	// (config policy.gpgFullFingerprint, audit N-B12).
+	RequireFullGPG bool
 	// BackendFor builds a backend; nil uses backend.For. Tests replace it.
 	BackendFor func(h backend.Host, p profile.Profile, platform string) (backend.Backend, error)
 }
@@ -74,6 +77,12 @@ func (s *Service) LoadProfile(name string, code contract.Code) (profile.Profile,
 	} else if len(ps) > 0 {
 		return profile.Profile{}, contract.New(code, "signing profile %s is not valid", p.Name).WithDetails(ps.Strings()...).
 			WithFix("impr profile validate "+p.Name, "impr profile edit "+p.Name+" --set KEY=VALUE")
+	}
+	if c := p.Platforms.Checksums; s.RequireFullGPG && c != nil && c.Kind == "gpg" {
+		if f := strings.TrimPrefix(strings.ToUpper(c.Fingerprint), "0X"); len(f) != 40 && len(f) != 64 {
+			return profile.Profile{}, contract.New(code, "signing profile %s pins gpg key %s, a short id; policy.gpgFullFingerprint requires the full fingerprint", p.Name, c.Fingerprint).
+				WithFix("gpg --fingerprint "+c.Fingerprint, "impr profile edit "+p.Name+" --set platforms.checksums.fingerprint=<40-hex fingerprint>")
+		}
 	}
 	return p, nil
 }

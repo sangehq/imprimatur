@@ -38,6 +38,22 @@ The system config can lock dotted keys:
 - **Only the system config may lock.**
 - **Locking `activeProfile`** also refuses `IMPR_CONFIG_PROFILE`.
 
+## Tool pins and policy
+
+- **Tool pins.** `tools.<name>` pins an external tool to an absolute path and sha256:
+
+  ```bash
+  impr tools pin gpg                    # prints {"path": …, "sha256": …} for the gpg PATH finds
+  impr config set tools.gpg '{"path":"/opt/homebrew/Cellar/gnupg/2.4.7/bin/gpg","sha256":"…"}'
+  impr tools list                       # each tool: path, digest, pinned or from PATH
+  ```
+
+  A pinned tool is never looked up on PATH, and a file whose digest no longer matches is refused before
+  it runs. After an upgrade, pin the new file. The system config can lock `tools` for a fleet.
+- **Full gpg fingerprints.** `policy.gpgFullFingerprint: true` refuses, at sign and verify time, any gpg
+  pin shorter than a full 40- or 64-hex fingerprint. It is off by default because older profiles carry
+  16-hex ids.
+
 ## Commands
 
 ```bash
