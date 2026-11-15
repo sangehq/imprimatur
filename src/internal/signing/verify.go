@@ -12,6 +12,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/profile"
+	"github.com/sangehq/imprimatur/src/internal/project"
 )
 
 // VerifyOptions is one verification.
@@ -74,6 +75,13 @@ func (s *Service) verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 	p, err := s.LoadProfile(o.Profile, contract.VerifyFailed)
 	if err != nil {
 		return VerifyResult{}, err
+	}
+	if proj, ok, err := project.Load(root); err != nil {
+		return VerifyResult{}, contract.Wrap(contract.Usage, err, "the repository's project file cannot be read")
+	} else if ok {
+		if why := proj.CheckVerify(p.Name, o.Strict); len(why) > 0 {
+			return VerifyResult{}, contract.New(contract.VerifyFailed, "the repository's %s refuses this verification", project.Path).WithDetails(why...)
+		}
 	}
 	var items []item
 	switch {

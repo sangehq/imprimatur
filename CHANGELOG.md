@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A repository's `.imprimatur/project.json` (`imprimatur.project/v1`) can
+  tighten signing in that repository: one profile, the allowed purposes and
+  platforms, always `--strict`, always `--repo`.
+  - **Where it applies.** It is read from the signing root on every `sign`
+    and `verify` (and so `release` and the REST API).
+  - **Refused before signing.** A run it refuses stops before anything is
+    signed.
+  - **Tighten only.** It cannot loosen anything or add anything that runs,
+    and an unknown field, a second object or a symlink is an error.
+
 - `impr serve` can serve other machines when `server.allowRemote` and
   `server.tls` (certificate, key, client CA) are set.
   - **mTLS.** It requires TLS 1.3 and a client certificate from that CA on

@@ -78,6 +78,7 @@ else is in the [documentation](#documentation) below.
 - [`impr completion`](docs/tools/completion.md) — tab completion for bash, zsh, fish and PowerShell
 - [`impr install`](docs/tools/install.md) — install, uninstall and `impr path`
 - [`make/impr.mk`](docs/tools/make.md) — impr's commands as Make targets for a project's Makefile
+- [`.imprimatur/project.json`](docs/tools/project.md) — a repository's own tighten-only signing rules
 - [`impr config`](docs/tools/config.md) — layered configuration (system, user, configuration profiles) and locked keys
 - [`impr hooks`](docs/tools/hooks.md) — pinned programs that gate signing and verification or react to events
 - [`impr serve`](docs/tools/serve.md) — the REST API and signed inbound webhooks, over a private socket

@@ -188,3 +188,20 @@ func TestFullGPGFingerprintPolicy(t *testing.T) {
 		t.Fatalf("with the policy a short pin loaded: %v", err)
 	}
 }
+
+// A repository's .imprimatur/project.json can only tighten: here it pins
+// another profile, so the run is refused before anything is signed.
+func TestProjectFileRefusesBeforeSigning(t *testing.T) {
+	svc, signed, root, manifest := setupMulti(t, map[string]uint16{"build/windows/tool_amd64.exe": 0x8664})
+	if err := os.MkdirAll(filepath.Join(root, ".imprimatur"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".imprimatur", "project.json"), []byte(`{"schema":"imprimatur.project/v1","profile":"acme-release"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := svc.Sign(context.Background(), SignOptions{Root: root, Manifest: manifest, Commit: strings.Repeat("1", 40),
+		Tree: strings.Repeat("2", 40), Profile: "acme", Purpose: "internal", Platforms: []string{"windows"}, Strict: true})
+	if contract.CodeOf(err) != contract.SignFailed || len(signed) != 0 {
+		t.Fatalf("err %v, signed %v", err, signed)
+	}
+}

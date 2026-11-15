@@ -17,6 +17,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/hooks"
 	"github.com/sangehq/imprimatur/src/internal/profile"
+	"github.com/sangehq/imprimatur/src/internal/project"
 )
 
 // Service signs and verifies.
@@ -206,6 +207,17 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 	p, err := s.LoadProfile(o.Profile, contract.SignFailed)
 	if err != nil {
 		return Result{}, err
+	}
+	if proj, ok, err := project.Load(root); err != nil {
+		return Result{}, contract.Wrap(contract.Usage, err, "the repository's project file cannot be read; nothing was signed")
+	} else if ok {
+		pls := o.Platforms
+		if len(pls) == 0 {
+			pls = p.Platforms.Names()
+		}
+		if why := proj.CheckSign(p.Name, o.Purpose, o.Repo, pls, o.Strict); len(why) > 0 {
+			return Result{}, contract.New(contract.SignFailed, "the repository's %s refuses this run; nothing was signed", project.Path).WithDetails(why...)
+		}
 	}
 	purpose := profile.Purpose(o.Purpose)
 	if o.Purpose == "" || !purpose.Valid() {
