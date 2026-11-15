@@ -89,10 +89,14 @@ type Token struct {
 
 // Server is the impr serve section (design §7).
 type Server struct {
-	// Listen is "unix" (the default: <state>/server/impr.sock) or a
-	// loopback host:port. Other addresses are refused until the owner
-	// decides on TLS (design ID-04).
+	// Listen is "unix" (the default: <state>/server/impr.sock), a loopback
+	// host:port, or, with AllowRemote and TLS, any host:port (design ID-04,
+	// owner decision 2026-11-15: both, configurably).
 	Listen string `json:"listen,omitempty"`
+	// AllowRemote permits a non-loopback Listen. It needs TLS.
+	AllowRemote bool `json:"allowRemote,omitempty"`
+	// TLS serves HTTPS with required client certificates (mTLS).
+	TLS *ServerTLS `json:"tls,omitempty"`
 	// Roots are the only directories verify and sign may read artifacts
 	// from. With none, those endpoints refuse.
 	Roots []string `json:"roots,omitempty"`
@@ -100,6 +104,30 @@ type Server struct {
 	AllowSign bool      `json:"allowSign,omitempty"`
 	Tokens    []Token   `json:"tokens,omitempty"`
 	Inbound   []Inbound `json:"inbound,omitempty"`
+}
+
+// ServerTLS is the server's certificate and the CA its clients' certificates
+// must chain to. The owner makes these; impr only reads them.
+type ServerTLS struct {
+	CertFile     string `json:"certFile"`
+	KeyFile      string `json:"keyFile"`
+	ClientCAFile string `json:"clientCaFile"`
+}
+
+// Remote reports whether Listen is an address other machines can reach.
+func (s Server) Remote() bool {
+	if s.Listen == "" || s.Listen == "unix" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(s.Listen)
+	if err != nil {
+		return true
+	}
+	if host == "localhost" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback()
 }
 
 // Config is config.json, and the effective configuration its layers merge
@@ -300,10 +328,18 @@ func (c Config) Validate() []string {
 func (s Server) validate() []string {
 	var ps []string
 	if s.Listen != "" && s.Listen != "unix" {
-		host, _, err := net.SplitHostPort(s.Listen)
-		ip := net.ParseIP(host)
-		if err != nil || (host != "localhost" && (ip == nil || !ip.IsLoopback())) {
-			ps = append(ps, "server.listen must be \"unix\" or a loopback host:port")
+		if _, _, err := net.SplitHostPort(s.Listen); err != nil {
+			ps = append(ps, "server.listen must be \"unix\" or host:port")
+		}
+	}
+	if s.Remote() && (!s.AllowRemote || s.TLS == nil) {
+		ps = append(ps, "server.listen "+s.Listen+" is reachable from other machines: set server.allowRemote and server.tls (mTLS), or listen on loopback")
+	}
+	if t := s.TLS; t != nil {
+		for name, p := range map[string]string{"certFile": t.CertFile, "keyFile": t.KeyFile, "clientCaFile": t.ClientCAFile} {
+			if !filepath.IsAbs(p) {
+				ps = append(ps, "server.tls."+name+" must be an absolute path")
+			}
 		}
 	}
 	for i, r := range s.Roots {

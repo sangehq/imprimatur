@@ -408,7 +408,7 @@ Usage:
   impr config profile list [--json] | create NAME | use NAME | use --none | rm NAME
   impr tools list [--json] | pin NAME
   impr audit tail [--limit N] [--json] | verify [--json]
-  impr serve [--listen unix|127.0.0.1:PORT] [--check-config]
+  impr serve [--listen unix|HOST:PORT] [--check-config] [--yes]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
   impr completion bash|zsh|fish|powershell | install bash|zsh|fish | uninstall bash|zsh|fish
   impr install [--dir DIR] [--force]

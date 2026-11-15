@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr serve` can serve other machines when `server.allowRemote` and
+  `server.tls` (certificate, key, client CA) are set.
+  - **mTLS.** It requires TLS 1.3 and a client certificate from that CA on
+    every connection, as well as a token.
+  - **Key file.** It refuses a key file others can read.
+  - **The prompt.** At a terminal it asks before listening on such an address;
+    `--yes` skips the prompt.
+  - **Default.** Loopback and the Unix socket stay the default.
+
 - **Tool pins.** `config.json` `tools.<name>` pins an external tool to an
   absolute path and sha256. A pinned tool is never looked up on PATH, and is
   refused before it runs if its digest changed. `impr tools list|pin` shows

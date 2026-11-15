@@ -13,8 +13,8 @@ impr serve --listen 127.0.0.1:8743             # or a loopback port
 ```
 
 - **Socket.** The socket is 0600, in a 0700 directory, so only your user can connect.
-- **Addresses.** A loopback port is the only other choice. impr refuses any other address, because the
-  server has no TLS yet.
+- **Addresses.** A loopback port is the other everyday choice. An address other machines can reach is
+  allowed only with `server.allowRemote` and `server.tls` set (see below).
 - **Stopping.** Ctrl-C or SIGTERM stops it gracefully.
 
 ```bash
@@ -38,6 +38,26 @@ These settings go under `server` in `<config>/config.json`:
   }
 }
 ```
+
+## Serving other machines (mTLS)
+
+To serve other machines, set `allowRemote` and `tls` under `server` in `config.json`:
+
+```json
+{"server": {"listen": "0.0.0.0:8743", "allowRemote": true,
+            "tls": {"certFile": "/etc/impr/server.pem", "keyFile": "/etc/impr/server-key.pem",
+                    "clientCaFile": "/etc/impr/clients-ca.pem"}}}
+```
+
+- **impr refuses to start without both.** A non-loopback `listen` without `allowRemote` and `tls` fails.
+- **What a caller needs.** The server speaks TLS 1.3 only, and every caller must present a client
+  certificate that chains to `clientCaFile` as well as a valid token. A missing certificate, or one from
+  another CA, is refused during the handshake.
+- **The key file must be owner-only** (0600). You make the certificates; impr only reads them.
+- **The prompt.** At a terminal, impr names the address and the CA, and listens only after you type `yes`.
+  Under a service manager there is no prompt, because `allowRemote` in the config is the consent. `--yes`
+  skips the prompt.
+- **On loopback.** `tls` can be set on a loopback address too, if you want mTLS there.
 
 ## Endpoints
 
