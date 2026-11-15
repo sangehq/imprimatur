@@ -285,8 +285,11 @@ func macOSProfile(e LegacyEnv) *Profile {
 	m := &MacOSSpec{Kind: "developer-id"}
 	notes := "Migrated from the MACOS_* environment variables (references only). Set teamId and identity."
 	if set["MACOS_SIGN_P12"] {
-		// impr signs with a keychain identity; certRef would be ignored (N-B15).
-		notes += " MACOS_SIGN_P12 is set: import that .p12 into your login keychain, which is where impr signs from."
+		// impr imports it into a temporary keychain for each run.
+		m.CertRef = "env://MACOS_SIGN_P12"
+		if set["MACOS_SIGN_PASSWORD"] {
+			m.PasswordRef = "env://MACOS_SIGN_PASSWORD"
+		}
 	}
 	if set["MACOS_NOTARY_KEY"] {
 		m.Notary = &NotarySpec{APIKeyRef: "env://MACOS_NOTARY_KEY"} //nolint:gosec // G101: the name of a variable, not a credential

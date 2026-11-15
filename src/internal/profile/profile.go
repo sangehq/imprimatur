@@ -188,11 +188,15 @@ type Selector struct {
 
 // MacOSSpec is Developer ID signing and notarisation.
 type MacOSSpec struct {
-	Kind     string      `json:"kind"`     // developer-id
-	TeamID   string      `json:"teamId"`   // pinned
-	Identity string      `json:"identity"` // pinned
-	CertRef  string      `json:"certRef,omitempty"`
-	Notary   *NotarySpec `json:"notary,omitempty"`
+	Kind     string `json:"kind"`     // developer-id
+	TeamID   string `json:"teamId"`   // pinned
+	Identity string `json:"identity"` // pinned
+	// CertRef holds a .p12 (path or base64) imported into a temporary
+	// keychain for one run; empty means the identity is in a keychain.
+	CertRef string `json:"certRef,omitempty"`
+	// PasswordRef is the .p12's password, as a reference.
+	PasswordRef string      `json:"passwordRef,omitempty"`
+	Notary      *NotarySpec `json:"notary,omitempty"`
 	// Entitlements is a plist path, relative to the signing root.
 	Entitlements string     `json:"entitlements,omitempty"`
 	NotAfter     *time.Time `json:"notAfter,omitempty"`
@@ -216,6 +220,9 @@ type ChecksumSpec struct {
 	// Namespace is the ssh-keygen -Y namespace; "file" when empty.
 	Namespace string     `json:"namespace,omitempty"`
 	NotAfter  *time.Time `json:"notAfter,omitempty"`
+	// PasswordRef is the passphrase of a gpg key held in a secret (keyRef
+	// secret:// or env://) rather than by gpg-agent.
+	PasswordRef string `json:"passwordRef,omitempty"`
 }
 
 // ContainerSpec is cosign.
@@ -381,11 +388,7 @@ func (p Profile) Validate() Problems {
 			ps.add("platforms.macos.identity", "pin the exact signing identity, which names the team ID in parentheses")
 		}
 		ref("platforms.macos.certRef", m.CertRef, false)
-		if m.CertRef != "" {
-			// No backend reads it: the identity must be in a keychain. Saying so
-			// beats silently ignoring it (audit N-B15).
-			ps.add("platforms.macos.certRef", "is not used: impr signs with an identity already in a keychain; import the .p12 there and remove certRef")
-		}
+		ref("platforms.macos.passwordRef", m.PasswordRef, false)
 		if m.Notary != nil {
 			ref("platforms.macos.notary.apiKeyRef", m.Notary.APIKeyRef, true)
 		}
@@ -395,6 +398,7 @@ func (p Profile) Validate() Problems {
 			ps.add("platforms.checksums.kind", "%q is not gpg, minisign or ssh", c.Kind)
 		}
 		ref("platforms.checksums.keyRef", c.KeyRef, true)
+		ref("platforms.checksums.passwordRef", c.PasswordRef, false)
 		if !fprRe.MatchString(c.Fingerprint) {
 			ps.add("platforms.checksums.fingerprint", "pin the signing key's fingerprint")
 		}

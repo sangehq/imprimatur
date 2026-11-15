@@ -156,9 +156,6 @@ func TestValidationMatchesSigning(t *testing.T) {
 		"any host":                   func(p *Profile) { p.AllowedRepos = []string{"*/**"} },
 		"any owner":                  func(p *Profile) { p.AllowedRepos = []string{"github.com/*/tool"} },
 		"leading double star":        func(p *Profile) { p.AllowedRepos = []string{"**/tool"} },
-		"macOS certRef nothing reads": func(p *Profile) {
-			p.Platforms.MacOS = &MacOSSpec{Kind: "developer-id", TeamID: "ABCDE12345", Identity: "Developer ID Application: Acme (ABCDE12345)", CertRef: "env://P12"}
-		},
 	} {
 		p := base()
 		mutate(&p)

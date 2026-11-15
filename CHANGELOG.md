@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **gpg keys held in a secret.** A gpg checksum key can be held in a
+  `secret://` or `env://` reference (armored, with an optional `passwordRef`)
+  instead of gpg-agent.
+  - **Throwaway home.** It is imported into a 0700 gpg home that exists for
+    one run.
+  - **Verification.** `publicKey` names the armored public key to verify
+    against.
+- **macOS `.p12` from a reference.** `platforms.macos.certRef` and
+  `passwordRef` sign from a `.p12` placed in a temporary keychain for one run
+  and deleted afterwards, also on failure. The PowerShell import maps
+  `MACOS_SIGN_P12` and `MACOS_SIGN_PASSWORD` to them.
+
 - `impr sign FILE...` signs loose files under the signing root. impr writes
   `impr-loose-manifest.json` bound to HEAD's commit and tree, then signs it
   with every usual check.
@@ -282,9 +294,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - An `allowedRepos` pattern must name its host and owner literally.
     `github.com` (every repository on the host), `*/**` and
     `github.com/*/tool` are refused.
-  - A macOS `certRef` is reported as unused rather than silently ignored.
-    The PowerShell import no longer maps `MACOS_SIGN_P12` to it, and tells you
-    to import the `.p12` into a keychain instead.
+  - A macOS `certRef` is no longer silently ignored: it now signs from a
+    temporary keychain (see Added).
 - An `.msi` (which impr cannot check yet) or a `.pkg` (which needs
   productsign) in a build manifest stops the run before anything is signed,
   instead of being signed in place and failing afterwards.

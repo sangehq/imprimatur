@@ -2,7 +2,9 @@ package backend
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
@@ -97,6 +99,14 @@ func (a *Apple) Sign(ctx context.Context, art Artifact, p profile.Profile) (Sign
 			return Signature{}, contract.New(contract.Usage, "the entitlements file %s does not exist", a.Spec.Entitlements)
 		}
 		args = append(args, "--entitlements", ent)
+	}
+	if a.Spec.CertRef != "" {
+		kc, cleanup, err := a.tempKeychain(ctx)
+		if err != nil {
+			return Signature{}, err
+		}
+		defer cleanup()
+		args = append(args, "--keychain", kc)
 	}
 	args = append(args, "--sign", a.Spec.Identity, art.Path)
 	r, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "codesign", Args: args})
@@ -268,4 +278,64 @@ func spctlArgs(path string) []string {
 		return []string{"-a", "-t", "install", "-vv", path}
 	}
 	return []string{"-a", "-t", "exec", "-vv", path}
+}
+
+// tempKeychain imports the profile's .p12 (certRef, with passwordRef) into a
+// keychain that exists for this run only: created in a private temporary
+// folder with a random password, never added to the search list, and deleted
+// when signing ends. It restores the PowerShell toolkit's MACOS_SIGN_P12 flow
+// without leaving the identity on the machine.
+func (a *Apple) tempKeychain(ctx context.Context) (string, func(), error) {
+	v, err := a.H.Secrets.Resolve(ctx, a.Spec.CertRef)
+	if err != nil {
+		return "", func() {}, err
+	}
+	p12, err := secrets.AsFile(v, true)
+	if err != nil {
+		return "", func() {}, err
+	}
+	pw := ""
+	if a.Spec.PasswordRef != "" {
+		if pw, err = a.H.Secrets.Resolve(ctx, a.Spec.PasswordRef); err != nil {
+			p12.Close()
+			return "", func() {}, err
+		}
+	}
+	dir, err := os.MkdirTemp("", "impr-keychain-")
+	if err != nil {
+		p12.Close()
+		return "", func() {}, err
+	}
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		p12.Close()
+		_ = os.RemoveAll(dir)
+		return "", func() {}, err
+	}
+	kpw := hex.EncodeToString(b)
+	kc := filepath.Join(dir, "impr-signing.keychain-db")
+	cleanup := func() {
+		_, _ = a.H.Runner.Run(context.Background(), execx.Cmd{Tool: "security", Args: []string{"delete-keychain", kc}})
+		p12.Close()
+		_ = os.RemoveAll(dir)
+	}
+	steps := [][]string{
+		{"create-keychain", "-p", kpw, kc},
+		{"set-keychain-settings", "-lut", "3600", kc},
+		{"unlock-keychain", "-p", kpw, kc},
+		{"import", p12.Path, "-k", kc, "-f", "pkcs12", "-P", pw, "-T", "/usr/bin/codesign"},
+		{"set-key-partition-list", "-S", "apple-tool:,apple:", "-s", "-k", kpw, kc},
+	}
+	for _, st := range steps {
+		r, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "security", Args: st})
+		if err != nil || r.ExitCode != 0 {
+			cleanup()
+			detail := ""
+			if err == nil {
+				detail = firstLine(r.Output())
+			}
+			return "", func() {}, contract.New(contract.SignFailed, "the .p12 could not be put in a temporary keychain (security %s)", st[0]).WithDetails(detail)
+		}
+	}
+	return kc, cleanup, nil
 }

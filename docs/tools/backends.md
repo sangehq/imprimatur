@@ -45,6 +45,19 @@ type. Each runs only allow-listed tools, by absolute path, with no shell.
   and `keyId` and `issuer` (literal or `env://`). `.dmg` and `.pkg` files are
   stapled; a bare Mach-O cannot carry a ticket and is not.
 
+## Keys that are not in a keyring
+
+- **gpg.** `keyRef` may be `secret://` or `env://` holding the armored secret key, instead of
+  `gpg-agent://<fingerprint>`. impr imports the key into a fresh 0700 gpg home for one run and checks it
+  is the pinned key. It signs, with `passwordRef` passed through a file and loopback pinentry, then
+  deletes the home, so your own keyring is never touched. Set `publicKey` to the armored public key so
+  `impr verify` checks against it rather than your keyring.
+- **Developer ID.** `certRef` may hold a `.p12` (a path, or base64 in a CI secret), with `passwordRef`.
+  impr creates a keychain in a private temporary folder with a random password, imports the `.p12` there
+  for `/usr/bin/codesign`, signs with `codesign --keychain`, and deletes the keychain afterwards, even
+  when a step fails. The keychain is never added to your search list. `security import` takes the
+  `.p12` password as an argument, so it is briefly visible to other processes run by the same user.
+
 ## Checksums and cosign
 
 - **gpg**: `keyRef` must be `gpg-agent://<the pinned fingerprint>`; impr signs

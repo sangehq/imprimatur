@@ -306,7 +306,7 @@ func TestGPGVerifiesThePinnedKey(t *testing.T) {
 	}
 	g.Spec.Fingerprint = randHex(t, 20)
 	wantCode(t, g.Verify(context.Background(), Artifact{Path: "/x/SHA256SUMS"}, profile.Profile{}), contract.VerifyFailed)
-	g.Spec.KeyRef = "env://GPG_KEY"
+	g.Spec.KeyRef = "keychain://GPG_KEY" // not gpg-agent://, secret:// or env://
 	_, err := g.Sign(context.Background(), Artifact{Path: "/x/SHA256SUMS"}, profile.Profile{Name: "g"})
 	wantCode(t, err, contract.Usage)
 
@@ -592,5 +592,96 @@ func TestUntrustedRootOnly(t *testing.T) {
 		if got := untrustedRootOnly(out); got != want {
 			t.Errorf("%q: %v, want %v", out, got, want)
 		}
+	}
+}
+
+// A gpg key held in a secret is imported into a throwaway gpg home for the
+// run: every gpg call names that home, the key goes in on stdin, the
+// passphrase through a file, and the home is gone afterwards.
+func TestGPGKeyFromASecretUsesAThrowawayHome(t *testing.T) {
+	fpr := strings.ToUpper(randHex(t, 20))
+	var homes []string
+	var importedKey string
+	f := execx.NewFake("gpg")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if len(c.Args) > 1 && c.Args[0] == "--homedir" {
+			homes = append(homes, c.Args[1])
+		}
+		switch {
+		case slicesContains(c.Args, "--import"):
+			importedKey = string(c.Stdin)
+		case slicesContains(c.Args, "--verify"):
+			return execx.Result{Stdout: []byte("[GNUPG:] VALIDSIG " + fpr + " x\n")}
+		}
+		return execx.Result{}
+	}
+	key := "-----BEGIN PGP PRIVATE KEY BLOCK-----\n" + randHex(t, 16) + "\n-----END PGP PRIVATE KEY BLOCK-----\n"
+	g := &GPG{H: fakeHost("linux", f, map[string]string{"IMPR_GPG": key, "IMPR_GPG_PW": randHex(t, 8)}),
+		Spec: profile.ChecksumSpec{Kind: "gpg", KeyRef: "env://IMPR_GPG", PasswordRef: "env://IMPR_GPG_PW", Fingerprint: fpr}}
+	if _, err := g.Sign(context.Background(), Artifact{Path: "/x/SHA256SUMS", Rel: "SHA256SUMS"}, profile.Profile{Name: "g"}); err != nil {
+		t.Fatal(err)
+	}
+	if importedKey != key {
+		t.Fatal("the key did not reach gpg on stdin")
+	}
+	if len(homes) < 3 {
+		t.Fatalf("gpg calls outside the throwaway home: %v", f.Calls)
+	}
+	for _, h := range homes {
+		if h != homes[0] {
+			t.Fatalf("more than one home: %v", homes)
+		}
+	}
+	if _, err := os.Stat(homes[0]); err == nil {
+		t.Fatal("the throwaway gpg home was left behind")
+	}
+	if !f.Called("gpg", "--pinentry-mode loopback --passphrase-file") {
+		t.Fatalf("the passphrase was not given through a file: %+v", f.Calls)
+	}
+	for _, c := range f.Calls {
+		if strings.Contains(strings.Join(c.Args, " "), "PRIVATE KEY") {
+			t.Fatal("the key reached a command line")
+		}
+	}
+}
+
+// A .p12 in certRef is signed from a temporary keychain that is deleted
+// afterwards, also when a step fails.
+func TestAppleTemporaryKeychain(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "tool")
+	if err := os.WriteFile(file, []byte{0xcf, 0xfa, 0xed, 0xfe}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p12 := filepath.Join(t.TempDir(), "id.p12")
+	if err := os.WriteFile(p12, []byte(randHex(t, 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failImport := false
+	f := execx.NewFake("codesign", "security", "spctl", "xcrun", "ditto")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Tool == "security" && c.Args[0] == "import" && failImport {
+			return execx.Result{ExitCode: 1, Stderr: []byte("bad password")}
+		}
+		if c.Tool == "codesign" && c.Args[0] == "-d" {
+			return execx.Result{Stderr: []byte("Authority=Developer ID Application: Acme Ltd (ABCDE12345)\nTeamIdentifier=ABCDE12345\n")}
+		}
+		return execx.Result{}
+	}
+	spec := macSpec()
+	spec.CertRef, spec.PasswordRef = "env://IMPR_P12", "env://IMPR_P12_PW"
+	a := &Apple{H: fakeHost("darwin", f, map[string]string{"IMPR_P12": p12, "IMPR_P12_PW": randHex(t, 6)}), Spec: spec}
+	if _, err := a.Sign(context.Background(), Artifact{Path: file, Rel: "tool"}, profile.Profile{Name: "mac"}); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("security", "create-keychain") || !f.Called("security", "import "+p12) || !f.Called("codesign", "--keychain") ||
+		!f.Called("security", "delete-keychain") {
+		t.Fatalf("calls: %+v", f.Calls)
+	}
+	f.Calls = nil
+	failImport = true
+	_, err := a.Sign(context.Background(), Artifact{Path: file, Rel: "tool"}, profile.Profile{Name: "mac"})
+	wantCode(t, err, contract.SignFailed)
+	if !f.Called("security", "delete-keychain") || f.Called("codesign", "--sign") {
+		t.Fatalf("a failed import must delete the keychain and sign nothing: %+v", f.Calls)
 	}
 }

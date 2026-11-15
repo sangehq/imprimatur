@@ -74,14 +74,28 @@ func (g *GPG) Sign(ctx context.Context, art Artifact, p profile.Profile) (Signat
 	}
 	sig := art.Path + ".sig"
 	_ = os.Remove(sig)
-	r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: []string{"--batch", "--yes", "--local-user", g.fpr(), "--detach-sign", "--output", sig, art.Path}})
+	sign := func(home []string, passFile string) error {
+		args := append(append([]string{}, home...), "--yes")
+		if passFile != "" {
+			args = append(args, "--pinentry-mode", "loopback", "--passphrase-file", passFile)
+		}
+		args = append(args, "--local-user", g.fpr(), "--detach-sign", "--output", sig, art.Path)
+		r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: args})
+		if err != nil {
+			return contract.Wrap(contract.Unavailable, err, "gpg could not run")
+		}
+		if r.ExitCode != 0 {
+			return contract.New(contract.SignFailed, "gpg could not sign %s", art.Rel).WithDetails(firstLine(r.Output()))
+		}
+		return g.verifyWith(ctx, art, home)
+	}
+	var err error
+	if g.agent() {
+		err = sign([]string{"--batch"}, "")
+	} else {
+		err = g.withHome(ctx, sign)
+	}
 	if err != nil {
-		return Signature{}, contract.Wrap(contract.Unavailable, err, "gpg could not run")
-	}
-	if r.ExitCode != 0 {
-		return Signature{}, contract.New(contract.SignFailed, "gpg could not sign %s", art.Rel).WithDetails(firstLine(r.Output()))
-	}
-	if err := g.Verify(ctx, art, p); err != nil {
 		return Signature{}, err
 	}
 	return Signature{Kind: "gpg", Signer: g.fpr(), Outputs: []Output{{Path: sig, Kind: "gpg"}}}, nil
@@ -89,7 +103,30 @@ func (g *GPG) Sign(ctx context.Context, art Artifact, p profile.Profile) (Signat
 
 // Verify requires a good signature (VALIDSIG) by the pinned key.
 func (g *GPG) Verify(ctx context.Context, art Artifact, _ profile.Profile) error {
-	r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: []string{"--batch", "--status-fd", "1", "--verify", art.Path + ".sig", art.Path}})
+	if !g.agent() && g.Spec.PublicKey != "" {
+		// A key held in a secret: verify against its public key in a
+		// throwaway home, not whatever the user's keyring holds.
+		dir, err := os.MkdirTemp("", "impr-gpgv-")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = os.RemoveAll(dir) }()
+		home := []string{"--homedir", dir, "--batch"}
+		pub, err := os.ReadFile(g.Spec.PublicKey) //nolint:gosec // G304: the profile's public key file
+		if err != nil {
+			return contract.Wrap(contract.Unavailable, err, "the gpg public key %s cannot be read", g.Spec.PublicKey)
+		}
+		if r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: append(append([]string{}, home...), "--import"), Stdin: pub}); err != nil || r.ExitCode != 0 {
+			return contract.New(contract.Unavailable, "the gpg public key %s could not be imported", g.Spec.PublicKey)
+		}
+		return g.verifyWith(ctx, art, home)
+	}
+	return g.verifyWith(ctx, art, []string{"--batch"})
+}
+
+// verifyWith checks a signature with the given gpg home arguments.
+func (g *GPG) verifyWith(ctx context.Context, art Artifact, home []string) error {
+	r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: append(append([]string{}, home...), "--status-fd", "1", "--verify", art.Path+".sig", art.Path)})
 	if err != nil {
 		return contract.Wrap(contract.Unavailable, err, "gpg could not run")
 	}
@@ -412,13 +449,66 @@ func (s *SSH) Verify(ctx context.Context, art Artifact, _ profile.Profile) error
 	return nil
 }
 
-// Preflight checks the key reference names the pinned key.
+// Preflight checks the key reference: gpg-agent://<the pinned fingerprint>
+// for a key in the user's keyring, or secret:// / env:// for an armored key
+// impr imports into a throwaway gpg home for the run.
 func (g *GPG) Preflight(_ context.Context, p profile.Profile) error {
-	if s, n, _ := secrets.Scheme(g.Spec.KeyRef); s != "gpg-agent" || !strings.EqualFold(n, g.Spec.Fingerprint) {
-		return contract.New(contract.Usage, "a gpg checksum key is referenced as gpg-agent://<the pinned fingerprint>, not %q", g.Spec.KeyRef).
-			WithFix("impr profile edit " + p.Name + " --set platforms.checksums.keyRef=gpg-agent://" + g.fpr())
+	s, n, _ := secrets.Scheme(g.Spec.KeyRef)
+	switch {
+	case s == "gpg-agent" && strings.EqualFold(n, g.Spec.Fingerprint):
+		return nil
+	case s == "secret" || s == "env":
+		return nil
 	}
-	return nil
+	return contract.New(contract.Usage, "a gpg checksum key is gpg-agent://<the pinned fingerprint>, or a secret:// or env:// holding the armored key, not %q", g.Spec.KeyRef).
+		WithFix("impr profile edit " + p.Name + " --set platforms.checksums.keyRef=gpg-agent://" + g.fpr())
+}
+
+// agent reports whether the key lives in the user's own keyring.
+func (g *GPG) agent() bool {
+	s, _, _ := secrets.Scheme(g.Spec.KeyRef)
+	return s == "gpg-agent"
+}
+
+// withHome imports the armored key into a fresh 0700 gpg home, checks it is
+// the pinned key, runs fn with the home's arguments, and removes the home.
+// The user's keyring is never touched.
+func (g *GPG) withHome(ctx context.Context, fn func(home []string, passFile string) error) error {
+	key, err := g.H.Secrets.Resolve(ctx, g.Spec.KeyRef)
+	if err != nil {
+		return err
+	}
+	dir, err := os.MkdirTemp("", "impr-gpg-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	home := []string{"--homedir", dir, "--batch"}
+	r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: append(append([]string{}, home...), "--import"), Stdin: []byte(key)})
+	if err != nil {
+		return contract.Wrap(contract.Unavailable, err, "gpg could not run")
+	}
+	if r.ExitCode != 0 {
+		return contract.New(contract.SignFailed, "the gpg key could not be imported").WithDetails(firstLine(r.Output()))
+	}
+	l, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: append(append([]string{}, home...), "--with-colons", "--list-secret-keys", g.fpr())})
+	if err != nil || l.ExitCode != 0 {
+		return contract.New(contract.SignFailed, "the gpg key in %s is not the pinned key %s", g.Spec.KeyRef, g.fpr())
+	}
+	passFile := ""
+	if g.Spec.PasswordRef != "" {
+		pw, err := g.H.Secrets.Resolve(ctx, g.Spec.PasswordRef)
+		if err != nil {
+			return err
+		}
+		f, err := secrets.TempText(pw)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		passFile = f.Path
+	}
+	return fn(home, passFile)
 }
 
 // Preflight checks the public key is the pinned one.
