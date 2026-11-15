@@ -165,7 +165,7 @@ func TestConfigToolPinsAndPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, err := config.Load(dir)
-	if err != nil || !c.Policy.GPGFullFingerprint || c.Tools["gpg"].Path != "/opt/gpg" {
+	if err != nil || !c.Policy.RequireFullGPG() || c.Tools["gpg"].Path != "/opt/gpg" {
 		t.Fatalf("%+v %v", c, err)
 	}
 	for name, body := range map[string]string{
@@ -179,5 +179,13 @@ func TestConfigToolPinsAndPolicy(t *testing.T) {
 		if _, err := config.Load(dir); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
+	}
+}
+
+// The full-fingerprint policy is on unless a config turns it off explicitly.
+func TestFullGPGPolicyDefaultsOn(t *testing.T) {
+	off := false
+	if !(config.Policy{}).RequireFullGPG() || (config.Policy{GPGFullFingerprint: &off}).RequireFullGPG() {
+		t.Fatal("policy.gpgFullFingerprint: unset must mean on, false must mean off")
 	}
 }

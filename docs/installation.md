@@ -45,6 +45,8 @@ The same layout on every OS, Windows included (`~` is `%USERPROFILE%` there):
 | Configuration | `$XDG_CONFIG_HOME/imprimatur`, else `~/.config/imprimatur` |
 | State | `$XDG_STATE_HOME/imprimatur`, else `~/.local/state/imprimatur` |
 
+This deliberately differs from the estate's usual `%AppData%` rule for
+Windows: the owner chose one predictable layout for every OS (2026-11-15).
 Earlier Windows builds used `%AppData%\imprimatur` and
 `%LocalAppData%\imprimatur`. The first run that finds one of those, and no new
 folder yet, copies it across and writes `<config>/.migrated-from`; the old

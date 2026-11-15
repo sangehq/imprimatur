@@ -50,9 +50,10 @@ The system config can lock dotted keys:
 
   A pinned tool is never looked up on PATH, and a file whose digest no longer matches is refused before
   it runs. After an upgrade, pin the new file. The system config can lock `tools` for a fleet.
-- **Full gpg fingerprints.** `policy.gpgFullFingerprint: true` refuses, at sign and verify time, any gpg
-  pin shorter than a full 40- or 64-hex fingerprint. It is off by default because older profiles carry
-  16-hex ids.
+- **Full gpg fingerprints.** At sign and verify time, impr refuses any gpg pin shorter than a full 40- or
+  64-hex fingerprint. This is on by default. Re-pin an older profile that carries a 16-hex id with
+  `gpg --fingerprint <id>` and `impr profile edit NAME --set platforms.checksums.fingerprint=<full>`.
+  Setting `policy.gpgFullFingerprint: false` allows short pins again.
 
 ## Commands
 

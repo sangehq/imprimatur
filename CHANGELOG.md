@@ -13,8 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   absolute path and sha256. A pinned tool is never looked up on PATH, and is
   refused before it runs if its digest changed. `impr tools list|pin` shows
   and prints pins.
-- **`policy.gpgFullFingerprint`** (opt-in) refuses gpg pins shorter than a
-  full fingerprint.
+- **`policy.gpgFullFingerprint`**, on by default, refuses gpg pins shorter
+  than a full fingerprint at sign and verify time. Set it to `false` to allow
+  the 16-hex ids older profiles carry. Breaking: such a profile must be
+  re-pinned.
 - **Audit trail.** Every command that signs, verifies, builds, releases,
   installs, or changes profiles, configuration, tokens or completion appends
   one record to `<state>/audit/` (hash-chained, 0600). A record holds the

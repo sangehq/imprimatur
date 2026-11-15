@@ -291,7 +291,7 @@ func (a *App) service() (*signing.Service, error) {
 		}
 	}
 	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk,
-		RequireFullGPG: cfg.Policy.GPGFullFingerprint}, nil
+		RequireFullGPG: cfg.Policy.RequireFullGPG()}, nil
 }
 
 // bus is the event bus for this run: the hash-chained log in the state dir.

@@ -125,9 +125,14 @@ type Config struct {
 // working until the owner turns them on.
 type Policy struct {
 	// GPGFullFingerprint refuses a gpg checksum pin shorter than a full
-	// 40- or 64-hex fingerprint (audit N-B12).
-	GPGFullFingerprint bool `json:"gpgFullFingerprint,omitempty"`
+	// 40- or 64-hex fingerprint (audit N-B12). On unless set to false
+	// (owner decision 2026-11-15).
+	GPGFullFingerprint *bool `json:"gpgFullFingerprint,omitempty"`
 }
+
+// RequireFullGPG reports whether short gpg pins are refused: true unless the
+// configuration turns it off explicitly.
+func (p Policy) RequireFullGPG() bool { return p.GPGFullFingerprint == nil || *p.GPGFullFingerprint }
 
 // Scopes are the API token scopes.
 var Scopes = []string{"read", "verify", "sign", "events"}
