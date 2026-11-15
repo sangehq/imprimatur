@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr sign FILE...` signs loose files under the signing root. impr writes
+  `impr-loose-manifest.json` bound to HEAD's commit and tree, then signs it
+  with every usual check.
+  - **Releases.** A release needs a clean git work tree.
+  - **Outside git.** Only test and internal purposes sign, and their record
+    names commit `000…0`.
+
 - A repository's `.imprimatur/project.json` (`imprimatur.project/v1`) can
   tighten signing in that repository: one profile, the allowed purposes and
   platforms, always `--strict`, always `--repo`.

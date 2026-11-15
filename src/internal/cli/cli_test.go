@@ -1034,3 +1034,53 @@ func TestAuditTrail(t *testing.T) {
 	}
 	h.exits(4, "audit", "verify")
 }
+
+// Loose files (design ID-10) are signed through a manifest bound to HEAD.
+func TestLooseFilesAreSignedAgainstHEAD(t *testing.T) {
+	repo := goRepo(t)
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("needs ssh-keygen")
+	}
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+	art := filepath.Join(repo, "dist", "tool.tar.gz")
+	if err := os.MkdirAll(filepath.Dir(art), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(art, []byte(randHex(t, 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var res sangeSignResult
+	if err := json.Unmarshal([]byte(h.ok("sign", art, "--root", repo, "--profile", "p", "--purpose", "internal", "--platforms", "checksums", "--json")), &res); err != nil {
+		t.Fatal(err)
+	}
+	head, _ := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if res.Manifest.Commit != strings.TrimSpace(string(head)) {
+		t.Fatalf("record commit %s, HEAD %s", res.Manifest.Commit, head)
+	}
+	h.ok("verify", "--signed", res.ManifestPath, "--root", repo, "--profile", "p", "--strict")
+
+	// Outside a git work tree: test and internal sign against no commit; a
+	// release does not sign at all.
+	plain := t.TempDir()
+	loose := filepath.Join(plain, "x.bin")
+	if err := os.WriteFile(loose, []byte(randHex(t, 16)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(h.ok("sign", loose, "--root", plain, "--profile", "p", "--purpose", "internal", "--platforms", "checksums", "--json")), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Manifest.Commit != strings.Repeat("0", 40) {
+		t.Fatalf("outside git the record names commit %s", res.Manifest.Commit)
+	}
+	h.exits(3, "sign", loose, "--root", plain, "--profile", "p", "--purpose", "release", "--json")
+	h.exits(1, "sign", art, "--root", plain, "--profile", "p", "--purpose", "internal") // not under the root
+}

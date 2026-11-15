@@ -224,9 +224,15 @@ func cmdSign(ctx context.Context, a *App, args []string) (int, error) {
 		return 0, nil
 	}
 	if len(p.pos) > 0 {
-		return 0, contract.New(contract.Usage, "impr sign signs the files a build manifest lists, not files named on the command line").
-			WithDetails("Signing loose files would make imprimatur a signing oracle; the build manifest binds them to a commit and tree.").
-			WithFix("impr sign --manifest build-manifest.json --commit SHA --tree ID --profile NAME --purpose test")
+		if p.str("manifest") != "" || p.str("commit") != "" || p.str("tree") != "" {
+			return 0, contract.New(contract.Usage, "name files or --manifest, not both; loose files take their commit and tree from git")
+		}
+		manifest, commit, tree, err := a.looseManifest(ctx, p)
+		if err != nil {
+			return 0, err
+		}
+		p.strs["manifest"], p.strs["commit"], p.strs["tree"] = manifest, commit, tree
+		p.seen["manifest"], p.seen["commit"], p.seen["tree"] = true, true, true
 	}
 	if p.str("manifest") == "" {
 		return 0, contract.New(contract.Usage, "--manifest is required").WithFix("impr help")
