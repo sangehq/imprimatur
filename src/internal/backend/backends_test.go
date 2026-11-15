@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -683,5 +684,92 @@ func TestAppleTemporaryKeychain(t *testing.T) {
 	wantCode(t, err, contract.SignFailed)
 	if !f.Called("security", "delete-keychain") || f.Called("codesign", "--sign") {
 		t.Fatalf("a failed import must delete the keychain and sign nothing: %+v", f.Calls)
+	}
+}
+
+func selfSigned(t *testing.T) (der []byte, notAfter time.Time) {
+	t.Helper()
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	na := time.Now().Add(400 * 24 * time.Hour).UTC().Truncate(time.Second)
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(7), Subject: pkix.Name{CommonName: "store test"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: na}
+	der, err = x509.CreateCertificate(rand.Reader, tpl, tpl, &k.PublicKey, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return der, na
+}
+
+// The Windows store certificate's real expiry is read from the file
+// certutil exports, not from locale-dependent text.
+func TestStoreNotAfterIsReadFromTheExportedCertificate(t *testing.T) {
+	der, na := selfSigned(t)
+	f := execx.NewFake("certutil", "signtool")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Args[1] == "-store" {
+			_ = os.WriteFile(c.Args[len(c.Args)-1], der, 0o600)
+		}
+		return execx.Result{}
+	}
+	a := &Authenticode{H: fakeHost("windows", f, nil), Spec: profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendCertStore, Thumbprint: strings.ToUpper(sha1Hex(der))}}
+	e := a.Certificate(context.Background(), profile.Profile{Name: "w"})
+	if !e.Present || e.NotAfter == nil || !e.NotAfter.Equal(na) {
+		t.Fatalf("entry %+v, want notAfter %s", e, na)
+	}
+	a.Spec.Thumbprint = strings.Repeat("A", 40) // the exported certificate is not the pinned one
+	if e := a.Certificate(context.Background(), profile.Profile{Name: "w"}); e.NotAfter != nil {
+		t.Fatalf("a different certificate's expiry was reported: %v", e.NotAfter)
+	}
+}
+
+// Artifact Signing checks the Azure CLI is signed in when it is the
+// credential, and skips the check for a service principal.
+func TestAzureSignInCheck(t *testing.T) {
+	dir := t.TempDir()
+	dlib := filepath.Join(dir, "Azure.CodeSigning.Dlib.dll")
+	meta := filepath.Join(dir, "metadata.json")
+	_ = os.WriteFile(dlib, []byte("x"), 0o600)
+	_ = os.WriteFile(meta, []byte(`{"Endpoint":"https://eus.codesigning.azure.net","CodeSigningAccountName":"a","CertificateProfileName":"p"}`), 0o600)
+	exit := 1
+	f := execx.NewFake("signtool", "az")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Tool == "az" {
+			return execx.Result{ExitCode: exit}
+		}
+		return execx.Result{}
+	}
+	spec := profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendAzure, Subject: "CN=Acme", DlibPath: dlib, MetadataPath: meta}
+	a := &Authenticode{H: fakeHost("windows", f, nil), Spec: spec}
+	wantCode(t, a.Preflight(context.Background(), profile.Profile{}), contract.Unavailable)
+	exit = 0
+	if err := a.Preflight(context.Background(), profile.Profile{}); err != nil {
+		t.Fatal(err)
+	}
+	f.Calls, exit = nil, 1
+	a = &Authenticode{H: fakeHost("windows", f, map[string]string{"AZURE_CLIENT_ID": "x"}), Spec: spec}
+	if err := a.Preflight(context.Background(), profile.Profile{}); err != nil || f.Called("az", "account") {
+		t.Fatalf("with a service principal: %v, calls %+v", err, f.Calls)
+	}
+}
+
+func TestOsslKeyArgsSplitsAPEMBundle(t *testing.T) {
+	der, _ := selfSigned(t)
+	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	kd, _ := x509.MarshalPKCS8PrivateKey(k)
+	bundle := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})) + string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: kd}))
+	args, done, err := osslKeyArgs(bundle)
+	if err != nil || len(args) != 4 || args[0] != "-certs" || args[2] != "-key" {
+		t.Fatalf("%v %v", args, err)
+	}
+	c, _ := os.ReadFile(args[1])
+	kf, _ := os.ReadFile(args[3])
+	if !strings.Contains(string(c), "CERTIFICATE") || strings.Contains(string(c), "PRIVATE") || !strings.Contains(string(kf), "PRIVATE KEY") {
+		t.Fatal("the bundle was not split into certificate and key")
+	}
+	done()
+	if _, err := os.Stat(args[3]); err == nil {
+		t.Fatal("the key file was left behind")
 	}
 }

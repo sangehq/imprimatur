@@ -245,7 +245,7 @@ type AttestationSpec struct {
 }
 
 // RefSchemes are the reference schemes a profile may use for a credential.
-var RefSchemes = []string{"secret://", "env://", "keychain://", "cert-store://", "gpg-agent://"}
+var RefSchemes = []string{"secret://", "env://", "keychain://", "cert-store://", "gpg-agent://", "file://"}
 
 // IsRef reports whether v is a credential reference rather than a value.
 func IsRef(v string) bool {

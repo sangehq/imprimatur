@@ -3,6 +3,8 @@ package secrets
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
@@ -55,5 +57,27 @@ func TestAsFileWritesKeyMaterialOwnerOnlyAndRemovesIt(t *testing.T) {
 	}
 	if _, err := AsFile("/no/such/key", false); contract.CodeOf(err) != contract.Unavailable {
 		t.Fatalf("a missing file: %v", err)
+	}
+}
+
+func TestFileReferences(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "k.pem")
+	if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r := Resolver{Getenv: func(string) string { return "" }}
+	if v, err := r.Resolve(context.Background(), "file://"+p); err != nil || v != p {
+		t.Fatalf("%q %v", v, err)
+	}
+	if _, err := r.Resolve(context.Background(), "file://relative.pem"); err == nil {
+		t.Error("a relative file:// was accepted")
+	}
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(p, 0o644); err != nil { //nolint:gosec // G302: the unsafe mode under test
+			t.Fatal(err)
+		}
+		if _, err := r.Resolve(context.Background(), "file://"+p); err == nil {
+			t.Error("a key file others can read was accepted")
+		}
 	}
 }

@@ -2,10 +2,16 @@ package backend
 
 import (
 	"context"
+	"crypto/sha1" //nolint:gosec // G505: certificate thumbprints are SHA-1 identifiers, not a security check
+	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/execx"
@@ -89,6 +95,11 @@ func (a *Authenticode) Certificate(ctx context.Context, p profile.Profile) CertE
 			e.Source = "store"
 			if r, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "certutil", Args: []string{"-user", "-verifystore", "My", a.Spec.Thumbprint}}); err == nil {
 				e.Present = r.ExitCode == 0
+			}
+			if e.Present {
+				if na := a.storeNotAfter(ctx); na != nil {
+					e.NotAfter = na
+				}
 			}
 		}
 	}
@@ -197,11 +208,11 @@ func (a *Authenticode) signPFX(ctx context.Context, art Artifact) (string, error
 	if err != nil {
 		return "", err
 	}
-	pfx, err := secrets.AsFile(v, true)
+	keyArgs, closeKey, err := osslKeyArgs(v)
 	if err != nil {
 		return "", err
 	}
-	defer pfx.Close()
+	defer closeKey()
 	var pass secrets.File
 	if a.Spec.PasswordRef != "" {
 		pw, err := a.H.Secrets.Resolve(ctx, a.Spec.PasswordRef)
@@ -218,7 +229,7 @@ func (a *Authenticode) signPFX(ctx context.Context, art Artifact) (string, error
 	var failures []string
 	for _, ts := range a.timestamps() {
 		_ = os.Remove(out)
-		args := []string{"sign", "-pkcs12", pfx.Path}
+		args := append([]string{"sign"}, keyArgs...)
 		if pass.Path != "" {
 			args = append(args, "-readpass", pass.Path)
 		}
@@ -320,8 +331,34 @@ func (a *Authenticode) Preflight(ctx context.Context, _ profile.Profile) error {
 		f.Close()
 		return nil
 	}
-	_, err := a.signArgs()
-	return err
+	if _, err := a.signArgs(); err != nil {
+		return err
+	}
+	if a.Spec.Backend == profile.BackendAzure {
+		return a.azureSignedIn(ctx)
+	}
+	return nil
+}
+
+// azureSignedIn checks the Azure CLI is signed in when it is the credential
+// Artifact Signing will use: az is installed and no service-principal or
+// managed-identity variables are set. Without az, or with those variables,
+// the client authenticates another way and this check does not apply.
+func (a *Authenticode) azureSignedIn(ctx context.Context) error {
+	for _, v := range []string{"AZURE_CLIENT_ID", "AZURE_FEDERATED_TOKEN_FILE", "IDENTITY_ENDPOINT", "MSI_ENDPOINT"} {
+		if a.H.Secrets.Getenv != nil && a.H.Secrets.Getenv(v) != "" {
+			return nil
+		}
+	}
+	if ok, _ := tool(a.H, "az"); !ok {
+		return nil
+	}
+	r, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "az", Args: []string{"account", "show", "--output", "none"}})
+	if err != nil || r.ExitCode != 0 {
+		return contract.New(contract.Unavailable, "the Azure CLI is not signed in, so Artifact Signing cannot get a token; nothing was signed").
+			WithFix("az login", "or set AZURE_CLIENT_ID, AZURE_TENANT_ID and AZURE_CLIENT_SECRET for a service principal")
+	}
+	return nil
 }
 
 // untrustedRootMessages are the exact reports of a chain that ends in a root
@@ -350,4 +387,79 @@ func untrustedRootOnly(out string) bool {
 		}
 	}
 	return false
+}
+
+// osslKeyArgs turns the pfx backend's resolved certRef into osslsigncode
+// arguments: a .pfx (path or base64) is -pkcs12; a PEM bundle holding the
+// certificate and its private key (what impr cert create writes) is split
+// into owner-only temporary files and passed as -certs and -key.
+func osslKeyArgs(v string) ([]string, func(), error) {
+	text := v
+	if b, err := os.ReadFile(v); err == nil { //nolint:gosec // G304: the profile's own certificate file
+		text = string(b)
+	}
+	if strings.Contains(text, "-----BEGIN CERTIFICATE-----") && strings.Contains(text, "PRIVATE KEY-----") {
+		var certs, keys []byte
+		rest := []byte(text)
+		for {
+			var blk *pem.Block
+			if blk, rest = pem.Decode(rest); blk == nil {
+				break
+			}
+			if blk.Type == "CERTIFICATE" {
+				certs = append(certs, pem.EncodeToMemory(blk)...)
+			} else if strings.HasSuffix(blk.Type, "PRIVATE KEY") {
+				keys = append(keys, pem.EncodeToMemory(blk)...)
+			}
+		}
+		cf, err := secrets.TempText(string(certs))
+		if err != nil {
+			return nil, func() {}, err
+		}
+		kf, err := secrets.TempText(string(keys))
+		if err != nil {
+			cf.Close()
+			return nil, func() {}, err
+		}
+		return []string{"-certs", cf.Path, "-key", kf.Path}, func() { cf.Close(); kf.Close() }, nil
+	}
+	pfx, err := secrets.AsFile(v, true)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return []string{"-pkcs12", pfx.Path}, pfx.Close, nil
+}
+
+// storeNotAfter reads the pinned certificate's real expiry from the Windows
+// store: certutil exports it to a file, and the DER is parsed here, so no
+// locale-dependent date text is ever read. Nil when it cannot be read.
+func (a *Authenticode) storeNotAfter(ctx context.Context) *time.Time {
+	dir, err := os.MkdirTemp("", "impr-cert-")
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	out := filepath.Join(dir, "pinned.cer")
+	r, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "certutil", Args: []string{"-user", "-store", "My", a.Spec.Thumbprint, out}})
+	if err != nil || r.ExitCode != 0 {
+		return nil
+	}
+	b, err := os.ReadFile(out) //nolint:gosec // G304: the file certutil just wrote
+	if err != nil {
+		return nil
+	}
+	if blk, _ := pem.Decode(b); blk != nil {
+		b = blk.Bytes
+	}
+	c, err := x509.ParseCertificate(b)
+	if err != nil || !strings.EqualFold(sha1Hex(c.Raw), a.Spec.Thumbprint) {
+		return nil
+	}
+	na := c.NotAfter.UTC()
+	return &na
+}
+
+func sha1Hex(b []byte) string {
+	s := sha1.Sum(b) //nolint:gosec // G401: a certificate thumbprint is a SHA-1 identifier, not a security check
+	return hex.EncodeToString(s[:])
 }

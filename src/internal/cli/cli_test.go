@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha1" //nolint:gosec // G505: certificate thumbprints are SHA-1 identifiers, not a security check
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -1083,4 +1084,30 @@ func TestLooseFilesAreSignedAgainstHEAD(t *testing.T) {
 	}
 	h.exits(3, "sign", loose, "--root", plain, "--profile", "p", "--purpose", "release", "--json")
 	h.exits(1, "sign", art, "--root", plain, "--profile", "p", "--purpose", "internal") // not under the root
+}
+
+func TestCertCreateMakesATestOnlyProfile(t *testing.T) {
+	h := newHarness(t)
+	var r CertCreated
+	if err := json.Unmarshal([]byte(h.ok("cert", "create", "--name", "tsign", "--json")), &r); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(r.Bundle); err != nil || (runtime.GOOS != "windows" && st.Mode().Perm() != 0o600) {
+		t.Fatalf("bundle %v %v", st, err)
+	}
+	der, err := os.ReadFile(r.PublicCert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha1.Sum(der) //nolint:gosec // G401: comparing a thumbprint
+	if r.Thumbprint != strings.ToUpper(hex.EncodeToString(sum[:])) {
+		t.Fatal("the pinned thumbprint is not the certificate's")
+	}
+	if out := h.ok("profile", "validate", "tsign", "--json"); !strings.Contains(out, `"problems":[]`) && strings.Contains(out, `"problems":[{`) {
+		t.Fatalf("validate: %s", out)
+	}
+	if out := h.ok("profile", "show", "tsign", "--json"); !strings.Contains(out, `"test"`) || strings.Contains(out, `"release"`) {
+		t.Fatalf("profile: %s", out)
+	}
+	h.exits(1, "cert", "create", "--name", "tsign")
 }

@@ -45,6 +45,20 @@ type. Each runs only allow-listed tools, by absolute path, with no shell.
   and `keyId` and `issuer` (literal or `env://`). `.dmg` and `.pkg` files are
   stapled; a bare Mach-O cannot carry a ticket and is not.
 
+## Artifact Signing sign-in
+
+Before an `azure-artifact-signing` run, impr checks the Azure CLI is signed in with `az account show`.
+It does this only when the CLI is the credential: `az` is installed and no service-principal or
+managed-identity variables (`AZURE_CLIENT_ID`, `AZURE_FEDERATED_TOKEN_FILE`, `IDENTITY_ENDPOINT`,
+`MSI_ENDPOINT`) are set. If not signed in, the run stops before anything is signed, with the fix
+`az login`.
+
+## A certificate and key in one PEM file
+
+The `pfx` backend also accepts a PEM bundle, which is what `impr cert create` writes: a certificate and
+its private key in one file, referenced as `file://<absolute path>` and readable by its owner only. impr
+splits it into owner-only temporary files and runs `osslsigncode sign -certs … -key …`.
+
 ## Keys that are not in a keyring
 
 - **gpg.** `keyRef` may be `secret://` or `env://` holding the armored secret key, instead of

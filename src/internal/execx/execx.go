@@ -35,6 +35,7 @@ var Allowed = map[string]string{
 	"cosign":       "Sigstore cosign blob signatures, key and keyless",
 	"go":           "impr build: go build only, never -toolexec, -exec, -overlay or -modfile",
 	"git":          "impr build: the commit, tree, remote and whether the tree is clean (exact forms only)",
+	"az":           "whether the Azure CLI is signed in before Artifact Signing (az account show only)",
 }
 
 // gitForms are the only git command lines impr runs. status turns fsmonitor
@@ -106,6 +107,9 @@ func Check(c Cmd) error {
 	if c.Tool == "git" && !slices.ContainsFunc(gitForms, func(f []string) bool { return slices.Equal(f, c.Args) }) {
 		return fmt.Errorf("git %s: %w (only %d exact forms)", strings.Join(c.Args, " "), ErrNotAllowed, len(gitForms))
 	}
+	if c.Tool == "az" && !slices.Equal(c.Args, []string{"account", "show", "--output", "none"}) {
+		return fmt.Errorf("az %s: %w (only az account show)", strings.Join(c.Args, " "), ErrNotAllowed)
+	}
 	if c.Tool == "go" {
 		if len(c.Args) == 0 || c.Args[0] != "build" {
 			return fmt.Errorf("go %s: %w (only go build)", strings.Join(c.Args, " "), ErrNotAllowed)
@@ -148,6 +152,7 @@ var toolEnv = map[string][]string{
 	"security":    {},                                                                                                                                       //
 	"go":          {"GOPATH", "GOCACHE", "GOMODCACHE", "GOROOT", "GOPROXY", "GOPRIVATE", "GONOPROXY", "GONOSUMDB", "GONOSUMCHECK", "GOSUMDB", "GOINSECURE"}, // module and build caches, proxies
 	"git":         {},
+	"az":          {"AZURE_CONFIG_DIR"},
 }
 
 // ChildEnv filters environ down to baseEnv and the tool's own names, then

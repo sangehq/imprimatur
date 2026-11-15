@@ -394,6 +394,7 @@ Usage:
   impr doctor [--json]
   impr profile list|show|add|edit|rm|import|export|validate|default|capabilities|import-legacy ... [--json]
   impr cert list [--json]
+  impr cert create [--name NAME] [--subject CN] [--days N] [--json]
   impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
             [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]

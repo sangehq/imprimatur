@@ -14,7 +14,7 @@ import (
 // TestAllowListIsExactly pins the allow-list: adding a tool is a reviewed
 // change to this test, never a side effect.
 func TestAllowListIsExactly(t *testing.T) {
-	want := []string{"certutil", "codesign", "cosign", "ditto", "git", "go", "gpg", "minisign", "osslsigncode", "secret-tool", "security",
+	want := []string{"az", "certutil", "codesign", "cosign", "ditto", "git", "go", "gpg", "minisign", "osslsigncode", "secret-tool", "security",
 		"signtool", "spctl", "ssh-keygen", "xcrun"}
 	if got := Names(); !slices.Equal(got, want) {
 		t.Fatalf("allow-list %v, want %v", got, want)

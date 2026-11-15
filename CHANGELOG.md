@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr cert create` makes a self-signed code-signing certificate and a
+  `test` profile that signs with it through osslsigncode on any host.
+  - **Files.** The key goes in an owner-only PEM bundle, referenced as
+    `file://`, and the public `.cer` sits next to it for trusting on test
+    machines.
+  - **Supporting changes.** The `pfx` backend accepts such a PEM bundle, and
+    `file://` is a reference scheme for owner-only key files.
+- `cert list` reads a Windows store certificate's real expiry from the
+  certificate `certutil` exports.
+- Artifact Signing checks `az account show` before signing when the Azure CLI
+  is the credential. `az` is allowed in that one form only.
+
 - **gpg keys held in a secret.** A gpg checksum key can be held in a
   `secret://` or `env://` reference (armored, with an optional `passwordRef`)
   instead of gpg-agent.
