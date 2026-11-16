@@ -550,8 +550,9 @@ func TestCosignPublicKeyIsRootRelative(t *testing.T) {
 	if got := c.publicKey(); got != filepath.Join("/builds/tool", "keys", "cosign.pub") {
 		t.Fatalf("publicKey %s", got)
 	}
-	c.Spec.PublicKey = "/etc/cosign.pub"
-	if c.publicKey() != "/etc/cosign.pub" {
+	abs := filepath.Join(t.TempDir(), "cosign.pub")
+	c.Spec.PublicKey = abs
+	if c.publicKey() != abs {
 		t.Fatal("an absolute path changed")
 	}
 }

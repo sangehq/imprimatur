@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -61,7 +62,8 @@ func keyPEM(t *testing.T, k *ecdsa.PrivateKey) []byte {
 }
 
 func TestRemoteListenNeedsAllowRemoteAndTLS(t *testing.T) {
-	tlsFiles := &config.ServerTLS{CertFile: "/c.pem", KeyFile: "/k.pem", ClientCAFile: "/ca.pem"}
+	d := filepath.ToSlash(t.TempDir())
+	tlsFiles := &config.ServerTLS{CertFile: d + "/c.pem", KeyFile: d + "/k.pem", ClientCAFile: d + "/ca.pem"}
 	for _, c := range []struct {
 		s  config.Server
 		ok bool
@@ -71,7 +73,7 @@ func TestRemoteListenNeedsAllowRemoteAndTLS(t *testing.T) {
 		{config.Server{Listen: "10.0.0.5:8743", AllowRemote: true}, false},
 		{config.Server{Listen: "10.0.0.5:8743", TLS: tlsFiles}, false},
 		{config.Server{Listen: "10.0.0.5:8743", AllowRemote: true, TLS: tlsFiles}, true},
-		{config.Server{Listen: "127.0.0.1:8743", TLS: &config.ServerTLS{CertFile: "c.pem", KeyFile: "/k", ClientCAFile: "/ca"}}, false},
+		{config.Server{Listen: "127.0.0.1:8743", TLS: &config.ServerTLS{CertFile: "c.pem", KeyFile: d + "/k", ClientCAFile: d + "/ca"}}, false},
 	} {
 		ps := (config.Config{Schema: config.Schema, Server: c.s}).Validate()
 		if (len(ps) == 0) != c.ok {
@@ -100,11 +102,16 @@ func TestMutualTLS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(cfg.KeyFile, 0o644); err != nil { //nolint:gosec // G302: the unsafe mode under test
-		t.Fatal(err)
-	}
-	if _, err := serverTLS(cfg); err == nil {
-		t.Fatal("a key file others can read was accepted")
+	if runtime.GOOS != "windows" { // Windows has no group or other mode bits
+		if err := os.Chmod(cfg.KeyFile, 0o644); err != nil { //nolint:gosec // G302: the unsafe mode under test
+			t.Fatal(err)
+		}
+		if _, err := serverTLS(cfg); err == nil {
+			t.Fatal("a key file others can read was accepted")
+		}
+		if err := os.Chmod(cfg.KeyFile, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

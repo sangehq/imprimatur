@@ -669,7 +669,8 @@ func TestConfigProfiles(t *testing.T) {
 	h := newHarness(t)
 	sys := t.TempDir()
 	h.env["IMPR_SYSTEM_CONFIG_DIR"] = sys
-	if err := os.WriteFile(filepath.Join(sys, "config.json"), []byte(`{"locked":["server.allowSign"],"server":{"roots":["/srv/builds"]}}`), 0o600); err != nil {
+	srv := filepath.ToSlash(t.TempDir()) // absolute on every OS, and JSON-safe
+	if err := os.WriteFile(filepath.Join(sys, "config.json"), []byte(`{"locked":["server.allowSign"],"server":{"roots":["`+srv+`"]}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	h.ok("config", "profile", "create", "ci")
@@ -679,7 +680,7 @@ func TestConfigProfiles(t *testing.T) {
 	if got := strings.TrimSpace(h.ok("config", "get", "server.listen")); got != `"127.0.0.1:8743"` {
 		t.Fatalf("effective listen %s", got)
 	}
-	if got := strings.TrimSpace(h.ok("config", "get", "server.roots")); got != `["/srv/builds"]` {
+	if got := strings.TrimSpace(h.ok("config", "get", "server.roots")); got != `["`+srv+`"]` {
 		t.Fatalf("system roots not inherited: %s", got)
 	}
 	// IMPR_CONFIG_PROFILE overrides activeProfile.
@@ -808,7 +809,7 @@ func TestInstallUninstallAndAliases(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		bin += ".exe"
 	}
-	if st, err := os.Stat(bin); err != nil || st.Mode().Perm()&0o100 == 0 {
+	if st, err := os.Stat(bin); err != nil || (runtime.GOOS != "windows" && st.Mode().Perm()&0o100 == 0) {
 		t.Fatalf("installed binary: %v %v", st, err)
 	}
 	_, _, e := h.impr("install", "--dir", dir)

@@ -197,6 +197,17 @@ func (b Builder) Build(ctx context.Context, o Options) (string, Manifest, error)
 	if len(o.Targets) == 0 {
 		return "", Manifest{}, contract.New(contract.Usage, "no targets: add build/targets.txt or pass --targets")
 	}
+	// The same target twice would build one file twice and list one path
+	// twice in the manifest, which impr sign refuses; keep the first.
+	seenT := map[Target]bool{}
+	var uniq []Target
+	for _, t := range o.Targets {
+		if !seenT[t] {
+			seenT[t] = true
+			uniq = append(uniq, t)
+		}
+	}
+	o.Targets = uniq
 	if _, err := os.Stat(filepath.Join(o.ModuleDir, "go.mod")); err != nil {
 		return "", Manifest{}, contract.New(contract.Usage, "%s holds no go.mod", o.ModuleDir).WithFix("--module DIR")
 	}

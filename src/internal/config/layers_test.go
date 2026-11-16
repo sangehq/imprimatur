@@ -29,24 +29,32 @@ func (d dirs) load(profile string) (Effective, error) {
 	return LoadEffective(Sources{SystemDir: d.sys, UserDir: d.user, Profile: profile})
 }
 
+// absDir is an absolute path on every OS, with forward slashes so it can sit
+// in JSON as it is.
+func absDir(t *testing.T, name string) string {
+	t.Helper()
+	return filepath.ToSlash(filepath.Join(t.TempDir(), name))
+}
+
 func TestLayerOrderSystemUserProfile(t *testing.T) {
 	d := newDirs(t)
-	write(t, filepath.Join(d.sys, File), `{"server":{"listen":"unix","roots":["/srv/a"],"allowSign":false}}`)
-	write(t, filepath.Join(d.user, File), `{"schema":"imprimatur.config/v1","server":{"roots":["/home/u/builds"]},"activeProfile":"ci"}`)
+	srvA, userB, devD := absDir(t, "a"), absDir(t, "builds"), absDir(t, "dev")
+	write(t, filepath.Join(d.sys, File), `{"server":{"listen":"unix","roots":["`+srvA+`"],"allowSign":false}}`)
+	write(t, filepath.Join(d.user, File), `{"schema":"imprimatur.config/v1","server":{"roots":["`+userB+`"]},"activeProfile":"ci"}`)
 	write(t, filepath.Join(d.user, ProfilesDir, "ci.json"), `{"server":{"allowSign":true,"listen":null}}`)
-	write(t, filepath.Join(d.user, ProfilesDir, "dev.json"), `{"server":{"roots":["/tmp/dev"]}}`)
+	write(t, filepath.Join(d.user, ProfilesDir, "dev.json"), `{"server":{"roots":["`+devD+`"]}}`)
 	eff, err := d.load("")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := eff.Config.Server
 	// user replaces the system's array; the profile turns sign on and its null removes listen.
-	if strings.Join(s.Roots, ",") != "/home/u/builds" || !s.AllowSign || s.Listen != "" || eff.Profile != "ci" || len(eff.Layers) != 3 {
+	if strings.Join(s.Roots, ",") != userB || !s.AllowSign || s.Listen != "" || eff.Profile != "ci" || len(eff.Layers) != 3 {
 		t.Fatalf("effective: %+v profile %q layers %d", s, eff.Profile, len(eff.Layers))
 	}
 	// IMPR_CONFIG_PROFILE (Sources.Profile) wins over activeProfile.
 	eff, err = d.load("dev")
-	if err != nil || strings.Join(eff.Config.Server.Roots, ",") != "/tmp/dev" || eff.Config.Server.AllowSign {
+	if err != nil || strings.Join(eff.Config.Server.Roots, ",") != devD || eff.Config.Server.AllowSign {
 		t.Fatalf("dev: %+v %v", eff.Config.Server, err)
 	}
 	// A selected profile that does not exist is an error, never "no profile".
@@ -90,7 +98,7 @@ func TestLocks(t *testing.T) {
 	// elsewhere is kept.
 	d := newDirs(t)
 	write(t, filepath.Join(d.sys, File), `{"locked":["server.allowSign"],"server":{"allowSign":false}}`)
-	write(t, filepath.Join(d.user, File), `{"server":{"roots":["/r"]}}`)
+	write(t, filepath.Join(d.user, File), `{"server":{"roots":["`+absDir(t, "r")+`"]}}`)
 	if eff, err := d.load(""); err != nil || eff.Config.Server.AllowSign || len(eff.Locked) != 1 {
 		t.Fatalf("%+v %v", eff, err)
 	}

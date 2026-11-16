@@ -61,7 +61,7 @@ type fixture struct {
 
 func setup(t *testing.T, allowSign bool) fixture {
 	t.Helper()
-	root := t.TempDir()
+	root := filepath.ToSlash(t.TempDir()) // JSON-safe on Windows too
 	read, rt := token(t, "read", "events")
 	ver, vt := token(t, "verify")
 	sig, st := token(t, "sign")
@@ -128,7 +128,7 @@ func TestVerifyStaysInsideRoots(t *testing.T) {
 	if r := do(f.h, "POST", "/v1/verify", f.ver, good, nil); r.Code != 200 {
 		t.Fatalf("verify %d %s", r.Code, r.Body)
 	}
-	want := "verify --root=" + f.root + " --profile=acme --strict --signed=" + filepath.Join(f.root, "build/impr-manifest.json") +
+	want := "verify --root=" + filepath.Clean(f.root) + " --profile=acme --strict --signed=" + filepath.Join(f.root, "build/impr-manifest.json") +
 		" --manifest=" + filepath.Join(f.root, "build/m.json") + " --json"
 	if got := f.run.last(); got != want {
 		t.Fatalf("args\n got %s\nwant %s", got, want)

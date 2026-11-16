@@ -48,7 +48,7 @@ func TestAsFileWritesKeyMaterialOwnerOnlyAndRemovesIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	st, err := os.Stat(f.Path)
-	if err != nil || st.Mode().Perm() != 0o600 {
+	if err != nil || (runtime.GOOS != "windows" && st.Mode().Perm() != 0o600) {
 		t.Fatalf("mode %v %v", st, err)
 	}
 	f.Close()

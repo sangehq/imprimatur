@@ -35,7 +35,7 @@ func readFile(t *testing.T, path string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return string(b)
+	return strings.ReplaceAll(string(b), "\r\n", "\n") // a CRLF checkout reads the same
 }
 
 func atLeast(t *testing.T, what string, got, floor int) {

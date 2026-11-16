@@ -42,13 +42,10 @@ type Dirs struct {
 // isAbs accepts a Windows drive or UNC path on any host, so tests describing
 // Windows run anywhere.
 func isAbs(goos, p string) bool {
-	if filepath.IsAbs(p) {
-		return true
-	}
 	if goos == "windows" {
 		return (len(p) >= 3 && p[1] == ':' && (p[2] == '\\' || p[2] == '/')) || strings.HasPrefix(p, `\\`)
 	}
-	return false
+	return strings.HasPrefix(p, "/")
 }
 
 // Resolve returns the config and state directories. IMPR_CONFIG_DIR and

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -68,7 +69,7 @@ func TestLogChainsAndDetectsTampering(t *testing.T) {
 	if len(files) != 1 {
 		t.Fatalf("files %v", files)
 	}
-	if st, _ := os.Stat(files[0]); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(files[0]); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatalf("log mode %v", st.Mode().Perm())
 	}
 	b, _ := os.ReadFile(files[0])
@@ -104,7 +105,7 @@ func TestInstallIDIsStableAndPrivate(t *testing.T) {
 	if a != b {
 		t.Fatal("install id changed")
 	}
-	if st, _ := os.Stat(filepath.Join(dir, "install-id")); st.Mode().Perm() != 0o600 {
+	if st, _ := os.Stat(filepath.Join(dir, "install-id")); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 {
 		t.Fatal("install-id is not 0600")
 	}
 }
