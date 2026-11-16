@@ -48,3 +48,15 @@ func TestAnchorDetectsRewriteBeforeIt(t *testing.T) {
 		t.Fatalf("a shorter log must fail: %v", err)
 	}
 }
+
+func TestEventDataIsRedacted(t *testing.T) {
+	env := Env{InstallID: "test", Now: time.Now, NewID: NewID}
+	secret := "whsec_" + strings.Repeat("Ab3", 12)
+	ev, err := env.New("signing.run.failed", "s", map[string]any{"reason": "bad secret " + secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(ev.Data), secret) || !strings.Contains(string(ev.Data), "[redacted]") {
+		t.Fatalf("event data: %s", ev.Data)
+	}
+}

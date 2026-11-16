@@ -28,6 +28,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/notify"
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/profile"
+	"github.com/sangehq/imprimatur/src/internal/redact"
 	"github.com/sangehq/imprimatur/src/internal/secrets"
 	"github.com/sangehq/imprimatur/src/internal/signing"
 	"github.com/sangehq/imprimatur/src/internal/webhook"
@@ -179,7 +180,10 @@ func (a *App) json(v any) {
 	_, _ = fmt.Fprintln(a.Stdout, string(b))
 }
 
-func (a *App) say(format string, args ...any) { _, _ = fmt.Fprintf(a.Stderr, format+"\n", args...) }
+// say writes one log line to stderr, with secret shapes redacted.
+func (a *App) say(format string, args ...any) {
+	_, _ = fmt.Fprintln(a.Stderr, redact.String(fmt.Sprintf(format, args...)))
+}
 
 // fail prints err (an error document on stdout with --json, the message on
 // stderr always) and returns its exit code.
