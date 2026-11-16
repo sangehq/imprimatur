@@ -187,6 +187,10 @@ Other apps can call `POST /v1/hooks/{name}` with a Standard Webhooks delivery, s
 
 - **Signature.** The signature must verify within 5 minutes (`tolerance`, at most 15 m), under the current
   or the previous secret. Every failure is the same 401.
+- **`v1a`.** An endpoint can take ed25519 deliveries instead: set `publicKey` (and, during a rotation,
+  `previousPublicKey`) to the sender's `whpk_` key, in place of or beside `secretRef`. A public key is not
+  secret, so it is written in the config rather than referenced. A `v1` entry is checked only against
+  secrets and a `v1a` entry only against public keys.
 - **Replays.** A `webhook-id` already processed answers 409. The ledger survives restarts.
 - **Actions.**
   - `allow` lists the actions the endpoint accepts: `verify`, `doctor`, `cert.list` or `profile.list`.

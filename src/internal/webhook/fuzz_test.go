@@ -3,10 +3,11 @@ package webhook
 import (
 	"context"
 
-	"github.com/sangehq/imprimatur/src/internal/events"
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/sangehq/imprimatur/src/internal/events"
 )
 
 // FuzzVerify: no headers or body panic the verifier, and nothing verifies

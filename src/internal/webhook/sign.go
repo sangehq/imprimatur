@@ -4,9 +4,13 @@
 // webhook-timestamp and webhook-signature, signed content "id.timestamp.body",
 // "v1,<base64 HMAC-SHA256>" entries, secrets "whsec_<base64>" of 24 to 64
 // random bytes, several signatures during a rotation, constant-time compare.
+// The asymmetric v1a scheme is opt-in: "v1a,<base64 ed25519 signature>" over
+// the same content, signed with a whsk_ key and checked with its whpk_ public
+// key, so a receiver holds nothing that can forge a delivery.
 package webhook
 
 import (
+	"crypto/ed25519"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -26,6 +30,9 @@ const (
 	HeaderTimestamp = "webhook-timestamp"
 	HeaderSignature = "webhook-signature"
 	SecretPrefix    = "whsec_"
+	// SigningKeyPrefix and PublicKeyPrefix mark v1a ed25519 keys.
+	SigningKeyPrefix = "whsk_"
+	PublicKeyPrefix  = "whpk_"
 )
 
 // DefaultTolerance is how far a timestamp may be from now (Stripe's and the
@@ -58,6 +65,63 @@ func DecodeSecret(s string) ([]byte, error) {
 	return b, nil
 }
 
+// NewSigningKey makes a v1a ed25519 pair: the whsk_ signing key impr keeps
+// by reference, and the whpk_ public key the receiver holds.
+func NewSigningKey() (signing, public string, err error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return "", "", err
+	}
+	return SigningKeyPrefix + base64.StdEncoding.EncodeToString(priv), PublicKeyPrefix + base64.StdEncoding.EncodeToString(pub), nil
+}
+
+// DecodeSigningKey checks and decodes a whsk_ key: the 64-byte ed25519
+// private key, or its 32-byte seed.
+func DecodeSigningKey(s string) (ed25519.PrivateKey, error) {
+	raw, ok := strings.CutPrefix(strings.TrimSpace(s), SigningKeyPrefix)
+	if !ok {
+		return nil, errors.New("a v1a signing key starts with whsk_")
+	}
+	b, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("a v1a signing key is whsk_ and base64: %w", err)
+	}
+	switch len(b) {
+	case ed25519.SeedSize:
+		return ed25519.NewKeyFromSeed(b), nil
+	case ed25519.PrivateKeySize:
+		k := ed25519.PrivateKey(b)
+		// The second half is the public key; refuse one that does not match.
+		if !ed25519.NewKeyFromSeed(k.Seed()).Equal(k) {
+			return nil, errors.New("a v1a signing key's public half does not match its seed")
+		}
+		return k, nil
+	}
+	return nil, fmt.Errorf("a v1a signing key holds 32 or 64 bytes, not %d", len(b))
+}
+
+// DecodePublicKey checks and decodes a whpk_ public key.
+func DecodePublicKey(s string) (ed25519.PublicKey, error) {
+	raw, ok := strings.CutPrefix(strings.TrimSpace(s), PublicKeyPrefix)
+	if !ok {
+		return nil, errors.New("a v1a public key starts with whpk_")
+	}
+	b, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		return nil, fmt.Errorf("a v1a public key is whpk_ and base64: %w", err)
+	}
+	if len(b) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("a v1a public key holds 32 bytes, not %d", len(b))
+	}
+	return ed25519.PublicKey(b), nil
+}
+
+// PublicKeyOf is the whpk_ form of a signing key's public half.
+func PublicKeyOf(k ed25519.PrivateKey) string {
+	pub, _ := k.Public().(ed25519.PublicKey)
+	return PublicKeyPrefix + base64.StdEncoding.EncodeToString(pub)
+}
+
 // KeyID names a key without revealing it: the first 16 hex of its sha256.
 func KeyID(key []byte) string {
 	s := sha256.Sum256(key)
@@ -81,12 +145,35 @@ func Signature(keys [][]byte, id string, ts int64, body []byte) string {
 	return strings.Join(parts, " ")
 }
 
+func content(id string, ts int64, body []byte) []byte {
+	return append([]byte(fmt.Sprintf("%s.%d.", id, ts)), body...)
+}
+
+// SignatureV1a is one v1a entry per ed25519 key.
+func SignatureV1a(keys []ed25519.PrivateKey, id string, ts int64, body []byte) string {
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, "v1a,"+base64.StdEncoding.EncodeToString(ed25519.Sign(k, content(id, ts, body))))
+	}
+	return strings.Join(parts, " ")
+}
+
 // SetHeaders signs body and sets the three headers on h.
 func SetHeaders(h http.Header, keys [][]byte, id string, now time.Time, body []byte) {
+	SetHeadersWith(h, keys, nil, id, now, body)
+}
+
+// SetHeadersWith signs body with v1 (HMAC) keys and v1a (ed25519) keys, one
+// entry each, so a rotation from one scheme to the other overlaps too.
+func SetHeadersWith(h http.Header, keys [][]byte, signing []ed25519.PrivateKey, id string, now time.Time, body []byte) {
 	ts := now.Unix()
 	h.Set(HeaderID, id)
 	h.Set(HeaderTimestamp, strconv.FormatInt(ts, 10))
-	h.Set(HeaderSignature, Signature(keys, id, ts, body))
+	sig := Signature(keys, id, ts, body)
+	if v1a := SignatureV1a(signing, id, ts, body); v1a != "" {
+		sig = strings.TrimSpace(sig + " " + v1a)
+	}
+	h.Set(HeaderSignature, sig)
 }
 
 // ErrVerify is every verification failure. Callers answer one 401 for all of
@@ -99,6 +186,14 @@ var ErrVerify = errors.New("webhook signature does not verify")
 // matches under at least one key, compared in constant time. Entries of other
 // schemes are ignored, never trusted. It returns the id of the key that matched.
 func Verify(h http.Header, body []byte, keys [][]byte, now time.Time, tolerance time.Duration) (string, error) {
+	return VerifyWith(h, body, keys, nil, now, tolerance)
+}
+
+// VerifyWith is Verify that also accepts v1a entries under any of the
+// ed25519 public keys. A v1 entry is checked only against keys, and a v1a
+// entry only against public keys, so one scheme's key never stands in for
+// the other's.
+func VerifyWith(h http.Header, body []byte, keys [][]byte, public []ed25519.PublicKey, now time.Time, tolerance time.Duration) (string, error) {
 	id, tsRaw, sig := h.Get(HeaderID), h.Get(HeaderTimestamp), h.Get(HeaderSignature)
 	if id == "" || tsRaw == "" || sig == "" {
 		return "", fmt.Errorf("%w: missing webhook headers", ErrVerify)
@@ -126,5 +221,18 @@ func Verify(h http.Header, body []byte, keys [][]byte, now time.Time, tolerance 
 			}
 		}
 	}
-	return "", fmt.Errorf("%w: no v1 signature matches", ErrVerify)
+	for _, k := range public {
+		msg := content(id, ts, body)
+		for _, entry := range strings.Fields(sig) {
+			scheme, val, ok := strings.Cut(entry, ",")
+			if !ok || scheme != "v1a" {
+				continue
+			}
+			got, err := base64.StdEncoding.DecodeString(val)
+			if err == nil && len(got) == ed25519.SignatureSize && ed25519.Verify(k, msg, got) {
+				return KeyID(k), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("%w: no v1 or v1a signature matches", ErrVerify)
 }

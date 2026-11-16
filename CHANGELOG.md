@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Standard Webhooks `v1a` (ed25519), opt-in. `impr webhooks secret --ed25519`
+  makes a `whsk_` signing key and its `whpk_` public key. An outbound
+  `secretRef` holding a `whsk_` key signs `v1a`. An inbound endpoint takes
+  `publicKey` in place of, or beside, `secretRef`.
 - `events.required`. When it is on, `impr sign` and `impr verify` fail closed
   (exit 5) if the event log cannot be written. Without it, they warn and carry on, as before.
 - `impr events tail --follow` prints each new event until Ctrl-C.

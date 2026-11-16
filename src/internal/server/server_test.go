@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -235,5 +236,53 @@ func TestRateLimit(t *testing.T) {
 	}
 	if last != 429 {
 		t.Fatalf("request %d: %d, want 429", RatePerMinute+1, last)
+	}
+}
+
+// TestInboundV1aWithAPublicKey: an endpoint configured with only a whpk_
+// public key accepts a v1a delivery and refuses a v1 one.
+func TestInboundV1aWithAPublicKey(t *testing.T) {
+	sk, pk, err := webhook.NewSigningKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	priv, _ := webhook.DecodeSigningKey(sk)
+	root := filepath.ToSlash(t.TempDir())
+	cfg := config.Config{Schema: config.Schema, Server: config.Server{Roots: []string{root},
+		Inbound: []config.Inbound{{Name: "bus", PublicKey: pk, Allow: []string{"doctor"}}}}}
+	if ps := cfg.Validate(); len(ps) > 0 {
+		t.Fatal(ps)
+	}
+	f := &fakeRun{}
+	h := Handler(Options{Config: cfg, Run: f.run, StateDir: t.TempDir(), Now: time.Now,
+		Secret: func(context.Context, string) (string, error) {
+			t.Fatal("a public-key endpoint read a secret")
+			return "", nil
+		}})
+	body := []byte(`{"action":"doctor"}`)
+	v1a := http.Header{}
+	webhook.SetHeadersWith(v1a, nil, []ed25519.PrivateKey{priv}, "e1", time.Now(), body)
+	if r := do(h, "POST", "/v1/hooks/bus", "", string(body), v1a); r.Code != 200 || !strings.Contains(f.last(), "doctor") {
+		t.Fatalf("a v1a delivery: %d %s", r.Code, r.Body)
+	}
+	v1 := http.Header{}
+	sec, _ := webhook.NewSecret()
+	key, _ := webhook.DecodeSecret(sec)
+	webhook.SetHeaders(v1, [][]byte{key}, "e2", time.Now(), body)
+	if r := do(h, "POST", "/v1/hooks/bus", "", string(body), v1); r.Code != 401 {
+		t.Fatalf("a v1 delivery to a v1a endpoint: %d", r.Code)
+	}
+
+	for name, in := range map[string]config.Inbound{
+		"no key":         {Name: "x", Allow: []string{"doctor"}},
+		"secret as key":  {Name: "x", PublicKey: sk, Allow: []string{"doctor"}},
+		"short key":      {Name: "x", PublicKey: "whpk_AAAA", Allow: []string{"doctor"}},
+		"bad previous":   {Name: "x", PublicKey: pk, PreviousPublicKey: "whsec_x", Allow: []string{"doctor"}},
+		"bad secret ref": {Name: "x", SecretRef: "plain", Allow: []string{"doctor"}},
+	} {
+		c := config.Config{Schema: config.Schema, Server: config.Server{Inbound: []config.Inbound{in}}}
+		if len(c.Validate()) == 0 {
+			t.Errorf("%s was accepted", name)
+		}
 	}
 }

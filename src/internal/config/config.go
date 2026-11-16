@@ -81,9 +81,13 @@ type Webhooks struct {
 // Inbound is one endpoint other apps call with a signed Standard Webhooks
 // delivery (POST /v1/hooks/{name} under impr serve, design §6.2).
 type Inbound struct {
-	Name              string   `json:"name"`
-	SecretRef         string   `json:"secretRef"`
-	PreviousSecretRef string   `json:"previousSecretRef,omitempty"`
+	Name              string `json:"name"`
+	SecretRef         string `json:"secretRef,omitempty"`
+	PreviousSecretRef string `json:"previousSecretRef,omitempty"`
+	// PublicKey and PreviousPublicKey are whpk_ keys for v1a deliveries:
+	// not secret, so they are written here, not referenced.
+	PublicKey         string   `json:"publicKey,omitempty"`
+	PreviousPublicKey string   `json:"previousPublicKey,omitempty"`
 	Allow             []string `json:"allow"` // actions: verify, doctor, cert.list, profile.list
 	Tolerance         string   `json:"tolerance,omitempty"`
 }
@@ -458,8 +462,18 @@ func (s Server) validate() []string {
 			ps = append(ps, at+": name must be unique lower-case letters, digits and dashes")
 		}
 		names[in.Name] = true
-		if !regexp.MustCompile(`^(secret|env)://.+`).MatchString(in.SecretRef) {
-			ps = append(ps, at+": secretRef must be a secret:// or env:// reference")
+		if in.SecretRef == "" && in.PublicKey == "" {
+			ps = append(ps, at+": set secretRef (v1) or publicKey (v1a)")
+		}
+		for _, ref := range []string{in.SecretRef, in.PreviousSecretRef} {
+			if ref != "" && !regexp.MustCompile(`^(secret|env)://.+`).MatchString(ref) {
+				ps = append(ps, at+": secretRef must be a secret:// or env:// reference")
+			}
+		}
+		for _, k := range []string{in.PublicKey, in.PreviousPublicKey} {
+			if k != "" && !regexp.MustCompile(`^whpk_[A-Za-z0-9+/]{43}=$`).MatchString(k) {
+				ps = append(ps, at+": publicKey must be a whpk_ key (impr webhooks secret --ed25519 prints one)")
+			}
 		}
 		if len(in.Allow) == 0 {
 			ps = append(ps, at+": allow must name at least one action")

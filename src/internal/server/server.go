@@ -15,6 +15,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -477,13 +478,17 @@ func (s *server) inbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	keys, err := s.keys(r.Context(), ep)
+	var public []ed25519.PublicKey
+	if err == nil {
+		public, err = publicKeys(ep)
+	}
 	if err != nil {
 		writeErr(w, http.StatusServiceUnavailable, contract.Unavailable, "the endpoint's secret cannot be read")
 		s.logf("server    inbound %s: %v", name, err)
 		return
 	}
 	tol, _ := time.ParseDuration(ep.Tolerance)
-	if _, err := verifySig(r.Header, body, keys, s.o.Now(), tol); err != nil {
+	if _, err := verifySig(r.Header, body, keys, public, s.o.Now(), tol); err != nil {
 		unauthorized(err.Error())
 		return
 	}

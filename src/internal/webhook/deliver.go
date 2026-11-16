@@ -3,6 +3,7 @@ package webhook
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,6 +29,8 @@ type Subscription struct {
 	URL   string
 	Types []string // event type globs; empty means every internal-class type
 	Keys  [][]byte // current key first; a previous one during rotation
+	// SigningKeys are v1a ed25519 keys, signed with beside Keys (opt-in).
+	SigningKeys []ed25519.PrivateKey
 	// AllowPrivate permits a loopback, private or link-local target, and
 	// plain http to loopback. Off by default (SSRF).
 	AllowPrivate bool
@@ -193,7 +196,7 @@ func (o Outbox) attempt(ctx context.Context, s Subscription, d Delivery) error {
 		if err == nil {
 			req.Header.Set("Content-Type", "application/cloudevents+json; charset=utf-8")
 			req.Header.Set("User-Agent", "imprimatur-webhooks/1 (+https://sange.sh/)")
-			SetHeaders(req.Header, s.Keys, d.EventID, o.Now(), d.Body)
+			SetHeadersWith(req.Header, s.Keys, s.SigningKeys, d.EventID, o.Now(), d.Body)
 			var resp *http.Response
 			resp, err = o.Client(s.AllowPrivate).Do(req)
 			if err == nil {
@@ -210,6 +213,10 @@ func (o Outbox) attempt(ctx context.Context, s Subscription, d Delivery) error {
 	d.Attempts++
 	for _, k := range s.Keys {
 		d.KeyIDs = append(d.KeyIDs, KeyID(k))
+	}
+	for _, k := range s.SigningKeys {
+		pub, _ := k.Public().(ed25519.PublicKey)
+		d.KeyIDs = append(d.KeyIDs, KeyID(pub))
 	}
 	_ = os.Remove(o.path("pending", d))
 	if err == nil {
