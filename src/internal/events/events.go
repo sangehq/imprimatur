@@ -66,6 +66,7 @@ var Catalogue = map[string]string{
 	"profile.created":            ClassInternal,
 	"profile.changed":            ClassInternal,
 	"profile.removed":            ClassInternal,
+	"profile.bundle.installed":   ClassInternal,
 	"config.changed":             ClassLocal,
 	"hook.failed":                ClassLocal,
 	"hook.vetoed":                ClassLocal,

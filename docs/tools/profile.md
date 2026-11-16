@@ -37,6 +37,9 @@ impr profile import-legacy [--from PATH] [--json]
 | `default` | prints the default, or sets it |
 | `capabilities` | per profile and platform, whether this host can sign and verify, with the reason when it cannot. `--json`: `{"contract":1,"host":"macos","profiles":[{"name":"...","valid":true,"platforms":{"checksums":{"platform":"checksums","kind":"ssh","sign":true,"verify":true,"tools":["ssh-keygen"],"supported":true}},"ready":["checksums"]}]}` |
 | `import-legacy` | imports the PowerShell line's configuration ([migration](../recipes/migrate-from-powershell.md)) |
+| `bundle install FILE` | installs an organisation's signed profile bundle (see below). `--sig` names the signature; the default is `FILE.sig` |
+| `bundle list` | installed bundles and their profiles. `--json`: `{"contract":1,"bundles":{"acme":["acme-release"]}}` |
+| `bundle verify` | checks every managed profile against its signed bundle; exit 4 when one differs. `--json`: `{"contract":1,"ok":true,"profiles":[{"profile":"...","owner":"...","ok":true}]}` |
 
 ## Options
 
@@ -84,13 +87,35 @@ Azure Artifact Signing for arm64, or an old and a new certificate during a renew
 Edit signers as JSON, for example
 `impr profile edit acme-release --set 'platforms.windows.signers=[{"id":"ev-2026",…}]'`.
 
+## Signed profile bundles
+
+An organisation hands out its managed profiles as a signed bundle, so a person cannot install, or quietly
+edit, a profile that claims to be the company's.
+
+- **Format.** A bundle is `imprimatur.profile-bundle/v1` JSON: `{"schema":"imprimatur.profile-bundle/v1",
+  "owner":"acme","issuedAt":"2026-11-16T00:00:00Z","profiles":[<profile>...]}`. Every profile must be
+  valid and owned by the bundle's owner.
+- **Signature.** The bundle is signed with an SSH key in the `imprimatur-bundle` namespace:
+  `ssh-keygen -Y sign -f acme-bundle-key -n imprimatur-bundle acme.json` writes `acme.json.sig`.
+- **Trust.** An administrator puts the public key in the system config, and locks it:
+  `{"locked":["bundles"],"bundles":{"trustedKeys":[{"owner":"acme","publicKey":"ssh-ed25519 AAAA..."}]}}`.
+  A bundle signed by any other key, in any other namespace, or changed after signing is refused, and
+  nothing is installed.
+- **Install.** `impr profile bundle install acme.json` writes each profile as `managed`, and keeps the
+  bundle and its signature under `<config>/bundles/`. A personal profile with the same name is never
+  replaced. Installing a newer bundle from the same owner replaces that owner's managed profiles.
+- **Checked on every use.** Before a managed profile signs or verifies, impr re-verifies the stored bundle
+  and compares the profile with it. A profile edited by hand, or a bundle edited after installation, stops
+  with exit 4.
+
 ## What is refused
 
 - An unknown field, or anything that looks like key material, in a profile.
 - A credential written as a value rather than a reference.
 - `test` and `release` together, a release profile with no `allowedRepos`, and
   `*` or `**` as an allowed repository.
-- Changing, replacing or removing a `managed` profile.
+- Changing, replacing or removing a `managed` profile, except by installing a newer signed bundle.
+- Signing with a `managed` profile that does not match its signed bundle.
 - Signing with no `--profile` and no default: impr never falls back to the
   first profile, a test certificate, or the first certificate whose subject
   matches.

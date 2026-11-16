@@ -33,6 +33,9 @@ type Service struct {
 	// RequireFullGPG refuses a gpg pin shorter than a full fingerprint
 	// (config policy.gpgFullFingerprint, audit N-B12).
 	RequireFullGPG bool
+	// ManagedCheck confirms a managed profile matches its signed bundle
+	// (audit N-B17); nil checks nothing.
+	ManagedCheck func(p profile.Profile) error
 	// BackendFor builds a backend; nil uses backend.For. Tests replace it.
 	BackendFor func(h backend.Host, p profile.Profile, platform string) (backend.Backend, error)
 }
@@ -78,6 +81,11 @@ func (s *Service) LoadProfile(name string, code contract.Code) (profile.Profile,
 	} else if len(ps) > 0 {
 		return profile.Profile{}, contract.New(code, "signing profile %s is not valid", p.Name).WithDetails(ps.Strings()...).
 			WithFix("impr profile validate "+p.Name, "impr profile edit "+p.Name+" --set KEY=VALUE")
+	}
+	if s.ManagedCheck != nil && p.Managed {
+		if err := s.ManagedCheck(p); err != nil {
+			return profile.Profile{}, contract.Wrap(code, err, "managed profile %s cannot be trusted", p.Name)
+		}
 	}
 	if c := p.Platforms.Checksums; s.RequireFullGPG && c != nil && c.Kind == "gpg" {
 		if f := strings.TrimPrefix(strings.ToUpper(c.Fingerprint), "0X"); len(f) != 40 && len(f) != 64 {

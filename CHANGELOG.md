@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Signed profile bundles. `impr profile bundle install|list|verify` installs an
+  organisation's managed profiles from an `imprimatur.profile-bundle/v1` file
+  signed with `ssh-keygen -Y sign -n imprimatur-bundle`.
+  - **Trust.** Only a key in `bundles.trustedKeys` for the bundle's owner is
+    accepted; administrators lock `bundles` in the system config.
+  - **Checked on every use.** A managed profile is re-verified against its
+    stored, signed bundle each time it signs or verifies, so a hand edit stops
+    with exit 4.
+
 - `impr rules FILE...` builds allow rules from signed `.exe` and `.dll` files
   on any host. The publisher, leaf and issuing CA (pinned by its TBS hash)
   come from the files' own Authenticode signatures.

@@ -49,6 +49,9 @@ type ValidateProfile struct {
 }
 
 func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 && args[0] == "bundle" {
+		return cmdBundle(ctx, a, args[1:])
+	}
 	p, err := parse(args, profileFlags)
 	if err != nil {
 		return 0, err

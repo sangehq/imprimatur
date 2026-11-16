@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/backend"
+	"github.com/sangehq/imprimatur/src/internal/bundle"
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/events"
@@ -290,8 +291,13 @@ func (a *App) service() (*signing.Service, error) {
 			bus.Sinks = append(bus.Sinks, webhook.Sink{Outbox: a.outbox(d), Subs: subs})
 		}
 	}
-	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk,
-		RequireFullGPG: cfg.Policy.RequireFullGPG()}, nil
+	host := a.host()
+	trusted := cfg.Bundles.TrustedKeys
+	check := func(p profile.Profile) error {
+		return bundle.Check(context.Background(), host.Runner, d.Config, p, trusted)
+	}
+	return &signing.Service{Host: host, Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk,
+		RequireFullGPG: cfg.Policy.RequireFullGPG(), ManagedCheck: check}, nil
 }
 
 // bus is the event bus for this run: the hash-chained log in the state dir.
@@ -393,6 +399,7 @@ Usage:
   impr companion info [--json]
   impr doctor [--json]
   impr profile list|show|add|edit|rm|import|export|validate|default|capabilities|import-legacy ... [--json]
+  impr profile bundle install BUNDLE.json [--sig FILE] | list [--json] | verify [--json]
   impr cert list [--json]
   impr cert create [--name NAME] [--subject CN] [--days N] [--json]
   impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
