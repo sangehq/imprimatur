@@ -15,6 +15,7 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
@@ -54,6 +55,8 @@ type Options struct {
 	// (default a second).
 	Events events.Log
 	Poll   time.Duration
+	// Emit raises an event (server.auth.refused); nil raises none.
+	Emit func(short, subject string, data map[string]any)
 }
 
 type server struct {
@@ -67,6 +70,9 @@ type server struct {
 
 	streamMu sync.Mutex
 	streams  int
+
+	refusedMu sync.Mutex
+	refused   map[string]time.Time // caller -> last server.auth.refused
 }
 
 type bucket struct {
@@ -167,6 +173,7 @@ func (s *server) auth(scope string, next http.HandlerFunc) http.HandlerFunc {
 		tok, found := s.token(raw)
 		if !ok || !found {
 			s.logf("server    refused %s %s: no valid token", r.Method, r.URL.Path)
+			s.refusedEvent(r, "no valid token")
 			writeErr(w, http.StatusUnauthorized, contract.Usage, "a valid API token is required")
 			return
 		}
@@ -457,6 +464,7 @@ func (s *server) inbound(w http.ResponseWriter, r *http.Request) {
 	}
 	unauthorized := func(reason string) {
 		s.logf("server    inbound %s refused: %s", name, reason)
+		s.refusedEvent(r, "inbound "+name+": "+reason)
 		writeErr(w, http.StatusUnauthorized, contract.Usage, "the delivery does not verify")
 	}
 	if ep == nil {
@@ -469,14 +477,22 @@ func (s *server) inbound(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusRequestEntityTooLarge, contract.Usage, "the body is too large or unreadable")
 		return
 	}
+	if ep.Kind == config.InboundGitHub {
+		s.inboundGitHub(w, r, ep, body, unauthorized)
+		return
+	}
 	keys, err := s.keys(r.Context(), ep)
+	var public []ed25519.PublicKey
+	if err == nil {
+		public, err = publicKeys(ep)
+	}
 	if err != nil {
 		writeErr(w, http.StatusServiceUnavailable, contract.Unavailable, "the endpoint's secret cannot be read")
 		s.logf("server    inbound %s: %v", name, err)
 		return
 	}
 	tol, _ := time.ParseDuration(ep.Tolerance)
-	if _, err := verifySig(r.Header, body, keys, s.o.Now(), tol); err != nil {
+	if _, err := verifySig(r.Header, body, keys, public, s.o.Now(), tol); err != nil {
 		unauthorized(err.Error())
 		return
 	}
@@ -522,4 +538,27 @@ func maxDur(a, b time.Duration) time.Duration {
 		return a
 	}
 	return b
+}
+
+// refusedEvent raises server.auth.refused at most once a minute per caller,
+// so a flood of bad requests cannot fill the event log. The caller is named
+// by a short hash of its address.
+func (s *server) refusedEvent(r *http.Request, reason string) {
+	if s.o.Emit == nil {
+		return
+	}
+	h := sha256.Sum256([]byte(r.RemoteAddr))
+	caller := hex.EncodeToString(h[:6])
+	now := s.o.Now()
+	s.refusedMu.Lock()
+	if s.refused == nil {
+		s.refused = map[string]time.Time{}
+	}
+	if last, ok := s.refused[caller]; ok && now.Sub(last) < time.Minute {
+		s.refusedMu.Unlock()
+		return
+	}
+	s.refused[caller] = now
+	s.refusedMu.Unlock()
+	s.o.Emit("server.auth.refused", "server", map[string]any{"method": r.Method, "path": r.URL.Path, "reason": reason, "caller": caller})
 }

@@ -36,15 +36,21 @@ const File = "config.json"
 
 // Hook phases.
 const (
-	PhasePreSign   = "pre-sign"
-	PhasePreVerify = "pre-verify"
-	PhaseEvent     = "event"
+	PhasePreSign    = "pre-sign"
+	PhasePreVerify  = "pre-verify"
+	PhasePostSign   = "post-sign"
+	PhasePostVerify = "post-verify"
+	PhaseEvent      = "event"
 )
+
+// IsPostPhase reports whether a phase runs after the run has finished, where a
+// hook can no longer change the outcome.
+func IsPostPhase(phase string) bool { return phase == PhasePostSign || phase == PhasePostVerify }
 
 // Hook is one configured hook.
 type Hook struct {
 	Name    string   `json:"name"`
-	Phase   string   `json:"phase"`        // pre-sign | pre-verify | event
+	Phase   string   `json:"phase"`        // pre-sign | pre-verify | post-sign | post-verify | event
 	On      []string `json:"on,omitempty"` // event type globs (phase event); default every type
 	Exec    string   `json:"exec"`         // absolute path
 	Args    []string `json:"args,omitempty"`
@@ -75,12 +81,32 @@ type Webhooks struct {
 // Inbound is one endpoint other apps call with a signed Standard Webhooks
 // delivery (POST /v1/hooks/{name} under impr serve, design §6.2).
 type Inbound struct {
-	Name              string   `json:"name"`
-	SecretRef         string   `json:"secretRef"`
-	PreviousSecretRef string   `json:"previousSecretRef,omitempty"`
+	Name              string `json:"name"`
+	SecretRef         string `json:"secretRef,omitempty"`
+	PreviousSecretRef string `json:"previousSecretRef,omitempty"`
+	// PublicKey and PreviousPublicKey are whpk_ keys for v1a deliveries:
+	// not secret, so they are written here, not referenced.
+	PublicKey         string   `json:"publicKey,omitempty"`
+	PreviousPublicKey string   `json:"previousPublicKey,omitempty"`
 	Allow             []string `json:"allow"` // actions: verify, doctor, cert.list, profile.list
 	Tolerance         string   `json:"tolerance,omitempty"`
+	// Kind is "standard" (the default: Standard Webhooks v1/v1a, the body an
+	// impr action) or "github" (X-Hub-Signature-256, the body a GitHub event).
+	Kind string `json:"kind,omitempty"`
+	// Run is, for a github endpoint, the action each verified delivery runs
+	// (one of Allow, never verify). Empty records the delivery as a
+	// webhook.inbound.received event and runs nothing.
+	Run string `json:"run,omitempty"`
+	// GitHubEvents limits a github endpoint to these X-GitHub-Event names;
+	// empty accepts every event. ping is always answered.
+	GitHubEvents []string `json:"githubEvents,omitempty"`
 }
+
+// Inbound kinds.
+const (
+	InboundStandard = "standard"
+	InboundGitHub   = "github"
+)
 
 // Token is one API token, stored only as its sha256.
 type Token struct {
@@ -163,6 +189,15 @@ type Config struct {
 	Notify Notify `json:"notify,omitempty"`
 	// Audit is the audit trail's anchoring.
 	Audit Audit `json:"audit,omitempty"`
+	// Events is the event log.
+	Events Events `json:"events,omitempty"`
+}
+
+// Events is the events section.
+type Events struct {
+	// Required makes sign and verify fail closed when the event log cannot
+	// be written, instead of warning and carrying on.
+	Required bool `json:"required,omitempty"`
 }
 
 // Audit is the audit section.
@@ -311,11 +346,11 @@ func (c Config) Validate() []string {
 		}
 		seen[h.Name] = true
 		switch h.Phase {
-		case PhasePreSign, PhasePreVerify, PhaseEvent:
+		case PhasePreSign, PhasePreVerify, PhasePostSign, PhasePostVerify, PhaseEvent:
 		default:
-			ps = append(ps, at+": phase must be pre-sign, pre-verify or event")
+			ps = append(ps, at+": phase must be pre-sign, pre-verify, post-sign, post-verify or event")
 		}
-		if h.Veto && h.Phase == PhaseEvent {
+		if h.Veto && (h.Phase == PhaseEvent || IsPostPhase(h.Phase)) {
 			ps = append(ps, at+": only a pre-* hook can veto")
 		}
 		if !filepath.IsAbs(h.Exec) {
@@ -443,8 +478,38 @@ func (s Server) validate() []string {
 			ps = append(ps, at+": name must be unique lower-case letters, digits and dashes")
 		}
 		names[in.Name] = true
-		if !regexp.MustCompile(`^(secret|env)://.+`).MatchString(in.SecretRef) {
-			ps = append(ps, at+": secretRef must be a secret:// or env:// reference")
+		switch in.Kind {
+		case "", InboundStandard:
+			if in.SecretRef == "" && in.PublicKey == "" {
+				ps = append(ps, at+": set secretRef (v1) or publicKey (v1a)")
+			}
+			if in.Run != "" || len(in.GitHubEvents) > 0 {
+				ps = append(ps, at+": run and githubEvents are for a github endpoint")
+			}
+		case InboundGitHub:
+			if in.SecretRef == "" || in.PublicKey != "" || in.PreviousPublicKey != "" {
+				ps = append(ps, at+": a github endpoint takes secretRef (GitHub's webhook secret), not publicKey")
+			}
+			if in.Run == "verify" || (in.Run != "" && !slices.Contains(in.Allow, in.Run)) {
+				ps = append(ps, at+": run must be one of allow, and not verify (a GitHub event carries no verify request)")
+			}
+			for _, e := range in.GitHubEvents {
+				if !regexp.MustCompile(`^[a-z_]+$`).MatchString(e) {
+					ps = append(ps, at+": githubEvents holds GitHub event names, like push or release")
+				}
+			}
+		default:
+			ps = append(ps, at+": kind must be standard or github")
+		}
+		for _, ref := range []string{in.SecretRef, in.PreviousSecretRef} {
+			if ref != "" && !regexp.MustCompile(`^(secret|env)://.+`).MatchString(ref) {
+				ps = append(ps, at+": secretRef must be a secret:// or env:// reference")
+			}
+		}
+		for _, k := range []string{in.PublicKey, in.PreviousPublicKey} {
+			if k != "" && !regexp.MustCompile(`^whpk_[A-Za-z0-9+/]{43}=$`).MatchString(k) {
+				ps = append(ps, at+": publicKey must be a whpk_ key (impr webhooks secret --ed25519 prints one)")
+			}
 		}
 		if len(in.Allow) == 0 {
 			ps = append(ps, at+": allow must name at least one action")

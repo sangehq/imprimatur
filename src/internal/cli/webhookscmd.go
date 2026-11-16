@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"crypto/ed25519"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
@@ -14,7 +16,11 @@ import (
 func ctxBackground() context.Context { return context.Background() }
 
 func (a *App) outbox(d paths.Dirs) webhook.Outbox {
-	return webhook.Outbox{Dir: filepath.Join(d.State, "outbox"), Now: a.Now, Client: webhook.Client, Warn: a.say}
+	return webhook.Outbox{Dir: filepath.Join(d.State, "outbox"), Now: a.Now, Client: webhook.Client, Warn: a.say,
+		Dead: func(x webhook.Delivery) {
+			a.logOnly("webhook.delivery.dead", x.Subscription, map[string]any{"subscription": x.Subscription,
+				"eventId": x.EventID, "eventType": x.EventType, "attempts": x.Attempts, "lastStatus": x.LastStatus, "lastError": x.LastError})
+		}}
 }
 
 // subscriptions resolves each outbound subscription's secrets. A secret that
@@ -25,6 +31,7 @@ func (a *App) subscriptions(ctx context.Context, cfg config.Config) ([]webhook.S
 	var out []webhook.Subscription
 	for _, w := range cfg.Webhooks.Outbound {
 		var keys [][]byte
+		var signing []ed25519.PrivateKey
 		for _, ref := range []string{w.SecretRef, w.PreviousSecretRef} {
 			if ref == "" {
 				continue
@@ -33,19 +40,28 @@ func (a *App) subscriptions(ctx context.Context, cfg config.Config) ([]webhook.S
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", w.Name, err)
 			}
+			// The key's prefix picks the scheme: whsk_ signs v1a, whsec_ v1.
+			if strings.HasPrefix(strings.TrimSpace(v), webhook.SigningKeyPrefix) {
+				k, err := webhook.DecodeSigningKey(v)
+				if err != nil {
+					return nil, fmt.Errorf("%s: %w", w.Name, err)
+				}
+				signing = append(signing, k)
+				continue
+			}
 			k, err := webhook.DecodeSecret(v)
 			if err != nil {
 				return nil, fmt.Errorf("%s: %w", w.Name, err)
 			}
 			keys = append(keys, k)
 		}
-		out = append(out, webhook.Subscription{Name: w.Name, URL: w.URL, Types: w.Types, Keys: keys, AllowPrivate: w.AllowPrivate})
+		out = append(out, webhook.Subscription{Name: w.Name, URL: w.URL, Types: w.Types, Keys: keys, SigningKeys: signing, AllowPrivate: w.AllowPrivate})
 	}
 	return out, nil
 }
 
 var webhooksFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "all": boolFlag, "url": stringFlag, "secret-ref": stringFlag,
-	"types": listFlag, "allow-private": boolFlag, "finish": boolFlag, "profile": stringFlag}
+	"types": listFlag, "allow-private": boolFlag, "finish": boolFlag, "profile": stringFlag, "ed25519": boolFlag}
 
 // webhookSub is a resolved outbound subscription.
 type webhookSub = webhook.Subscription
@@ -66,6 +82,17 @@ func cmdWebhooks(ctx context.Context, a *App, args []string) (int, error) {
 	sub := "list"
 	if len(p.pos) > 0 {
 		sub = p.pos[0]
+	}
+	if sub == "secret" && p.on("ed25519") {
+		sk, pk, err := webhook.NewSigningKey()
+		if err != nil {
+			return 0, err
+		}
+		// The signing key goes to stdout once, like a whsec_ secret; the
+		// public key is not secret, and is what the receiver configures.
+		_, _ = fmt.Fprintln(a.Stdout, sk)
+		a.say("webhooks  store this signing key, set secretRef to it, and give the receiver its public key: %s", pk)
+		return 0, nil
 	}
 	if sub == "secret" {
 		s, err := webhook.NewSecret()

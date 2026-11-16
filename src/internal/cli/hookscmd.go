@@ -106,7 +106,7 @@ func cmdHooks(ctx context.Context, a *App, args []string) (int, error) {
 				return 0, err
 			}
 			r := &hooks.Runner{Hooks: []config.Hook{h}, Warn: a.say}
-			if h.Phase == config.PhaseEvent {
+			if h.Phase == config.PhaseEvent || config.IsPostPhase(h.Phase) {
 				h.Phase = config.PhasePreVerify // run it as a gate, so its result is reported
 				r.Hooks = []config.Hook{h}
 			}

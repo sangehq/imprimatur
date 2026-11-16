@@ -22,7 +22,7 @@ it decides what runs on a signing host.
 
 | Field | Meaning |
 | --- | --- |
-| `phase` | `pre-sign`, `pre-verify` or `event` |
+| `phase` | `pre-sign`, `pre-verify`, `post-sign`, `post-verify` or `event` |
 | `on` | event type globs, for `event` hooks; omit to receive every type. A glob that matches no type is refused |
 | `exec` | absolute path. Symlinks are not followed. The file must not be writable by group or others |
 | `sha256` | the program's digest. `impr hooks pin FILE` prints it. A changed program is refused |
@@ -34,7 +34,9 @@ it decides what runs on a signing host.
 
 - **Startup.** impr starts the program directly, with no shell.
 - **Input.** The event is on stdin as one CloudEvents JSON document. A `pre-sign` hook sees
-  `signing.run.started`; a `pre-verify` hook sees `verification.run.started`.
+  `signing.run.started`; a `pre-verify` hook sees `verification.run.started`. A `post-sign` hook sees the
+  run's last event (`signing.run.completed`, `.failed` or `.skipped`), and a `post-verify` hook sees
+  `verification.run.completed` or `.failed`.
 - **Environment.** The program sees `PATH`, `HOME`, temp and locale, plus `IMPR_HOOK`, `IMPR_HOOK_PHASE`,
   `IMPR_EVENT_TYPE` and `IMPR_EVENT_ID`. It never sees impr's other variables, so an `env://` secret never
   reaches a hook.
@@ -44,6 +46,9 @@ it decides what runs on a signing host.
   - With `veto`, a non-zero exit stops the run. `impr sign` then exits 3 and `impr verify` exits 4.
     Nothing is signed, and `hook.vetoed` is recorded.
   - A hook that fails its pin or times out stops the run too.
+- **Post-hooks report; they never decide.** A `post-*` hook runs once the run has finished and its last
+  event is in the log. It cannot veto and cannot change the exit code: a non-zero exit, a timeout or a
+  failed pin is a warning plus a `hook.failed` event naming the hook, phase and reason.
 - **Event hooks.** `event` hooks run after the event is in the log. Their failures are warnings only and
   never change the command's result.
 - **Where hooks come from.** Hooks come only from the user's own config, never from a repository.

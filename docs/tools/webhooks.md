@@ -43,6 +43,21 @@ webhook-signature: v1,<base64 HMAC-SHA256 of "id.timestamp.body">
 - **Rotation.** Set `previousSecretRef` while a receiver switches secrets. Every delivery then carries
   two `v1` entries, and the receiver accepts either one.
 
+## Signing with ed25519 (`v1a`)
+
+`v1` uses a shared secret, so the receiver holds a key that could forge a delivery. With `v1a`, impr
+signs with an ed25519 key and the receiver holds only its public key.
+
+1. `impr webhooks secret --ed25519` prints a `whsk_` signing key once, on stdout, and its `whpk_`
+   public key on stderr.
+2. Store the signing key as above and point `secretRef` at it. The key's prefix picks the scheme: a
+   `whsk_` key signs `v1a,<base64 ed25519 signature>` over the same `id.timestamp.body`.
+3. Give the receiver the `whpk_` public key. It is not secret.
+
+To move a receiver from `v1` to `v1a`, rotate to the `whsk_` reference (`impr webhooks rotate NAME
+--secret-ref …`). While the old one is `previousSecretRef`, each delivery carries one `v1` and one `v1a`
+entry, so the receiver can switch at any point.
+
 ## Safety
 
 - **https only.** Plain http is allowed only to a loopback address, and only with `allowPrivate`. A URL

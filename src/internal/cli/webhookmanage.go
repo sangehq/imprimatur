@@ -85,7 +85,8 @@ func (a *App) webhooksManage(ctx context.Context, d paths.Dirs, p parsed, cfg co
 	case "rotate":
 		// Two steps: rotate --secret-ref NEW signs with both keys while the
 		// receiver switches; rotate --finish then drops the old one.
-		return a.webhooksEdit(ctx, d, p, cfg, func(subs []config.Outbound) ([]config.Outbound, error) {
+		rotated := false
+		code, err := a.webhooksEdit(ctx, d, p, cfg, func(subs []config.Outbound) ([]config.Outbound, error) {
 			i := findSub(subs, name)
 			if i < 0 {
 				return nil, contract.New(contract.Usage, "no webhook named %s", name)
@@ -101,11 +102,20 @@ func (a *App) webhooksManage(ctx context.Context, d paths.Dirs, p parsed, cfg co
 					return nil, contract.New(contract.Usage, "--secret-ref is the secret %s already signs with", name)
 				}
 				subs[i].PreviousSecretRef, subs[i].SecretRef = subs[i].SecretRef, p.str("secret-ref")
+				rotated = true
 			default:
 				return nil, contract.New(contract.Usage, "impr webhooks rotate NAME --secret-ref NEW, then rotate NAME --finish")
 			}
 			return subs, nil
 		})
+		if err == nil && code == 0 {
+			step := "finished"
+			if rotated {
+				step = "started"
+			}
+			a.bus().Emit(ctx, "webhook.secret.rotated", name, map[string]any{"subscription": name, "step": step})
+		}
+		return code, err
 	case "test":
 		subs, err := a.subscriptions(ctx, cfg)
 		if err != nil {

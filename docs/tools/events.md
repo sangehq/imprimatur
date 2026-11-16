@@ -18,6 +18,10 @@ verification step it takes.
 - **Not on stdout.** Events never appear on stdout, so every `--json` document is unchanged.
 - **Failure does not stop the command.** If the log cannot be written, impr prints a warning and the
   command carries on.
+- **Unless the log is required.** With `events.required: true`, `impr sign` and `impr verify` exit 5
+  when the log cannot be written: before the first signature or verification if the start event fails,
+  or at the end if the last event fails. Turn it on where a run with no record is worse than no run
+  (`impr config set events.required true --profile prod`).
 - **No secrets.** Event data holds ids, names, paths relative to the signing root, and digests. It never
   holds a key, a password or a reference value.
 
@@ -31,6 +35,10 @@ verification step it takes.
 | `approval.created` | `impr approve` wrote an approval |
 | `profile.created` / `.changed` / `.removed` | a profile was added, imported, edited or removed: its name, scope, owner, purposes and identity digest |
 | `config.changed`, `hook.*` | configuration changes, and hook failures and vetoes |
+| `webhook.delivery.dead` | an outbound delivery ran out of attempts and moved to the dead letter. Written to the log only, never delivered |
+| `webhook.secret.rotated` | `impr webhooks rotate` started (`step: started`) or finished (`step: finished`) a key overlap |
+| `webhook.inbound.received` | a `github` inbound endpoint accepted a delivery: event name, delivery id, repository, ref ([serve](serve.md#github-deliveries)) |
+| `server.auth.refused` | `impr serve` refused a request for its token or an inbound signature; at most once a minute per caller, named by a short hash of its address |
 | `audit.head` | both chain heads, for anchoring off the machine ([audit](audit.md#anchoring-off-the-machine)) |
 
 `impr events types --json` prints the full catalogue, with each type's class and schema URL.
@@ -40,10 +48,14 @@ verification step it takes.
 ```bash
 impr events tail                                  # the last 50 events
 impr events tail --type 'signing.*' --limit 10 --json
+impr events tail --follow --type 'signing.*'       # then print each new event until Ctrl-C
 impr events verify                                # walk the hash chain
 impr events types --json
 ```
 
+- `--follow` keeps printing events as they are written, until Ctrl-C. It cannot be combined with `--json`,
+  which prints one document; for a machine-readable stream, use `GET /v1/events/stream` on
+  [`impr serve`](serve.md).
 - `impr events verify` exits 4 when the chain is broken. The `--json` document is
   `{contract, ok, checked, problem}`.
 - `companion info` reports the `events` capability.

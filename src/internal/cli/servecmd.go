@@ -96,13 +96,22 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, contract.Wrap(contract.Unavailable, err, "the server cannot listen")
 	}
+	if strings.HasPrefix(where, "unix:") {
+		ln = peerListener{Listener: ln, uid: os.Getuid(), refused: func(uid int) {
+			a.say("server    refused a socket connection from uid %d", uid)
+			a.bus().Emit(context.Background(), "server.auth.refused", "server", map[string]any{"reason": "socket peer is another user", "uid": uid})
+		}}
+	}
 	if tlsCfg != nil {
 		ln = tls.NewListener(ln, tlsCfg)
 		where = "https+" + where
 	}
 	res := a.host().Secrets
 	h := server.Handler(server.Options{Config: cfg, Run: a.runCaptured, Secret: res.Resolve, StateDir: d.State, Now: a.Now, Log: a.say,
-		Events: events.Log{Dir: filepath.Join(d.State, "events")}})
+		Events: events.Log{Dir: filepath.Join(d.State, "events")},
+		Emit: func(short, subject string, data map[string]any) {
+			a.bus().Emit(context.Background(), short, subject, data)
+		}})
 	srv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 60 * time.Second,
 		WriteTimeout: 35 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 64 << 10}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)

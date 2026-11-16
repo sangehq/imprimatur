@@ -58,6 +58,8 @@ The system config can lock dotted keys:
   platform this host cannot sign or check is an error (exit 5), never a skip. Set it in a `ci` or `prod`
   configuration profile (`impr config set policy.strict true --profile ci`), or lock it in the system
   config.
+- **A record or nothing.** `events.required: true` makes `sign` and `verify` exit 5 when the event log
+  cannot be written ([events](events.md)).
 - **Approvals.** `approvals.enforce`, `approvals.required` and `approvals.approvers` decide whether impr
   itself requires approval for profiles with `requiresApproval`, and whose SSH keys may give it. Lock
   `approvals` in the system config, or a signer could add their own key. See

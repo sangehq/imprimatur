@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -43,8 +44,25 @@ func (s *server) keys(ctx context.Context, ep *config.Inbound) ([][]byte, error)
 	return keys, nil
 }
 
-func verifySig(h http.Header, body []byte, keys [][]byte, now time.Time, tol time.Duration) (string, error) {
-	return webhook.Verify(h, body, keys, now, tol)
+// publicKeys decodes an endpoint's v1a public keys; config validation has
+// already checked their shape.
+func publicKeys(ep *config.Inbound) ([]ed25519.PublicKey, error) {
+	var out []ed25519.PublicKey
+	for _, s := range []string{ep.PublicKey, ep.PreviousPublicKey} {
+		if s == "" {
+			continue
+		}
+		k, err := webhook.DecodePublicKey(s)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, k)
+	}
+	return out, nil
+}
+
+func verifySig(h http.Header, body []byte, keys [][]byte, public []ed25519.PublicKey, now time.Time, tol time.Duration) (string, error) {
+	return webhook.VerifyWith(h, body, keys, public, now, tol)
 }
 
 // ledger records inbound delivery ids already processed, persisted so a

@@ -6,12 +6,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/events"
 )
 
-var eventsFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "type": listFlag, "limit": stringFlag}
+var eventsFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "type": listFlag, "limit": stringFlag, "follow": boolFlag}
+
+// followEvery is how often `impr events tail --follow` reads the log again.
+var followEvery = 500 * time.Millisecond
 
 // EventsList is `impr events tail --json`.
 type EventsList struct {
@@ -65,8 +69,19 @@ func cmdEvents(ctx context.Context, a *App, args []string) (int, error) {
 				return 0, contract.New(contract.Usage, "--limit must be a positive number")
 			}
 		}
+		follow := p.on("follow")
+		if follow && p.on("json") {
+			return 0, contract.New(contract.Usage, "--follow prints lines as events arrive; --json prints one document").
+				WithFix("impr events tail --follow", "GET /v1/events/stream on impr serve, for a machine-readable stream")
+		}
+		// Take the end before reading, so an event written in between is
+		// printed by the follow loop rather than lost.
+		end, err := log.End()
+		if err != nil {
+			return 0, contract.Wrap(contract.Unavailable, err, "read the event log")
+		}
 		var out []events.Event
-		err := log.Each(func(ev events.Event, _ []byte) error {
+		err = log.Each(func(ev events.Event, _ []byte) error {
 			if matchesAny(p.list("type"), ev.Type) {
 				out = append(out, ev)
 			}
@@ -87,6 +102,9 @@ func cmdEvents(ctx context.Context, a *App, args []string) (int, error) {
 		}
 		for _, ev := range out {
 			a.say("%s  %-30s %s", ev.Time.Format("2006-01-02T15:04:05Z"), ev.Short(), ev.Subject)
+		}
+		if follow {
+			return a.followEvents(ctx, log, end, p.list("type"))
 		}
 		return 0, nil
 	case "verify":
@@ -134,4 +152,27 @@ func matchesAny(globs []string, typ string) bool {
 		}
 	}
 	return false
+}
+
+// followEvents prints each event written after c until ctx ends (Ctrl-C).
+func (a *App) followEvents(ctx context.Context, log events.Log, c events.Cursor, types []string) (int, error) {
+	t := time.NewTicker(followEvery)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return 0, nil
+		case <-t.C:
+		}
+		evs, _, next, err := log.Read(c)
+		if err != nil {
+			return 0, contract.Wrap(contract.Unavailable, err, "read the event log")
+		}
+		c = next
+		for _, ev := range evs {
+			if matchesAny(types, ev.Type) {
+				a.say("%s  %-30s %s", ev.Time.Format("2006-01-02T15:04:05Z"), ev.Short(), ev.Subject)
+			}
+		}
+	}
 }

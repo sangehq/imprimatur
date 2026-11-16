@@ -29,7 +29,7 @@ type Service struct {
 	Log     io.Writer // human lines (stderr)
 	// Events receives what each run did; nil emits nothing.
 	Events *events.Bus
-	// Hooks runs the user's pre-sign and pre-verify gates; nil runs none.
+	// Hooks runs the user's pre- and post-sign and -verify hooks; nil runs none.
 	Hooks *hooks.Runner
 	// Strict runs every sign and verify as if --strict were given
 	// (config policy.strict).
@@ -181,8 +181,11 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 			s.Events.Emit(ctx, "hook.vetoed", subject, map[string]any{"runId": runID, "phase": config.PhasePreSign, "reason": err.Error()})
 			return contract.Wrap(contract.SignFailed, err, "a pre-sign hook refused the run; nothing was signed")
 		}
-		started = true
 		s.Events.Publish(ctx, ev)
+		if err := s.Events.Err(); err != nil {
+			return requiredEvents(err, "nothing was signed")
+		}
+		started = true
 		return nil
 	})
 	if !started {
@@ -196,15 +199,39 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 		"outputs": len(res.Manifest.Outputs), "manifestSha256": res.ManifestSHA256, "exitCode": int(contract.CodeOf(err))}
 	switch code := contract.CodeOf(err); {
 	case err == nil:
-		s.Events.Emit(ctx, "signing.run.completed", subject, end)
+		s.finish(ctx, config.PhasePostSign, "signing.run.completed", subject, end)
 	case code == contract.Skipped:
 		end["skipped"] = res.Skipped
-		s.Events.Emit(ctx, "signing.run.skipped", subject, end)
+		s.finish(ctx, config.PhasePostSign, "signing.run.skipped", subject, end)
 	default:
 		end["reason"] = err.Error()
-		s.Events.Emit(ctx, "signing.run.failed", subject, end)
+		s.finish(ctx, config.PhasePostSign, "signing.run.failed", subject, end)
+	}
+	if lerr := s.Events.Err(); lerr != nil && err == nil {
+		return res, requiredEvents(lerr, "the run finished but its record is incomplete")
 	}
 	return res, err
+}
+
+// requiredEvents is the error for a run that could not be logged while
+// config events.required is on.
+func requiredEvents(err error, what string) error {
+	return contract.Wrap(contract.Unavailable, err, "events.required is on and the event log cannot be written; %s", what).
+		WithFix("impr doctor", "impr config set events.required false")
+}
+
+// finish publishes a run's last event, then runs the post hooks with it. A
+// post hook cannot change the result; each failure becomes hook.failed.
+func (s *Service) finish(ctx context.Context, phase, short, subject string, data map[string]any) {
+	ev, err := s.event(short, subject, data)
+	if err != nil {
+		s.Events.Emit(ctx, short, subject, data) // the bus reports why it cannot be built
+		return
+	}
+	s.Events.Publish(ctx, ev)
+	for _, f := range s.Hooks.Post(ctx, phase, ev) {
+		s.Events.Emit(ctx, "hook.failed", subject, map[string]any{"hook": f.Hook, "phase": phase, "reason": f.Reason, "eventId": ev.ID})
+	}
 }
 
 // sign is the run itself; onStart is called once every pre-check has passed,

@@ -115,3 +115,30 @@ func TestRulesAndCapabilitiesEndpoints(t *testing.T) {
 		t.Fatalf("an option as a profile name: %d", r.Code)
 	}
 }
+
+func TestRefusalsAreEventsAtMostOncePerMinutePerCaller(t *testing.T) {
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	var got []string
+	_, rt := token(t, "read")
+	h := Handler(Options{Config: config.Config{Schema: config.Schema, Server: config.Server{Tokens: []config.Token{rt}}},
+		Run: (&fakeRun{}).run, StateDir: t.TempDir(), Now: func() time.Time { return now },
+		Emit: func(short, _ string, data map[string]any) {
+			mu.Lock()
+			got = append(got, short+" "+data["reason"].(string))
+			mu.Unlock()
+		}})
+	for i := 0; i < 3; i++ {
+		if r := do(h, "GET", "/v1/profiles", "impr_"+strings.Repeat("x", 43), "", nil); r.Code != 401 {
+			t.Fatalf("a bad token: %d", r.Code)
+		}
+	}
+	if len(got) != 1 || got[0] != "server.auth.refused no valid token" {
+		t.Fatalf("three refusals in a minute: %v", got)
+	}
+	now = now.Add(61 * time.Second)
+	do(h, "GET", "/v1/profiles", "", "", nil)
+	if len(got) != 2 {
+		t.Fatalf("a refusal a minute later: %v", got)
+	}
+}

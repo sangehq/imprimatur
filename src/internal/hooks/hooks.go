@@ -7,6 +7,9 @@
 //     before the first signature or verification; with veto, a non-zero exit
 //     stops the run, and a hook that cannot run (a failed pin, a timeout)
 //     stops it too, because a pre-hook is a gate.
+//   - post-sign and post-verify hooks run once the run has finished, with its
+//     last event (completed, failed or skipped). They cannot change the
+//     outcome: a failure is a warning and a hook.failed event.
 //   - event hooks are an events.Sink: they run for each matching event and
 //     their failures are warnings, never a change to the command's result.
 package hooks
@@ -74,6 +77,41 @@ func (r *Runner) Pre(ctx context.Context, phase string, ev events.Event) error {
 		}
 	}
 	return nil
+}
+
+// Failure is a post-hook that could not run or exited non-zero.
+type Failure struct {
+	Hook   string
+	Reason string
+}
+
+// Post runs every hook of a post-* phase, in config order, with the run's
+// last event. A post-hook never changes the outcome: each failure is warned
+// about and returned, so the caller can record hook.failed. A nil Runner runs
+// nothing.
+func (r *Runner) Post(ctx context.Context, phase string, ev events.Event) []Failure {
+	if r == nil {
+		return nil
+	}
+	var failed []Failure
+	for _, h := range r.Hooks {
+		if h.Phase != phase {
+			continue
+		}
+		res, err := r.run(ctx, h, ev)
+		reason := ""
+		switch {
+		case err != nil:
+			reason = err.Error()
+		case res.ExitCode != 0:
+			reason = fmt.Sprintf("exit %d: %s", res.ExitCode, firstLine(res.Output()))
+		default:
+			continue
+		}
+		r.warn("hooks     %s failed: %s", h.Name, reason)
+		failed = append(failed, Failure{Hook: h.Name, Reason: reason})
+	}
+	return failed
 }
 
 // Write is the events.Sink for event hooks.

@@ -13,6 +13,9 @@ impr serve --listen 127.0.0.1:8743             # or a loopback port
 ```
 
 - **Socket.** The socket is 0600, in a 0700 directory, so only your user can connect.
+  On Linux impr also reads each connection's peer uid (`SO_PEERCRED`) and closes any from another
+  user, root included, recording `server.auth.refused`. On macOS the file modes are the whole check,
+  because Go's standard library has no peer-credential call there.
 - **Addresses.** A loopback port is the other everyday choice. An address other machines can reach is
   allowed only with `server.allowRemote` and `server.tls` set (see below).
 - **Stopping.** Ctrl-C or SIGTERM stops it gracefully.
@@ -187,11 +190,40 @@ Other apps can call `POST /v1/hooks/{name}` with a Standard Webhooks delivery, s
 
 - **Signature.** The signature must verify within 5 minutes (`tolerance`, at most 15 m), under the current
   or the previous secret. Every failure is the same 401.
+- **`v1a`.** An endpoint can take ed25519 deliveries instead: set `publicKey` (and, during a rotation,
+  `previousPublicKey`) to the sender's `whpk_` key, in place of or beside `secretRef`. A public key is not
+  secret, so it is written in the config rather than referenced. A `v1` entry is checked only against
+  secrets and a `v1a` entry only against public keys.
 - **Replays.** A `webhook-id` already processed answers 409. The ledger survives restarts.
 - **Actions.**
   - `allow` lists the actions the endpoint accepts: `verify`, `doctor`, `cert.list` or `profile.list`.
   - Signing is never an inbound action.
   - `verify` follows the same rules as `POST /v1/verify`.
+
+### GitHub deliveries
+
+An endpoint with `"kind": "github"` takes GitHub's own webhooks. Its `secretRef` names the secret set on
+the GitHub webhook, at least 16 characters.
+
+```json
+"inbound": [
+  {"name": "gh-audit", "kind": "github", "secretRef": "secret://webhooks/gh", "allow": ["doctor"],
+   "githubEvents": ["push", "release"]},
+  {"name": "gh-doctor", "kind": "github", "secretRef": "secret://webhooks/gh", "allow": ["doctor"], "run": "doctor"}
+]
+```
+
+- **Signature.** `X-Hub-Signature-256` must match the HMAC-SHA256 of the body. Every failure is the
+  same 401.
+- **Replays.** GitHub signs no timestamp, so the delivery id (`X-GitHub-Delivery`) is remembered for 7
+  days and a repeat answers 409.
+- **`ping`** is always answered with `{"result": "pong"}`.
+- **Which events.** `githubEvents` limits the endpoint to those event names; others answer
+  `{"result": "ignored"}`. Empty accepts every event.
+- **What happens.** Every accepted delivery is recorded as `webhook.inbound.received`, with the event
+  name, delivery id, repository, ref and action. That is all, unless `run` is set: then the delivery also
+  runs that action (`doctor`, `cert.list` or `profile.list`, and one of `allow`) and answers with its
+  document. `verify` cannot be run this way, because a GitHub event carries no verify request.
 
 `companion info` reports the `server` capability. `server.started` and `server.stopped` are recorded in the
 [event log](events.md).

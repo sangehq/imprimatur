@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `github` inbound kind for `impr serve`. It checks `X-Hub-Signature-256`,
+  refuses a repeated `X-GitHub-Delivery` for 7 days, answers `ping`, and records
+  each delivery as `webhook.inbound.received`. With `run` set, a delivery also runs
+  one allowed action. `githubEvents` limits which events are accepted.
+- On Linux, `impr serve` checks each Unix-socket connection's peer uid and
+  closes connections from any other user.
+- Standard Webhooks `v1a` (ed25519), opt-in. `impr webhooks secret --ed25519`
+  makes a `whsk_` signing key and its `whpk_` public key. An outbound
+  `secretRef` holding a `whsk_` key signs `v1a`. An inbound endpoint takes
+  `publicKey` in place of, or beside, `secretRef`.
+- `events.required`. When it is on, `impr sign` and `impr verify` fail closed
+  (exit 5) if the event log cannot be written. Without it, they warn and carry on, as before.
+- `impr events tail --follow` prints each new event until Ctrl-C.
+- `post-sign` and `post-verify` hooks. Each runs once the run has finished,
+  with its last event on stdin. It cannot veto or change the exit code; a
+  failure is a warning plus a `hook.failed` event.
+- `webhook.delivery.dead`, `webhook.secret.rotated` and `server.auth.refused`
+  events. All three are local-class, and `server.auth.refused` is raised at
+  most once a minute per caller.
+
 - `impr webhooks add|rm|rotate|test`. Changes go through the same validation,
   locks and rollback as `impr config set`. `rotate` overlaps two keys, then
   `--finish` drops the old one. Deliveries now honour a receiver's
