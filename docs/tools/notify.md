@@ -30,8 +30,18 @@ as a toast.
 
 ## Certificate expiry
 
-`impr cert list` checks every certificate and key whose expiry it can read, and a running
-`impr serve` does so every six hours. It raises `cert.expiring` once at each threshold a
+`impr cert list` checks every certificate and key whose expiry it can read. Three things run it for
+you, and you can use any of them:
+
+- **`impr serve`** checks every six hours while it runs.
+- **A daily scheduled check.** `impr cert install-check --print` prints a systemd timer, a launchd job or
+  a Windows task that runs `impr cert list` once a day, and how to install it. impr installs nothing
+  itself.
+- **On every command.** With `notify.checkOnCommand` on, any other impr command runs the check, at most
+  once a day. It is off by default, because it runs the certificate tools (gpg, `security`, certutil)
+  when nobody asked for them. sange's own calls (`companion`, `profile`, `cert`) never trigger it.
+
+ It raises `cert.expiring` once at each threshold a
 certificate crosses, and `cert.expired` once. The events go to the log, hooks and webhooks as well
 as the desktop. impr records which threshold it last raised for each certificate, in
 `<state>/notify/expiry.json`, so running `cert list` every hour does not repeat a warning. A renewed
@@ -40,13 +50,14 @@ certificate (a new expiry date) starts again.
 ## Configuration
 
 ```json
-"notify": {"desktop": true, "certExpiryDays": [30, 14, 7]}
+"notify": {"desktop": true, "certExpiryDays": [30, 14, 7], "checkOnCommand": false}
 ```
 
 | Key | Meaning |
 | --- | --- |
 | `notify.desktop` | show desktop notifications on this machine; on unless set `false` |
 | `notify.certExpiryDays` | the warning thresholds, in days (1 to 365); default 30, 14 and 7 |
+| `notify.checkOnCommand` | run the expiry check after other commands, at most once a day; off unless set `true` |
 
 The system config can lock `notify`.
 

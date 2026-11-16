@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Two more ways to run the expiry check. `impr cert install-check --print`
+  prints a daily systemd timer, launchd job or Windows task, and installs
+  nothing. `notify.checkOnCommand` makes other commands run the check at most
+  once a day; it is off by default.
+
 - `impr rules test --policy FILE FILE...` asks Windows (`Test-AppLockerPolicy`)
   whether a policy would allow each file, and exits 4 on a denial. PowerShell
   is allow-listed for that one embedded script only, checked byte for byte,
