@@ -172,8 +172,8 @@ type sangeVerifyResult struct {
 // sangeOutputAllowed is sange's rule for files a run may create.
 func sangeOutputAllowed(p string) bool {
 	base := path.Base(p)
-	return base == "SHA256SUMS" || base == "checksums.txt" || strings.HasSuffix(base, ".sig") || strings.HasSuffix(base, ".minisig") ||
-		strings.HasSuffix(base, ".sigstore.json")
+	return base == "SHA256SUMS" || base == "checksums.txt" || strings.HasSuffix(base, ".sig") || strings.HasSuffix(base, ".asc") ||
+		strings.HasSuffix(base, ".minisig") || strings.HasSuffix(base, ".sigstore.json") || strings.HasSuffix(base, ".intoto.jsonl")
 }
 
 func TestCompanionInfoIsWhatSangeRequires(t *testing.T) {
@@ -190,6 +190,68 @@ func TestCompanionInfoIsWhatSangeRequires(t *testing.T) {
 			t.Errorf("companion info does not list %q, so sange treats imprimatur as absent", c)
 		}
 	}
+}
+
+// TestInTotoThroughTheCommandLine signs a build with checksums and an in-toto
+// attestation by the same ssh key, verifies both, and shows a statement for
+// another commit is refused.
+func TestInTotoThroughTheCommandLine(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("real ssh-keygen: not installed")
+	}
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "release")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "impr-test", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_RELEASE_KEY"] = key
+	h.ok("profile", "add", "acme-release", "--scope", "company", "--owner", "acme", "--purpose", "release",
+		"--allowed-repo", "github.com/acme/**",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_RELEASE_KEY",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1],
+		"--set", "platforms.attestations.kind=in-toto", "--set", "platforms.attestations.signer=checksums")
+
+	root, manifest, commit, tree := build(t)
+	out := h.ok("sign", "--json", "--strict", "--root", root, "--manifest", manifest, "--commit", commit, "--tree", tree,
+		"--profile", "acme-release", "--purpose", "release", "--platforms", "checksums,attestations", "--repo", "git@github.com:acme/tool.git")
+	var res sangeSignResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatal(err)
+	}
+	var att string
+	for _, o := range res.Manifest.Outputs {
+		if !sangeOutputAllowed(o.Path) {
+			t.Errorf("sange would refuse output %q", o.Path)
+		}
+		if strings.HasSuffix(o.Path, ".intoto.jsonl") {
+			att = filepath.Join(root, filepath.FromSlash(o.Path))
+		}
+	}
+	if len(res.Manifest.Outputs) != 3 || att == "" {
+		t.Fatalf("want SHA256SUMS, its .sig and its .intoto.jsonl: %+v", res.Manifest.Outputs)
+	}
+	vout := h.ok("verify", "--json", "--strict", "--root", root, "--manifest", manifest, "--signed", res.ManifestPath, "--profile", "acme-release")
+	if !strings.Contains(vout, `"platform":"attestations"`) || !strings.Contains(vout, `"ok":true`) {
+		t.Fatalf("verify did not check the attestation: %s", vout)
+	}
+
+	// The attestation of another build, swapped in, is refused.
+	other, oManifest, oCommit, oTree := build(t)
+	h.ok("sign", "--json", "--strict", "--root", other, "--manifest", oManifest, "--commit", oCommit, "--tree", oTree,
+		"--profile", "acme-release", "--purpose", "release", "--platforms", "checksums,attestations", "--repo", "git@github.com:acme/tool.git")
+	rel, err := filepath.Rel(root, att)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swapped, err := os.ReadFile(filepath.Join(other, rel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(att, swapped, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(4, "verify", "--json", "--strict", "--root", root, "--signed", res.ManifestPath, "--profile", "acme-release")
 }
 
 // TestSignAndVerifyWithRealSSH is the whole chain of custody through the

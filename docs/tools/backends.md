@@ -1,6 +1,6 @@
 # Backends
 
-Ten backends implement the signing port, one per platform kind and credential
+Eleven backends implement the signing port, one per platform kind and credential
 type. Each runs only allow-listed tools, by absolute path, with no shell.
 
 | Platform | Backend | Host | Tools | Pin verification checks |
@@ -14,7 +14,29 @@ type. Each runs only allow-listed tools, by absolute path, with no shell.
 | checksums | `minisign` | any | `minisign` | key id |
 | checksums | `ssh` | any | `ssh-keygen -Y` | key fingerprint (`SHA256:...`) |
 | containers | `cosign` key / keyless | any | `cosign sign-blob`, `verify-blob` | public-key sha256 / identity and issuer |
-| attestations | `in-toto` | none | none | not implemented: reported unavailable |
+| attestations | `in-toto` | wherever its signer works | the checksum key's tool, or `cosign` | the signer's pin, the checksum file's entries, and the commit and tree |
+
+## in-toto attestations
+
+With `attestations` requested, impr writes `SHA256SUMS.intoto.jsonl` beside the checksum file: one DSSE
+envelope holding an in-toto Statement v1.
+
+- **Subjects.** Every entry of `SHA256SUMS`, by path and sha256, so the attestation covers the signed
+  binaries and every other file the build manifest lists.
+- **Predicate.** SLSA provenance v1 (`https://slsa.dev/provenance/v1`). Build type
+  `https://sange.sh/imprimatur/buildtypes/manifest/v1`, builder `https://sange.sh/imprimatur`. The
+  external parameters are the commit, tree and repository, the build manifest's digest is an internal
+  parameter, and the source is a resolved dependency (`git+<repo>`, `gitCommit`, `gitTree`).
+- **Signature.** The profile's own pinned signer signs DSSE's pre-authentication encoding:
+  `platforms.attestations.signer` is `checksums` (the gpg, minisign or ssh key) or `cosign`. An ssh key
+  signs in the `in-toto` namespace, so neither signature can stand in for the other.
+- **Verifying.** `impr verify --signed` checks the envelope against the pinned signer, then checks that
+  the statement names exactly the checksum file's entries and exactly the signed commit and tree, and
+  re-hashes every listed file.
+
+```json
+"attestations": {"kind": "in-toto", "signer": "checksums"}
+```
 
 ## Authenticode
 

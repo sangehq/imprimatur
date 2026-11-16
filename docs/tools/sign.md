@@ -36,7 +36,8 @@ only, so it is never a signing oracle.
 3. With `checksums`, `containers` or `attestations` requested, writes
    `SHA256SUMS` beside the build manifest, over the post-sign digests, and
    signs it: `SHA256SUMS.sig` (gpg, ssh), `SHA256SUMS.minisig` (minisign),
-   `SHA256SUMS.sigstore.json` (cosign).
+   `SHA256SUMS.sigstore.json` (cosign), and `SHA256SUMS.intoto.jsonl` (an in-toto attestation, see
+   [backends](backends.md#in-toto-attestations)).
 4. Writes `impr-manifest.json` beside the build manifest.
 
 ## Loose files

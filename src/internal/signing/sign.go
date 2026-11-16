@@ -407,7 +407,8 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 		}
 		m.Outputs = append(m.Outputs, SignedArtifact{Path: sumsRel, OutputSHA256: sumsSHA, Platform: profile.Checksums, Kind: "sha256sums"})
 		for _, w := range sumsPlan {
-			sig, err := w.be.Sign(ctx, backend.Artifact{Path: sumsPath, Rel: sumsRel}, p)
+			sig, err := w.be.Sign(ctx, backend.Artifact{Path: sumsPath, Rel: sumsRel,
+				Build: &backend.Build{Repo: o.Repo, Commit: bm.Commit, Tree: bm.Tree, ManifestDigest: bm.Digest}}, p)
 			if err != nil {
 				return Result{}, err
 			}

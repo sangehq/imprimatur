@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- in-toto attestations. With `--platforms attestations`, `impr sign` writes
+  `SHA256SUMS.intoto.jsonl`: a DSSE envelope holding an in-toto Statement v1
+  over every checksum entry, with SLSA provenance v1 naming the commit, tree
+  and repository.
+  - **Signer.** The profile's pinned checksum key or cosign signs it; an ssh key
+    signs in the `in-toto` namespace.
+  - **Verifying.** `impr verify --signed` checks the signer, the subjects and
+    the commit, and capabilities report `attestations` wherever its signer
+    works.
+
 - `impr serve` streams events. `GET /v1/events/stream` sends the event log as
   Server-Sent Events, with type filters and `Last-Event-ID` resume.
   - **Limits.** At most 8 streams, a keepalive every 15 seconds, and a reconnect

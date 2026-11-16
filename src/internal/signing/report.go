@@ -140,8 +140,9 @@ func HostCapabilities(h backend.Host) (platforms map[string]bool, backends map[s
 	ok = (&backend.Cosign{H: h}).Capability(h).Sign
 	backends["containers/cosign"] = ok
 	platforms[profile.Containers] = ok
-	backends["attestations/in-toto"] = false
-	platforms[profile.Attestations] = false
+	// in-toto is signed by the checksum key or cosign, so it works where either does.
+	platforms[profile.Attestations] = platforms[profile.Checksums] || platforms[profile.Containers]
+	backends["attestations/in-toto"] = platforms[profile.Attestations]
 	return platforms, backends
 }
 

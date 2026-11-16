@@ -28,9 +28,10 @@ type VerifyOptions struct {
 type item struct {
 	rel, want, platform string
 	notarized           bool
-	sums                bool     // a SHA256SUMS file: every file it lists is re-hashed too
-	signerID            string   // the windows signer the record names
-	require             []string // with --manifest: build-manifest files the checksum file must list
+	sums                bool           // a SHA256SUMS file: every file it lists is re-hashed too
+	signerID            string         // the windows signer the record names
+	require             []string       // with --manifest: build-manifest files the checksum file must list
+	build               *backend.Build // the build the signed record names (in-toto checks it)
 }
 
 // Verify checks signed files against exactly one profile's pinned identity.
@@ -133,9 +134,10 @@ func (s *Service) verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 		}
 		for _, out := range m.Outputs {
 			if out.Kind == "sha256sums" {
-				for _, pl := range []string{profile.Checksums, profile.Containers} {
+				for _, pl := range []string{profile.Checksums, profile.Containers, profile.Attestations} {
 					if hasOutput(m.Outputs, pl) {
-						items = append(items, item{rel: out.Path, want: out.OutputSHA256, platform: pl, sums: true, require: require})
+						items = append(items, item{rel: out.Path, want: out.OutputSHA256, platform: pl, sums: true, require: require,
+							build: &backend.Build{Repo: m.Repo, Commit: m.Commit, Tree: m.Tree, ManifestDigest: m.BuildManifestDigest}})
 					}
 				}
 			}
@@ -231,6 +233,8 @@ func (s *Service) verifyOne(ctx context.Context, root string, p profile.Profile,
 				pl = profile.Checksums
 			case p.Platforms.Containers != nil && fileExists(path+".sigstore.json"):
 				pl = profile.Containers
+			case p.Platforms.Attestations != nil && fileExists(path+backend.AttestationExt):
+				pl = profile.Attestations
 			default:
 				return contract.New(contract.VerifyFailed, "%s is not a Windows or macOS binary, and has no signature this profile makes", base)
 			}
@@ -248,7 +252,7 @@ func (s *Service) verifyOne(ctx context.Context, root string, p profile.Profile,
 	if c := be.Capability(s.Host); !c.Verify {
 		return contract.New(contract.Unavailable, "%s signatures cannot be verified on this host: %s", pl, c.Reason)
 	}
-	art := backend.Artifact{Path: path, Rel: it.rel, Notarized: it.notarized}
+	art := backend.Artifact{Path: path, Rel: it.rel, Notarized: it.notarized, Build: it.build}
 	if err := be.Verify(ctx, art, p); err != nil {
 		return err
 	}
@@ -324,6 +328,11 @@ func found(p profile.Profile, platform string) string {
 		return id.Checksums
 	case profile.Containers:
 		return id.Containers
+	case profile.Attestations:
+		if a := p.Platforms.Attestations; a != nil && a.Signer == "cosign" {
+			return id.Containers
+		}
+		return id.Checksums
 	}
 	return ""
 }

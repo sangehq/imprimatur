@@ -418,18 +418,6 @@ func TestCosignKeyPinAndKeylessArgs(t *testing.T) {
 	}
 }
 
-func TestAttestationsAreUnavailable(t *testing.T) {
-	b, err := For(Host{}, profile.Profile{Platforms: profile.Platforms{Attestations: &profile.AttestationSpec{Kind: "in-toto", Signer: "checksums"}}}, profile.Attestations)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b.Capability(Host{}).Sign {
-		t.Fatal("in-toto claims it can sign")
-	}
-	_, err = b.Sign(context.Background(), Artifact{}, profile.Profile{})
-	wantCode(t, err, contract.Unavailable)
-}
-
 // ---- real tools that may be absent: each skips with the reason ----------------
 
 func realTool(t *testing.T, name string) {

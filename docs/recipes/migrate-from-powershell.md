@@ -54,9 +54,9 @@ Parity is measured against this list. Each line is a PowerShell feature the Go
 | `impr doctor` checks for go, goreleaser, go-winres and git | not ported: they concern building, which impr no longer does |
 | Moving pre-1.4 files from the toolkit root into `config/` | not ported: run the PowerShell line once first, or `--from` the file |
 
-Not in the PowerShell line either, and not here yet: in-toto attestations, and
-signed company or team profile bundles (impr honours `managed` but cannot
-install a bundle).
+Not in the PowerShell line, and added here: in-toto attestations
+([backends](../tools/backends.md#in-toto-attestations)) and signed company or team
+profile bundles ([profile](../tools/profile.md#signed-profile-bundles)).
 
 ---
 
