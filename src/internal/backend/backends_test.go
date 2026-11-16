@@ -666,7 +666,7 @@ func TestAppleTemporaryKeychain(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !f.Called("openssl", "-passin env:IMPR_P12_IN") || !f.Called("openssl", "-export") || !f.Called("security", "create-keychain") ||
-		!f.Called("security", "/identity.p12") || f.Called("security", "import "+p12) || !f.Called("codesign", "--keychain") ||
+		!f.Called("security", "identity.p12 -k") || f.Called("security", "import "+p12) || !f.Called("codesign", "--keychain") ||
 		!f.Called("security", "delete-keychain") {
 		t.Fatalf("calls: %+v", f.Calls)
 	}

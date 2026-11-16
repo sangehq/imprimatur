@@ -40,6 +40,8 @@ func FuzzReadManifest(f *testing.F) {
 		`","version":"v1","artifacts":[{"path":"build/linux/tool","sha256":"` + strings.Repeat("c", 64) + `","size":1}]}`))
 	f.Add([]byte(`{"schema":"sange.build-manifest/v1","artifacts":[{"path":"../x"}]}`))
 	f.Add([]byte(`{}`))
+	f.Add([]byte(`{"schema":"sange.build-manifest/v1","artifacts":[{"path":"/","sha256":"` + strings.Repeat("c", 64) + `"}]}`))
+	f.Add([]byte(`{"schema":"sange.build-manifest/v1","artifacts":[{"path":"C:x","sha256":"` + strings.Repeat("c", 64) + `"}]}`))
 	f.Fuzz(func(t *testing.T, b []byte) {
 		dir := t.TempDir()
 		p := filepath.Join(dir, "m.json")

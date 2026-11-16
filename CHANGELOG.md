@@ -394,6 +394,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A build manifest listing a path outside the signing root (`/`, a drive
+  letter, `..`) is refused when read, so `impr approve` cannot approve one.
+  Signing already refused it. Found by `FuzzReadManifest` in CI's fuzz job.
+
 - `impr audit verify --json` and `impr events verify --json` printed two
   documents when the chain was broken. Each now prints its result once and
   exits 4.
