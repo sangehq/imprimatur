@@ -329,6 +329,8 @@ func cmdRules(_ context.Context, a *App, args []string) (int, error) {
 		if err := json.Unmarshal(b, &req); err != nil {
 			return 0, contract.Wrap(contract.Usage, err, "the request is not an allow-rules request")
 		}
+		// The flag can add the default rules to a request; it never removes them.
+		req.Options.IncludeDefaultRules = req.Options.IncludeDefaultRules || p.on("include-default-rules")
 	}
 	res, err := rules.Render(req, "imprimatur "+version)
 	if err != nil {

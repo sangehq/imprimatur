@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr rules --include-default-rules` (and `includeDefaultRules` in a request)
+  adds AppLocker's standard default rules to each collection, with a note that
+  the Windows folder rule also allows user-writable folders under it.
+
 - Recipes for GPG and minisign checksums, Azure Artifact Signing, Certum,
   trusting a test certificate, deploying allow rules, a project Makefile, a new
   machine and a two-person release, and a troubleshooting page.
@@ -357,6 +361,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   govulncheck in CI.
 
 ### Fixed
+
+- A failure to render the AppLocker policy is now an error. Before, the error
+  was dropped and the policy came out empty.
 
 - A malformed SSH signature whose markers overlap
   (`-----BEGIN SSH SIGNATURE-----END SSH SIGNATURE-----`) no longer panics

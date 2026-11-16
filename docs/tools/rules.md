@@ -42,6 +42,12 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   policy's `{GUID}`. Without one, the output is AppLocker only, and impr says so.
 - **Product name.** `--product` is the ProductName in the files' version information. impr does not read
   version resources, so name it.
+- **Default rules.** `--include-default-rules` (or `"includeDefaultRules": true` in a request) adds
+  AppLocker's standard default rules to each collection: Program Files and the Windows folder for
+  everyone, and everything for Administrators. Without them, enforcing a collection also blocks Windows
+  itself, so add them unless the machine already has them. The Windows folder rule also allows the
+  user-writable folders under it, such as `Windows\Temp`, a known AppLocker bypass, and the answer's notes
+  say so.
 - **Same output as a request.** Everything else (AuditOnly unless `--enforce`, Everyone unless `--sid`) is
   exactly what a request produces.
 

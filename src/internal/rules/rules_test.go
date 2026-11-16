@@ -96,3 +96,38 @@ func TestEKUValue(t *testing.T) {
 		t.Fatalf("%q %v", v, err)
 	}
 }
+
+func TestDefaultRulesAreOptIn(t *testing.T) {
+	req := request(t)
+	res, err := Render(req, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(res.AppLocker, "FilePathRule") {
+		t.Fatal("default rules were added without includeDefaultRules")
+	}
+	req.Options.IncludeDefaultRules = true
+	res, err = Render(req, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wellFormed(res.AppLocker); err != nil {
+		t.Fatal(err)
+	}
+	// One collection per kind the request has (Exe, Dll), three rules each.
+	if n := strings.Count(res.AppLocker, "<FilePathRule "); n != 6 {
+		t.Fatalf("want 6 default rules, got %d:\n%s", n, res.AppLocker)
+	}
+	for _, want := range []string{`Path="%PROGRAMFILES%\*"`, `Path="%WINDIR%\*"`, `UserOrGroupSid="S-1-5-32-544"`, "(Default Rule) All files"} {
+		if !strings.Contains(res.AppLocker, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+	if !strings.Contains(strings.Join(res.Notes, " "), "known AppLocker bypass") {
+		t.Error("the bypass trade-off must be stated in the notes")
+	}
+	// The default rules sit beside the publisher rules, never instead of them.
+	if !strings.Contains(res.AppLocker, "<FilePublisherRule ") {
+		t.Fatal("the publisher rules were dropped")
+	}
+}

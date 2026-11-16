@@ -16,7 +16,8 @@ import (
 
 var rulesFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "request": stringFlag, "out-dir": stringFlag,
 	"scope": stringFlag, "product": stringFlag, "file-version": stringFlag, "eku": stringFlag, "base-policy": stringFlag,
-	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag}
+	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag,
+	"include-default-rules": boolFlag}
 
 // rulesFromFiles builds an allow-rules request from signed Windows files, the
 // way the PowerShell toolkit read them: the publisher, leaf and issuing CA
@@ -92,7 +93,7 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		pub.IssuerName, pub.IssuerTBS = signer.Issuer.Subject.CommonName, tbs
 	}
 	opt := rules.Options{Name: p.str("name"), Enforce: p.on("enforce"), BasePolicyID: p.str("base-policy"),
-		UserOrGroupSID: p.str("sid"), AppLocker: p.on("applocker"), WDAC: p.on("wdac")}
+		UserOrGroupSID: p.str("sid"), AppLocker: p.on("applocker"), WDAC: p.on("wdac"), IncludeDefaultRules: p.on("include-default-rules")}
 	if !opt.AppLocker && !opt.WDAC {
 		opt.AppLocker, opt.WDAC = true, p.str("base-policy") != ""
 		if !opt.WDAC {
