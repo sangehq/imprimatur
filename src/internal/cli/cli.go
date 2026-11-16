@@ -500,6 +500,7 @@ Usage:
   impr config path|show|validate [--json] | get KEY | set KEY VALUE [--profile NAME] | unset KEY [--profile NAME]
   impr config profile list [--json] | create NAME | use NAME | use --none | rm NAME
   impr tools list [--json] | pin NAME
+  impr events replay --to WEBHOOK [--since 24h|TIME] [--type GLOB]... [--limit N] [--dry-run] [--force] [--json]
   impr audit tail [--limit N] [--json] | verify [--against ANCHOR] [--json] | anchor [--json]
   impr serve [--listen unix|HOST:PORT] [--check-config] [--yes]
   impr serve install-unit --print [--for systemd|launchd|task] [--exe PATH]

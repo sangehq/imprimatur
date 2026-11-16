@@ -153,6 +153,13 @@ func (o Outbox) save(state string, d Delivery) error {
 	return os.WriteFile(o.path(state, d), b, 0o600)
 }
 
+// Delivered reports whether the subscription's receiver has acknowledged an
+// event (its delivery is under done/).
+func (o Outbox) Delivered(subscription, eventID string) bool {
+	_, err := os.Stat(o.path("done", Delivery{Subscription: subscription, EventID: eventID}))
+	return err == nil
+}
+
 // Enqueue stores a delivery for an event and tries it once now.
 func (o Outbox) Enqueue(ctx context.Context, s Subscription, ev events.Event) error {
 	body, err := json.Marshal(ev)

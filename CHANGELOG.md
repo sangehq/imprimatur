@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr events replay --to WEBHOOK` resends logged events to one outbound
+  webhook. It sends only what the subscription receives, skips what it already
+  acknowledged (unless `--force`), and stops at `--limit`. `--since`, `--type`
+  and `--dry-run` narrow it.
+- `profile.created`, `profile.changed` and `profile.removed` are now emitted
+  (they were catalogued, but never raised). Each carries the profile's name,
+  scope, owner, purposes and identity digest.
+
 - `impr doctor` reports impr's folders that group or others can write, and key
   files (`file://` references, the server's TLS key) they can read. It also
   lists every allow-listed tool with its path, SHA-256 and pin.

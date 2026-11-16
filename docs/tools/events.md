@@ -29,7 +29,8 @@ verification step it takes.
 | `verification.run.completed` / `.failed` | the end of `impr verify` |
 | `cert.expiring` / `cert.expired` | `impr cert list` or `impr serve` found a certificate past a warning threshold, or expired; once per threshold ([notify](notify.md)) |
 | `approval.created` | `impr approve` wrote an approval |
-| `profile.*`, `config.changed`, `hook.*` | profile and configuration changes, and hook failures and vetoes |
+| `profile.created` / `.changed` / `.removed` | a profile was added, imported, edited or removed: its name, scope, owner, purposes and identity digest |
+| `config.changed`, `hook.*` | configuration changes, and hook failures and vetoes |
 | `audit.head` | both chain heads, for anchoring off the machine ([audit](audit.md#anchoring-off-the-machine)) |
 
 `impr events types --json` prints the full catalogue, with each type's class and schema URL.
@@ -46,8 +47,26 @@ impr events types --json
 - `impr events verify` exits 4 when the chain is broken. The `--json` document is
   `{contract, ok, checked, problem}`.
 - `companion info` reports the `events` capability.
+- `impr events replay --to WEBHOOK` resends logged events to one outbound webhook (see below).
 - To follow events as they happen from another program, use `impr serve`'s
   [event stream](serve.md#event-stream).
+
+## Replay
+
+```bash
+impr events replay --to ci-bus --since 24h --dry-run   # what would be sent
+impr events replay --to ci-bus --since 2026-11-16T00:00:00Z --type 'signing.*'
+```
+
+Replay resends logged events to one outbound webhook: a receiver that was down, or one added after the
+events happened.
+
+- **What it sends.** Only what that subscription would have received: its types, and never a local-class
+  event. `--type` narrows it further, and `--since` takes a duration or a time.
+- **No duplicates.** Events the receiver already acknowledged are skipped. `--force` sends them again.
+- **Signed and retried.** Each delivery is signed and retried exactly like a live one.
+- **Bounded.** A run stops at `--limit` (default 1000). Run it again for the rest.
+- **Output.** `--json`: `{"contract":1,"ok":true,"subscription":"…","matched":12,"sent":9,"pending":0,"alreadyDelivered":3}`.
 
 ---
 

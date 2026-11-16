@@ -135,9 +135,11 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 		if x, err = applyOptions(x, p); err != nil {
 			return 0, err
 		}
+		_, existed, _ := s.Get(x.Name)
 		if err := s.Save(x, p.on("force")); err != nil {
 			return 0, err
 		}
+		a.profileEvent(ctx, x, existed)
 		a.say("saved     %s", arg)
 		idx, _, err := s.LoadIndex()
 		if err != nil {
@@ -165,6 +167,7 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 		if err := s.Save(x, true); err != nil {
 			return 0, err
 		}
+		a.profileEvent(ctx, x, true)
 		a.say("saved     %s", x.Name)
 		return 0, nil
 	case "rm":
@@ -181,6 +184,7 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 		if err := s.Remove(arg); err != nil {
 			return 0, err
 		}
+		a.bus().Emit(ctx, "profile.removed", arg, map[string]any{"profile": arg})
 		if arg == idx.Default {
 			idx.Default = ""
 			if err := s.SaveIndex(idx); err != nil {
@@ -204,9 +208,11 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 		if len(ps) > 0 {
 			return 0, contract.New(contract.Usage, "%s is not a valid profile; nothing was imported", arg).WithDetails(ps.Strings()...)
 		}
+		_, existed, _ := s.Get(x.Name)
 		if err := s.Save(x, p.on("force")); err != nil {
 			return 0, err
 		}
+		a.profileEvent(ctx, x, existed)
 		a.say("imported  %s", x.Name)
 		return 0, nil
 	case "export":
@@ -459,4 +465,16 @@ func setPath(m map[string]any, path string, v any) {
 		return
 	}
 	cur[leaf] = v
+}
+
+// profileEvent raises profile.created or profile.changed with what a
+// receiver needs to follow a profile: its name, scope, owner, purposes and
+// the digest of its pinned identity (never a reference or a key).
+func (a *App) profileEvent(ctx context.Context, x profile.Profile, existed bool) {
+	short := "profile.created"
+	if existed {
+		short = "profile.changed"
+	}
+	a.bus().Emit(ctx, short, x.Name, map[string]any{"profile": x.Name, "scope": x.Scope, "owner": x.Owner,
+		"purpose": x.Purpose, "identityDigest": x.Pinned().Digest(), "managed": x.Managed})
 }
