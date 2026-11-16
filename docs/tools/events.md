@@ -18,6 +18,10 @@ verification step it takes.
 - **Not on stdout.** Events never appear on stdout, so every `--json` document is unchanged.
 - **Failure does not stop the command.** If the log cannot be written, impr prints a warning and the
   command carries on.
+- **Unless the log is required.** With `events.required: true`, `impr sign` and `impr verify` exit 5
+  when the log cannot be written: before the first signature or verification if the start event fails,
+  or at the end if the last event fails. Turn it on where a run with no record is worse than no run
+  (`impr config set events.required true --profile prod`).
 - **No secrets.** Event data holds ids, names, paths relative to the signing root, and digests. It never
   holds a key, a password or a reference value.
 

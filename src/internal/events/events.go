@@ -146,7 +146,21 @@ type Bus struct {
 	Env   Env
 	Sinks []Sink
 	Warn  func(format string, args ...any)
-	mu    sync.Mutex
+	// Required records the first failure to write the event log, for Err:
+	// config events.required, where a run that cannot be logged fails closed.
+	Required bool
+	mu       sync.Mutex
+	err      error
+}
+
+// Err is the first event-log write failure when Required is set, else nil.
+func (b *Bus) Err() error {
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.err
 }
 
 // Emit builds and publishes an event. A nil Bus is a no-op, so code that
@@ -174,6 +188,9 @@ func (b *Bus) Publish(ctx context.Context, ev Event) {
 	for _, s := range b.Sinks {
 		if err := s.Write(ctx, ev); err != nil {
 			b.warn("events    %s not recorded: %v", ev.Type, err)
+			if _, isLog := s.(Log); isLog && b.Required && b.err == nil {
+				b.err = fmt.Errorf("%s was not written to the event log: %w", ev.Type, err)
+			}
 		}
 	}
 }

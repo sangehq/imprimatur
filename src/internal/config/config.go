@@ -169,6 +169,15 @@ type Config struct {
 	Notify Notify `json:"notify,omitempty"`
 	// Audit is the audit trail's anchoring.
 	Audit Audit `json:"audit,omitempty"`
+	// Events is the event log.
+	Events Events `json:"events,omitempty"`
+}
+
+// Events is the events section.
+type Events struct {
+	// Required makes sign and verify fail closed when the event log cannot
+	// be written, instead of warning and carrying on.
+	Required bool `json:"required,omitempty"`
 }
 
 // Audit is the audit section.

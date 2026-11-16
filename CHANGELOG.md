@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `events.required`. When it is on, `impr sign` and `impr verify` fail closed
+  (exit 5) if the event log cannot be written. Without it, they warn and carry on, as before.
 - `impr events tail --follow` prints each new event until Ctrl-C.
 - `post-sign` and `post-verify` hooks. Each runs once the run has finished,
   with its last event on stdin. It cannot veto or change the exit code; a

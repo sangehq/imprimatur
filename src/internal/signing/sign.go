@@ -181,8 +181,11 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 			s.Events.Emit(ctx, "hook.vetoed", subject, map[string]any{"runId": runID, "phase": config.PhasePreSign, "reason": err.Error()})
 			return contract.Wrap(contract.SignFailed, err, "a pre-sign hook refused the run; nothing was signed")
 		}
-		started = true
 		s.Events.Publish(ctx, ev)
+		if err := s.Events.Err(); err != nil {
+			return requiredEvents(err, "nothing was signed")
+		}
+		started = true
 		return nil
 	})
 	if !started {
@@ -204,7 +207,17 @@ func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
 		end["reason"] = err.Error()
 		s.finish(ctx, config.PhasePostSign, "signing.run.failed", subject, end)
 	}
+	if lerr := s.Events.Err(); lerr != nil && err == nil {
+		return res, requiredEvents(lerr, "the run finished but its record is incomplete")
+	}
 	return res, err
+}
+
+// requiredEvents is the error for a run that could not be logged while
+// config events.required is on.
+func requiredEvents(err error, what string) error {
+	return contract.Wrap(contract.Unavailable, err, "events.required is on and the event log cannot be written; %s", what).
+		WithFix("impr doctor", "impr config set events.required false")
 }
 
 // finish publishes a run's last event, then runs the post hooks with it. A

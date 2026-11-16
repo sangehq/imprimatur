@@ -50,6 +50,9 @@ func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 		}
 		s.Events.Publish(ctx, ev)
 	}
+	if err := s.Events.Err(); err != nil {
+		return VerifyResult{}, requiredEvents(err, "nothing was verified")
+	}
 	res, err := s.verify(ctx, o)
 	if res.Profile != "" {
 		failed := []string{}
@@ -64,6 +67,9 @@ func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 		} else {
 			s.finish(ctx, config.PhasePostVerify, "verification.run.failed", res.Profile, data)
 		}
+	}
+	if lerr := s.Events.Err(); lerr != nil && err == nil {
+		return res, requiredEvents(lerr, "the run finished but its record is incomplete")
 	}
 	return res, err
 }

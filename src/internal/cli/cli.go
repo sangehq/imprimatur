@@ -319,7 +319,12 @@ func (a *App) service() (*signing.Service, error) {
 	}
 	hk := &hooks.Runner{Hooks: cfg.Hooks, Warn: a.say}
 	bus := a.bus()
+	if bus == nil && cfg.Events.Required {
+		return nil, contract.New(contract.Unavailable, "events.required is on and the event log cannot be opened in %s", d.State).
+			WithFix("impr doctor", "impr config set events.required false")
+	}
 	if bus != nil {
+		bus.Required = cfg.Events.Required
 		bus.Sinks = append(bus.Sinks, hk)
 		if subs, err := a.subscriptions(ctxBackground(), cfg); err != nil {
 			a.say("webhooks  not sending: %v", err)
