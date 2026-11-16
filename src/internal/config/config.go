@@ -166,6 +166,10 @@ type Notify struct {
 	Desktop *bool `json:"desktop,omitempty"`
 	// CertExpiryDays are the warning thresholds; default 30, 14 and 7.
 	CertExpiryDays []int `json:"certExpiryDays,omitempty"`
+	// CheckOnCommand runs the expiry check after any other impr command, at
+	// most once a day. Off by default: it runs the certificate tools (gpg,
+	// security, certutil) when nobody asked for them.
+	CheckOnCommand bool `json:"checkOnCommand,omitempty"`
 }
 
 // DesktopOn reports whether desktop notifications are on.

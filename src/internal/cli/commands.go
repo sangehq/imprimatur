@@ -181,6 +181,9 @@ func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
 	if len(args) > 0 && args[0] == "create" {
 		return cmdCertCreate(ctx, a, args[1:])
 	}
+	if len(args) > 0 && args[0] == "install-check" {
+		return cmdCertInstallCheck(ctx, a, args[1:])
+	}
 	p, err := parse(args, readFlags)
 	if err != nil {
 		return 0, err

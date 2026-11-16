@@ -399,6 +399,7 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		code = a.fail(err, asJSON)
 	}
 	a.audit(ctx, cmd, rest, code, start)
+	a.dailyExpiryCheck(ctx, cmd)
 	return code
 }
 
@@ -449,6 +450,7 @@ Usage:
   impr profile bundle install BUNDLE.json [--sig FILE] | list [--json] | verify [--json]
   impr cert list [--json]
   impr cert create [--name NAME] [--subject CN] [--days N] [--json]
+  impr cert install-check --print [--for systemd|launchd|task] [--exe PATH]
   impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
             [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
             [--approval FILE]...
