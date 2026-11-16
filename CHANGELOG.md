@@ -348,6 +348,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tests now pin the new triggers, the pinned shared call, a GoReleaser config
   that publishes nowhere else, and its targets against `build/targets.txt`.
 
+### Security
+
+- The module now needs Go 1.27.4. Go 1.27.0 to 1.27.3 carry GO-2026-6859, an
+  HTTP/1 server crash in `net/http`'s MaxBytesReader, which `impr serve`
+  uses on every request. CI and release builds read the version from
+  `src/go.mod`, so they now build with the fixed toolchain. Found by
+  govulncheck in CI.
+
 ### Fixed
 
 - A malformed SSH signature whose markers overlap
