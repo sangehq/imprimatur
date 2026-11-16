@@ -161,11 +161,19 @@ func TestSignNeedsTheSwitchTheScopeAndABoundManifest(t *testing.T) {
 	if r := do(f.h, "POST", "/v1/sign", f.signT, body, nil); r.Code != 200 || !strings.Contains(f.run.last(), "--commit=0123456789abcdef") {
 		t.Fatalf("sign: %d %s", r.Code, f.run.last())
 	}
+	withApproval := strings.Replace(body, `"repo"`, `"approvals":["build/impr-approval-alice.json"],"repo"`, 1)
+	if r := do(f.h, "POST", "/v1/sign", f.signT, withApproval, nil); r.Code != 200 ||
+		!strings.Contains(f.run.last(), "--approval="+filepath.Join(filepath.Clean(f.root), "build", "impr-approval-alice.json")) {
+		t.Fatalf("approval not passed under the root: %d %s", r.Code, f.run.last())
+	}
 	for name, b := range map[string]string{
-		"no commit":     strings.Replace(body, `"commit":"0123456789abcdef0123456789abcdef01234567",`, "", 1),
-		"no purpose":    strings.Replace(body, `"purpose":"release",`, "", 1),
-		"option repo":   strings.Replace(body, `git@github.com:acme/tool.git`, `--root=/`, 1),
-		"outside roots": strings.Replace(body, f.root, "/tmp", 1),
+		"no commit":         strings.Replace(body, `"commit":"0123456789abcdef0123456789abcdef01234567",`, "", 1),
+		"no purpose":        strings.Replace(body, `"purpose":"release",`, "", 1),
+		"option repo":       strings.Replace(body, `git@github.com:acme/tool.git`, `--root=/`, 1),
+		"outside roots":     strings.Replace(body, f.root, "/tmp", 1),
+		"escaping approval": strings.Replace(body, `"repo"`, `"approvals":["../a.json"],"repo"`, 1),
+		"absolute approval": strings.Replace(body, `"repo"`, `"approvals":["/etc/a.json"],"repo"`, 1),
+		"empty approval":    strings.Replace(body, `"repo"`, `"approvals":[""],"repo"`, 1),
 	} {
 		if r := do(f.h, "POST", "/v1/sign", f.signT, b, nil); r.Code != 400 {
 			t.Errorf("%s: %d, want 400", name, r.Code)

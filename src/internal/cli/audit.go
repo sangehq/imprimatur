@@ -14,7 +14,7 @@ import (
 // verifies, builds, or changes configuration, profiles, tokens or the
 // installed binary. Read-only commands are not recorded.
 var audited = map[string]map[string]bool{
-	"sign": nil, "verify": nil, "build": nil, "release": nil, "install": nil, "uninstall": nil,
+	"sign": nil, "approve": nil, "verify": nil, "build": nil, "release": nil, "install": nil, "uninstall": nil,
 	"profile":    {"add": true, "edit": true, "rm": true, "import": true, "default": true, "import-legacy": true},
 	"config":     {"set": true, "unset": true, "profile": true},
 	"server":     {"token": true},

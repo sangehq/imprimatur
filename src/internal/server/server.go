@@ -267,6 +267,9 @@ type SignRequest struct {
 	Platforms []string `json:"platforms,omitempty"`
 	Repo      string   `json:"repo,omitempty"`
 	Strict    bool     `json:"strict,omitempty"`
+	// Approvals are approval documents relative to root, each with its .sig
+	// beside it, for a profile with requiresApproval.
+	Approvals []string `json:"approvals,omitempty"`
 }
 
 func decode(r *http.Request, v any) error {
@@ -416,6 +419,14 @@ func (s *server) sign(w http.ResponseWriter, r *http.Request) {
 	}
 	if q.Strict {
 		args = append(args, "--strict")
+	}
+	for _, rel := range q.Approvals {
+		_, ap, err := s.inRoot(q.Root, rel)
+		if err != nil || rel == "" {
+			writeErr(w, http.StatusBadRequest, contract.Usage, "approval %q must be a file inside the root", rel)
+			return
+		}
+		args = append(args, "--approval="+ap)
 	}
 	s.signMu.Lock() // one signing run at a time on this host
 	defer s.signMu.Unlock()

@@ -2,7 +2,7 @@
 
 > Sign and verify release artifacts with named, scoped signing profiles, and render Windows allow rules for them.
 
-Go 1.27 or newer, built from source; runs on macOS, Linux and Windows. No registry version, Tests or Static analysis badge yet: no version has been released yet and the repository ([sangehq/imprimatur](https://github.com/sangehq/imprimatur)) is private, so there is nothing those badges could truthfully show. The licence is MIT.
+Go 1.27.4 or newer, built from source; runs on macOS, Linux and Windows. No registry version, Tests or Static analysis badge yet: no version has been released yet and the repository ([sangehq/imprimatur](https://github.com/sangehq/imprimatur)) is private, so there is nothing those badges could truthfully show. The licence is MIT.
 
 ## Install
 
@@ -62,6 +62,7 @@ else is in the [documentation](#documentation) below.
 - [Configuration](docs/configuration.md) — profiles, credential references, paths and environment variables
 - [Architecture](docs/architecture.md) — the backend port, the exec allow-list, and why
 - [Release](docs/release.md) — how binaries are released on the GitHub release, and the commands that start one
+- [Troubleshooting](docs/troubleshooting.md) — what each refusal means, and what to do about it
 
 ### Reference
 
@@ -70,6 +71,7 @@ else is in the [documentation](#documentation) below.
 - [`impr build`](docs/tools/build.md) — cross-compile a Go module into `build/{os}/` with a commit-bound build manifest
 - [`impr release`](docs/tools/release.md) — build, sign and verify in one step; never tags, pushes or publishes
 - [`impr sign`](docs/tools/sign.md) — signing a build manifest, `impr-manifest.json`
+- [`impr approve`](docs/tools/approve.md) — a second person's SSH-signed approval for a release, for profiles with `requiresApproval`
 - [`impr verify`](docs/tools/verify.md) — checking signatures against a pinned identity
 - [`impr cert list`](docs/tools/cert.md) — the certificates and keys profiles use, with expiry
 - [`impr rules`](docs/tools/rules.md) — AppLocker and WDAC supplemental policies from a request
@@ -84,6 +86,7 @@ else is in the [documentation](#documentation) below.
 - [`impr serve`](docs/tools/serve.md) — the REST API and signed inbound webhooks, over a private socket
 - [`impr webhooks`](docs/tools/webhooks.md) — signed Standard Webhooks deliveries of impr's events to other apps
 - [`impr audit`](docs/tools/audit.md) — the hash-chained record of every command that signs or changes configuration
+- [`impr notify`](docs/tools/notify.md) — desktop notifications for failures, vetoes and certificate expiry
 - [`impr events`](docs/tools/events.md) — the CloudEvents log of signing and verification runs, and its hash chain
 - [Backends](docs/tools/backends.md) — every signing backend, the tools it runs and what it pins
 
@@ -93,6 +96,15 @@ else is in the [documentation](#documentation) below.
 - [Sign checksums with an SSH key](docs/recipes/ssh-checksums.md) — the backend that runs on every host
 - [Sign and notarise for macOS](docs/recipes/macos-notarization.md) — Developer ID, notarytool and stapler
 - [Use impr from sange's pipeline](docs/recipes/sange-pipeline.md) — the calls sange makes and what it checks
+- [Sign checksums with a GPG key](docs/recipes/gpg-checksums.md) — a key in gpg-agent, or one held in a secret for CI
+- [Sign checksums with minisign](docs/recipes/minisign-checksums.md) — a minisign key pinned by its key id
+- [Sign with Azure Artifact Signing](docs/recipes/artifact-signing.md) — the dlib, its metadata, and signing in
+- [Sign with a Certum certificate](docs/recipes/certum-signing.md) — a store certificate pinned by thumbprint, and renewal
+- [Trust a test certificate](docs/recipes/trust-test-certificate.md) — `impr cert create`, then trust it on a test machine
+- [Deploy allow rules](docs/recipes/deploy-allow-rules.md) — AppLocker and WDAC supplemental policies from signed files
+- [Sign from a project's Makefile](docs/recipes/project-makefile.md) — `make/impr.mk` and a project file
+- [Set up a new machine](docs/recipes/new-machine.md) — install, bring profiles over, check the host
+- [Require a second person to approve](docs/recipes/two-person-release.md) — signed approvals for a release profile
 
 ## Contributing and security
 

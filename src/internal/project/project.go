@@ -30,6 +30,9 @@ type Project struct {
 	Platforms   []string `json:"platforms,omitempty"` // the only platforms allowed here
 	Strict      bool     `json:"strict,omitempty"`    // every sign and verify runs as --strict
 	RequireRepo bool     `json:"requireRepo,omitempty"`
+	// RequireApproval makes every release signed here need approval, as if
+	// the profile had requiresApproval, in the profile's approval mode.
+	RequireApproval bool `json:"requireApproval,omitempty"`
 }
 
 // Load reads root/.imprimatur/project.json. A missing file is an empty

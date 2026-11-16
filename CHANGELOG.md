@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Recipes for GPG and minisign checksums, Azure Artifact Signing, Certum,
+  trusting a test certificate, deploying allow rules, a project Makefile, a new
+  machine and a two-person release, and a troubleshooting page.
+
+- `impr serve install-unit --print` prints a systemd user service, a launchd
+  agent or a Windows logon task for `impr serve`, and how to install it. It
+  installs nothing itself, and it refuses a config the server would not start
+  with. The systemd unit is sandboxed and can write only impr's state directory
+  and the signing roots.
+
+- Fuzz tests for every parser that reads untrusted input: checksum files, build
+  manifests, profiles, PE signatures and PKCS#7, SSH signature armor, rules
+  requests (whose XML output must stay well-formed), webhook deliveries and
+  config files. `make fuzz` runs them, and CI runs them weekly. `make vuln` runs
+  govulncheck, which CI runs on every pull request.
+
+- Desktop notifications through go-notifykit, impr's first dependency outside
+  the standard library. Failed runs, hook vetoes and certificates near expiry
+  appear under impr's own name and icon. Nothing is shown in tests or CI.
+  - **Commands.** `impr notify send|ping|doctor`, and `impr serve` answers
+    `ping`.
+  - **Certificate expiry.** `impr cert list`, and `impr serve` every six hours,
+    raise `cert.expiring` once per threshold (`notify.certExpiryDays`, default
+    30, 14 and 7) and `cert.expired` once.
+
+- Approvals. `impr approve` signs an `imprimatur.approval/v1` document with the
+  approver's SSH key. It binds one profile, purpose, commit, tree and build
+  manifest digest, and it expires. `impr sign --approval FILE` (and `approvals`
+  in `POST /v1/sign`) passes approvals in, and `impr-manifest.json` records
+  them.
+  - **Opt-in.** impr enforces a profile's `requiresApproval` only when
+    `approvals.enforce` is on, because sange enforces it (APR-11) before calling
+    impr. A repository's `.imprimatur/project.json` can set `requireApproval`.
+  - **Modes.** A profile's `approval` is `signed` (the default; `approvals.required`
+    distinct approvers from `approvals.approvers`) or `confirm` (typed at a
+    terminal; refused in CI, pipes and the REST API).
+
 - in-toto attestations. With `--platforms attestations`, `impr sign` writes
   `SHA256SUMS.intoto.jsonl`: a DSSE envelope holding an in-toto Statement v1
   over every checksum entry, with SLSA provenance v1 naming the commit, tree
@@ -311,7 +348,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tests now pin the new triggers, the pinned shared call, a GoReleaser config
   that publishes nowhere else, and its targets against `build/targets.txt`.
 
+### Security
+
+- The module now needs Go 1.27.4. Go 1.27.0 to 1.27.3 carry GO-2026-6859, an
+  HTTP/1 server crash in `net/http`'s MaxBytesReader, which `impr serve`
+  uses on every request. CI and release builds read the version from
+  `src/go.mod`, so they now build with the fixed toolchain. Found by
+  govulncheck in CI.
+
 ### Fixed
+
+- A malformed SSH signature whose markers overlap
+  (`-----BEGIN SSH SIGNATURE-----END SSH SIGNATURE-----`) no longer panics
+  `impr verify`. Found by `FuzzSSHSigKey`.
+- A checksum file line whose path holds a control character, such as a lone
+  carriage return, is refused. Before, it was accepted as a path that could not
+  be written back. Found by `FuzzParseChecksums`. So is a path that starts
+  with `*` after the binary-mode marker, or has spaces at either end: each read
+  back as a different path. The fuzzer found this one in CI's weekly job.
 
 - `impr verify --signed` re-hashes every file the signed `SHA256SUMS` lists.
   Before, it checked only the checksum file's signature, so a tampered archive

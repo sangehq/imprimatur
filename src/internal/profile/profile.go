@@ -101,9 +101,31 @@ type Profile struct {
 	Platforms        Platforms `json:"platforms"`
 	AllowedRepos     []string  `json:"allowedRepos,omitempty"`
 	RequiresApproval bool      `json:"requiresApproval,omitempty"`
+	// Approval is how a run with requiresApproval is approved: "signed" (the
+	// default) by approvers' SSH-signed approvals, or "confirm", typed at a
+	// terminal by the person signing.
+	Approval string `json:"approval,omitempty"`
 	// Managed marks a profile distributed by an organisation; read-only here.
 	Managed bool   `json:"managed,omitempty"`
 	Notes   string `json:"notes,omitempty"`
+}
+
+// Approval modes for a profile with requiresApproval.
+const (
+	ApprovalSigned  = "signed"
+	ApprovalConfirm = "confirm"
+)
+
+// ApprovalMode is how a run of this profile is approved: "" when it needs
+// none, else signed (the default) or confirm.
+func (p Profile) ApprovalMode() string {
+	switch {
+	case !p.RequiresApproval:
+		return ""
+	case p.Approval == ApprovalConfirm:
+		return ApprovalConfirm
+	}
+	return ApprovalSigned
 }
 
 // Platforms are the per-platform specs.
@@ -315,6 +337,12 @@ func (p Profile) Validate() Problems {
 	}
 	if len(p.Purpose) == 0 {
 		ps.add("profile.purpose", "a profile names at least one purpose (release, test, internal)")
+	}
+	switch {
+	case p.Approval != "" && !p.RequiresApproval:
+		ps.add("profile.approval", "approval is set but requiresApproval is not; set requiresApproval=true or remove approval")
+	case p.Approval != "" && p.Approval != ApprovalSigned && p.Approval != ApprovalConfirm:
+		ps.add("profile.approval", "%q is not signed or confirm", p.Approval)
 	}
 	seen := map[Purpose]bool{}
 	for _, pu := range p.Purpose {

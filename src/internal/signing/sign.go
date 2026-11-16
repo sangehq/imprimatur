@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/sangehq/imprimatur/src/internal/approval"
 	"github.com/sangehq/imprimatur/src/internal/artifact"
 	"github.com/sangehq/imprimatur/src/internal/backend"
 	"github.com/sangehq/imprimatur/src/internal/config"
@@ -36,6 +37,13 @@ type Service struct {
 	// ManagedCheck confirms a managed profile matches its signed bundle
 	// (audit N-B17); nil checks nothing.
 	ManagedCheck func(p profile.Profile) error
+	// Approvals is the config's approvals section: who may approve runs of
+	// profiles with requiresApproval.
+	Approvals approval.Policy
+	// Confirm asks the person at the terminal to type want; nil means there
+	// is no person to ask (the REST server, CI, a pipe), so confirm-mode
+	// approval is refused.
+	Confirm func(prompt, want string) bool
 	// BackendFor builds a backend; nil uses backend.For. Tests replace it.
 	BackendFor func(h backend.Host, p profile.Profile, platform string) (backend.Backend, error)
 }
@@ -64,6 +72,8 @@ type SignOptions struct {
 	Platforms []string
 	Repo      string
 	Strict    bool
+	// Approvals are approval documents, each with its .sig beside it.
+	Approvals []string
 }
 
 // LoadProfile resolves a profile and refuses one that is not valid.
@@ -216,6 +226,12 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 	if err != nil {
 		return Result{}, err
 	}
+	// A profile's requiresApproval is impr's to enforce only when the config
+	// says so: sange enforces it (APR-11) before calling impr sign.
+	needApproval := p.RequiresApproval && s.Approvals.Enforce
+	if p.RequiresApproval && !s.Approvals.Enforce {
+		s.logf("approve   %s requires approval; the caller enforces it (approvals.enforce is off)", p.Name)
+	}
 	if proj, ok, err := project.Load(root); err != nil {
 		return Result{}, contract.Wrap(contract.Usage, err, "the repository's project file cannot be read; nothing was signed")
 	} else if ok {
@@ -226,6 +242,7 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 		if why := proj.CheckSign(p.Name, o.Purpose, o.Repo, pls, o.Strict); len(why) > 0 {
 			return Result{}, contract.New(contract.SignFailed, "the repository's %s refuses this run; nothing was signed", project.Path).WithDetails(why...)
 		}
+		needApproval = needApproval || (proj.RequireApproval && o.Purpose == string(profile.PurposeRelease))
 	}
 	purpose := profile.Purpose(o.Purpose)
 	if o.Purpose == "" || !purpose.Valid() {
@@ -248,6 +265,12 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 	} else if purpose == profile.PurposeRelease {
 		return Result{}, contract.New(contract.Usage, "--repo is required to sign a release").
 			WithDetails("A release profile signs only the repositories in its allowedRepos.")
+	}
+	var approvals []RecordedApproval
+	if needApproval {
+		if approvals, err = s.approve(ctx, p, o, bm); err != nil {
+			return Result{}, err
+		}
 	}
 	platforms := o.Platforms
 	if len(platforms) == 0 {
@@ -340,7 +363,7 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 	}
 	m := Manifest{Schema: ManifestSchema, Signer: "imprimatur " + s.Version, Profile: p.Name, Purpose: purpose, Identity: p.Pinned(),
 		Commit: bm.Commit, Tree: bm.Tree, Repo: o.Repo, BuildManifestDigest: bm.Digest,
-		Artifacts: []SignedArtifact{}, Outputs: []SignedArtifact{}, Skipped: skipped}
+		Artifacts: []SignedArtifact{}, Outputs: []SignedArtifact{}, Skipped: skipped, Approvals: approvals}
 	m.IdentityDigest = m.Identity.Digest()
 	signed := map[string]int{} // manifest path -> index in m.Artifacts
 

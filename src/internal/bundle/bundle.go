@@ -51,12 +51,16 @@ var (
 	keyRe   = regexp.MustCompile(`^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/=]+$`)
 )
 
+// ValidPublicKey reports whether v is one SSH public key line with no
+// comment. Approver keys use the same rule.
+func ValidPublicKey(v string) bool { return keyRe.MatchString(strings.TrimSpace(v)) }
+
 // ValidKey reports what is wrong with a trusted key, or "".
 func ValidKey(k TrustedKey) string {
 	if !ownerRe.MatchString(k.Owner) {
 		return "owner must be lower-case letters, digits, . _ -"
 	}
-	if !keyRe.MatchString(strings.TrimSpace(k.PublicKey)) {
+	if !ValidPublicKey(k.PublicKey) {
 		return "publicKey must be an SSH public key line (ssh-ed25519 AAAA…), without a comment"
 	}
 	return ""

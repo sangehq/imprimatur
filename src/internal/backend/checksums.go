@@ -375,12 +375,20 @@ func (s *SSH) Sign(ctx context.Context, art Artifact, p profile.Profile) (Signat
 // (PROTOCOL.sshsig): its type and wire blob.
 func SSHSigKey(armored []byte) (keyType string, blob []byte, err error) {
 	text := string(armored)
-	start := strings.Index(text, "-----BEGIN SSH SIGNATURE-----")
-	end := strings.Index(text, "-----END SSH SIGNATURE-----")
-	if start < 0 || end < start {
+	const begin, finish = "-----BEGIN SSH SIGNATURE-----", "-----END SSH SIGNATURE-----"
+	start := strings.Index(text, begin)
+	if start < 0 {
 		return "", nil, fmt.Errorf("not an SSH signature")
 	}
-	body := strings.Join(strings.Fields(text[start+len("-----BEGIN SSH SIGNATURE-----"):end]), "")
+	// The end marker is looked for after the begin marker, never inside it:
+	// "-----BEGIN SSH SIGNATURE-----END SSH SIGNATURE-----" shares dashes
+	// (found by FuzzSSHSigKey).
+	from := start + len(begin)
+	end := strings.Index(text[from:], finish)
+	if end < 0 {
+		return "", nil, fmt.Errorf("not an SSH signature")
+	}
+	body := strings.Join(strings.Fields(text[from:from+end]), "")
 	raw, err := base64.StdEncoding.DecodeString(body)
 	if err != nil || len(raw) < 10 || string(raw[:6]) != "SSHSIG" {
 		return "", nil, fmt.Errorf("not an SSH signature")

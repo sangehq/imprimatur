@@ -37,10 +37,15 @@ func (a *App) runCaptured(ctx context.Context, args []string) (int, []byte) {
 	var out, errOut bytes.Buffer
 	b := *a
 	b.Stdout, b.Stderr = &out, &errOut
+	// Nobody is at a terminal for an API call: nothing it runs may prompt.
+	b.Stdin, b.Interactive = nil, nil
 	return b.Run(ctx, args), out.Bytes()
 }
 
 func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 && args[0] == "install-unit" {
+		return cmdServeUnit(ctx, a, args[1:])
+	}
 	p, err := parse(args, serveFlags)
 	if err != nil {
 		return 0, err
@@ -107,6 +112,23 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	a.say("server    listening on %s (Ctrl-C to stop)", where)
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
+	// The long-running mode: answer impr notify ping, and check certificate
+	// expiry every six hours.
+	if n := a.notifier(); n != nil {
+		go func() { _ = n.Listen(ctx) }()
+	}
+	go func() {
+		t := time.NewTicker(6 * time.Hour)
+		defer t.Stop()
+		for {
+			a.runCaptured(ctx, []string{"cert", "list", "--json"})
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
 	select {
 	case <-ctx.Done():
 	case err := <-errc:

@@ -48,6 +48,8 @@ jobs:
           # The module is src/. Without this the action lints a directory with
           # no Go in it and passes.
           working-directory: src
+      - name: govulncheck
+        run: make vuln
 
   test:
     name: test
@@ -87,3 +89,20 @@ jobs:
           go-version-file: src/go.mod
       - name: go test
         run: go -C src test -count=1 ./...
+
+  # Every fuzzer for 30 seconds each, weekly and on request: what a pull request
+  # adds is covered by its seed corpus, which go test replays on every run.
+  fuzz:
+    name: fuzz
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+      - name: fuzz
+        run: make fuzz FUZZTIME=30s

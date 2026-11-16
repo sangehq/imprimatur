@@ -44,7 +44,8 @@ OS, Windows included ([installation](installation.md)).
 | `owner` | required |
 | `purpose` | `release`, `test`, `internal`; never `test` and `release` together |
 | `allowedRepos` | required for `release`; host/owner/repo globs (`*`, `?`, `**`); `*` and `**` alone are refused |
-| `requiresApproval` | read by the caller (sange's APR-11); impr does not enforce approvals |
+| `requiresApproval` | the run needs approval. sange enforces it (APR-11); impr enforces it too when `approvals.enforce` is on ([`impr approve`](tools/approve.md)) |
+| `approval` | with `requiresApproval`: `signed` (default, approvers' SSH-signed approvals) or `confirm` (typed at a terminal) |
 | `managed` | an organisation's profile: impr refuses to edit, replace or remove it |
 
 Per platform, the pin verification checks and the fields each backend reads

@@ -92,7 +92,30 @@ HTTP status:
 ```
 
 Instead of `signed`, it can take `"files": ["build/windows/tool.exe"]`. `POST /v1/sign` takes `root`,
-`manifest`, `commit`, `tree`, `profile`, `purpose`, and optionally `platforms`, `repo` and `strict`.
+`manifest`, `commit`, `tree`, `profile`, `purpose`, and optionally `platforms`, `repo` and `strict`. With `approvals` (paths under `root`, each with its `.sig`), it passes [approvals](approve.md) on; a profile whose `approval` is `confirm` is refused over the API, since nobody can type it.
+
+## Running it as a service
+
+`impr serve install-unit --print` prints a unit that keeps `impr serve` running for you, and how to
+install it. impr installs nothing itself: where and how a service runs is your decision.
+
+```bash
+impr serve install-unit --print                  # the unit for this OS
+impr serve install-unit --print --for systemd    # systemd, launchd or task
+```
+
+| `--for` | Unit | Notes |
+| --- | --- | --- |
+| `systemd` (Linux default) | a user service, `~/.config/systemd/user/impr.service` | Sandboxed: `ProtectSystem=strict`, a read-only home, `NoNewPrivileges`. It writes only impr's state directory and the configured `server.roots` |
+| `launchd` (macOS default) | a launch agent, `~/Library/LaunchAgents/sh.sange.imprimatur.serve.plist` | Restarted when it exits with an error; logs to `<state>/server/serve.log` |
+| `task` (Windows default) | a Task Scheduler task that starts at logon and restarts on failure | impr is not a Windows service, which would need a service control handler |
+
+- **Checks first.** It refuses when the config is not valid or no token or inbound endpoint is
+  configured, because the service would not start.
+- **The binary path.** The unit runs this binary by its absolute path, symlinks resolved. `--exe`
+  names another one.
+- **After an upgrade.** Re-run it when the binary moves, and after you add a signing root, so the
+  systemd unit can write there.
 
 ## Event stream
 

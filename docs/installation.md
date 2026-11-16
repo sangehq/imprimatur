@@ -6,7 +6,7 @@ on the GitHub release only, never through a package manager or `go install`
 
 ## Requirements
 
-- Go 1.27 or newer (the module declares `go 1.27.0`).
+- Go 1.27.4 or newer (the module declares `go 1.27.4`; earlier 1.27 releases carry GO-2026-6859 in `net/http`, which `impr serve` uses).
 - `make` and `git`.
 - The tools of the backends you use, on `PATH` (see [backends](tools/backends.md)):
   `signtool` (Windows SDK) or `osslsigncode`, `codesign` and `xcrun` (macOS),

@@ -35,7 +35,13 @@ GOFILES_DIRS := $(MODULE)/cmd $(MODULE)/internal
 # directory fails instead of passing nothing.
 BUILD_LAYOUT_MIN ?= 1
 
-.PHONY: help build test vet fmt fmt-check lint check cross check-build clean
+.PHONY: help build test vet fmt fmt-check lint check cross check-build clean fuzz vuln
+
+# Each fuzzer runs this long in `make fuzz`; FUZZ_MIN is the fewest fuzzers it
+# must find, so a rename that hides them fails instead of fuzzing nothing.
+FUZZTIME ?= 30s
+FUZZ_MIN ?= 10
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | sort
@@ -82,3 +88,14 @@ check-build: ## fail when build/ holds anything but targets.txt, checksums.txt a
 
 clean: ## remove generated build output, keeping build/targets.txt
 	rm -rf $(OS_DIRS)
+
+fuzz: ## run every Fuzz function for FUZZTIME each (default 30s)
+	@n=0; for pkg in $$($(GO) list ./...); do \
+	  for f in $$($(GO) test -list '^Fuzz' $$pkg | grep '^Fuzz'); do \
+	    n=$$((n+1)); echo "fuzz $$pkg $$f"; \
+	    $(GO) test $$pkg -run '^$$' -fuzz "^$$f$$" -fuzztime $(FUZZTIME) || exit 1; \
+	  done; \
+	done; echo "fuzzed $$n targets"; [ $$n -ge $(FUZZ_MIN) ] || { echo "only $$n fuzzers found, want $(FUZZ_MIN)"; exit 1; }
+
+vuln: ## report known vulnerabilities in the code paths impr uses (govulncheck)
+	$(GO) run $(GOVULNCHECK) ./...

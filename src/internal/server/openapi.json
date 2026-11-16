@@ -170,6 +170,13 @@
           },
           "strict": {
             "type": "boolean"
+          },
+          "approvals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Approval documents relative to root, each with its .sig beside it (impr approve), for a profile with requiresApproval. A profile whose approval is confirm cannot be signed over the API."
           }
         }
       },

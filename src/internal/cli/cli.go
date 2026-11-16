@@ -4,6 +4,8 @@
 package cli
 
 import (
+	notifykit "github.com/simtabi/go-notifykit/src"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -23,6 +25,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/hooks"
+	"github.com/sangehq/imprimatur/src/internal/notify"
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 	"github.com/sangehq/imprimatur/src/internal/secrets"
@@ -54,6 +57,8 @@ type App struct {
 	// its usage, as scripts and sange expect.
 	Stdin       io.Reader
 	Interactive func() bool
+	// Notifier replaces the desktop notifier; tests give it a recorder.
+	Notifier *notifykit.Notifier
 }
 
 // Main runs impr with the real host and returns the exit code.
@@ -297,7 +302,22 @@ func (a *App) service() (*signing.Service, error) {
 		return bundle.Check(context.Background(), host.Runner, d.Config, p, trusted)
 	}
 	return &signing.Service{Host: host, Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk,
-		RequireFullGPG: cfg.Policy.RequireFullGPG(), ManagedCheck: check}, nil
+		RequireFullGPG: cfg.Policy.RequireFullGPG(), ManagedCheck: check, Approvals: cfg.Approvals, Confirm: a.confirm()}, nil
+}
+
+// confirm asks the person at the terminal to type a value, or is nil when no
+// person is there (a pipe, CI, the REST server), so confirm-mode approval is
+// refused rather than answered by a script.
+func (a *App) confirm() func(prompt, want string) bool {
+	if a.Interactive == nil || !a.Interactive() || a.Stdin == nil {
+		return nil
+	}
+	return func(prompt, want string) bool {
+		_, _ = fmt.Fprintf(a.Stderr, "%s: ", prompt)
+		var got string
+		_, _ = fmt.Fscanln(a.Stdin, &got)
+		return got == want
+	}
 }
 
 // bus is the event bus for this run: the hash-chained log in the state dir.
@@ -313,8 +333,33 @@ func (a *App) bus() *events.Bus {
 		a.say("events    not recorded: %v", err)
 		return nil
 	}
-	return &events.Bus{Env: events.Env{Now: a.Now, NewID: events.NewID, InstallID: id},
-		Sinks: []events.Sink{events.Log{Dir: filepath.Join(d.State, "events")}}, Warn: a.say}
+	sinks := []events.Sink{events.Log{Dir: filepath.Join(d.State, "events")}}
+	if n := a.notifier(); n != nil {
+		sinks = append(sinks, notify.Sink{N: n})
+	}
+	return &events.Bus{Env: events.Env{Now: a.Now, NewID: events.NewID, InstallID: id}, Sinks: sinks, Warn: a.say}
+}
+
+// notifier is the desktop notifier, or nil when the config turns it off or it
+// cannot be built. go-notifykit itself stays silent under go test and in CI.
+func (a *App) notifier() *notifykit.Notifier {
+	d, err := a.dirs()
+	if err != nil {
+		return nil
+	}
+	cfg := config.Config{}
+	if eff, err := a.effective(d); err == nil {
+		cfg = eff.Config
+	}
+	if a.Notifier != nil {
+		return a.Notifier
+	}
+	n, err := notifykit.New(notify.Config(filepath.Join(d.State, "notify"), !cfg.Notify.DesktopOn(), a.Stderr, a.Getenv))
+	if err != nil {
+		a.say("notify    off: %v", err)
+		return nil
+	}
+	return n
 }
 
 // ---- dispatch ------------------------------------------------------------------
@@ -368,6 +413,7 @@ func init() {
 		"profile":    cmdProfile,
 		"cert":       cmdCert,
 		"sign":       cmdSign,
+		"approve":    cmdApprove,
 		"verify":     cmdVerify,
 		"rules":      cmdRules,
 		"events":     cmdEvents,
@@ -385,6 +431,7 @@ func init() {
 		"release":    cmdRelease,
 		"tools":      cmdTools,
 		"audit":      cmdAudit,
+		"notify":     cmdNotify,
 	}
 }
 
@@ -404,6 +451,9 @@ Usage:
   impr cert create [--name NAME] [--subject CN] [--days N] [--json]
   impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
             [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
+            [--approval FILE]...
+  impr approve --manifest FILE --profile NAME --purpose P --approver NAME --key SSH-KEY [--expires 24h] [--out FILE] [--json]
+  impr notify send|ping|doctor ...
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules (--request FILE | FILE... [--scope publisher|product|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]
@@ -418,6 +468,7 @@ Usage:
   impr tools list [--json] | pin NAME
   impr audit tail [--limit N] [--json] | verify [--json]
   impr serve [--listen unix|HOST:PORT] [--check-config] [--yes]
+  impr serve install-unit --print [--for systemd|launchd|task] [--exe PATH]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
   impr completion bash|zsh|fish|powershell | install bash|zsh|fish | uninstall bash|zsh|fish
   impr install [--dir DIR] [--force]

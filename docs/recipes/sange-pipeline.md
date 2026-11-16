@@ -23,7 +23,9 @@ impr rules --json --strict --request rules-request.json      # SIG-03, when info
 - sange accepts only the build manifest's files in `artifacts`, each signed from
   its listed digest, and only `SHA256SUMS`, `checksums.txt` and `.sig`,
   `.asc`, `.minisig`, `.sigstore.json` files in `outputs`.
-- impr does not enforce `requiresApproval`; sange does (APR-11).
+- sange enforces `requiresApproval` (APR-11). impr enforces it as well only when its config sets
+  `approvals.enforce`, so leave that off on hosts where sange is the gate
+  ([`impr approve`](../tools/approve.md)).
 
 > sange runs this binary once it is pinned by absolute path and SHA-256 with
 > `sange release signing tools pin impr <absolute path>` (a typed `pin impr`
