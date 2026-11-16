@@ -5,6 +5,8 @@
 package contract
 
 import (
+	"github.com/sangehq/imprimatur/src/internal/redact"
+
 	"errors"
 	"fmt"
 	"strings"
@@ -123,12 +125,12 @@ type ErrorDoc struct {
 
 // DocOf renders err as an error document.
 func DocOf(err error) ErrorDoc {
-	body := ErrorBody{Message: err.Error(), Details: []string{}, Fix: []string{}}
+	body := ErrorBody{Message: redact.String(err.Error()), Details: []string{}, Fix: []string{}}
 	var e *Error
 	if errors.As(err, &e) {
-		body.Message = e.Error()
-		body.Details = append(body.Details, e.Details...)
-		body.Fix = append(body.Fix, e.Fix...)
+		body.Message = redact.String(e.Error())
+		body.Details = redact.Strings(append(body.Details, e.Details...))
+		body.Fix = redact.Strings(append(body.Fix, e.Fix...))
 	}
 	return ErrorDoc{Contract: Version, OK: false, ExitCode: int(CodeOf(err)), Error: body}
 }
@@ -136,14 +138,14 @@ func DocOf(err error) ErrorDoc {
 // Text renders err for a terminal: the message, details and fix lines.
 func Text(err error) string {
 	var b strings.Builder
-	b.WriteString("impr: " + err.Error() + "\n")
+	b.WriteString("impr: " + redact.String(err.Error()) + "\n")
 	var e *Error
 	if errors.As(err, &e) {
 		for _, d := range e.Details {
-			b.WriteString("  " + d + "\n")
+			b.WriteString("  " + redact.String(d) + "\n")
 		}
 		for _, f := range e.Fix {
-			b.WriteString("  fix: " + f + "\n")
+			b.WriteString("  fix: " + redact.String(f) + "\n")
 		}
 	}
 	return b.String()

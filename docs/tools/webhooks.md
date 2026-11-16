@@ -71,6 +71,27 @@ impr webhooks deliveries --json  # pending, dead and done, with attempts and the
 `companion info` reports the `webhooks` capability. Receiving webhooks from other apps is part of
 [`impr serve`](serve.md#inbound-webhooks).
 
+## Managing subscriptions
+
+```bash
+impr webhooks add ci-bus --url https://bus.example.com/hooks/impr --secret-ref secret://webhooks/ci-bus \
+  --types 'signing.*,cert.*'
+impr webhooks test ci-bus                                     # one signed test delivery
+impr webhooks rotate ci-bus --secret-ref secret://webhooks/ci-bus-2   # sign with both keys
+impr webhooks rotate ci-bus --finish                          # the receiver switched: drop the old one
+impr webhooks rm ci-bus
+```
+
+- **The same checks as `impr config set`.** Each change goes through the same validation as
+  `impr config set webhooks.outbound …`: locked keys are refused, the URL is SSRF-checked, the secret must
+  be a reference, and an invalid result is rolled back.
+- **Where it goes.** The change lands in the user config, or in a configuration profile with `--profile`.
+  A subscription from the system config is never copied into it.
+- **Testing.** `impr webhooks test` sends a `webhook.test` event straight to that subscription, whatever
+  its types, and leaves the event log alone. It exits 5 if the receiver does not accept it.
+- **`Retry-After`.** A receiver answering 429 or 503 is retried no sooner than its `Retry-After`
+  (seconds or a date, capped at a day).
+
 ---
 
 [← Docs index](../../README.md#documentation)

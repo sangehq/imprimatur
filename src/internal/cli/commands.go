@@ -113,8 +113,10 @@ type DoctorReport struct {
 	Capabilities   map[string]bool             `json:"capabilities"`
 	DefaultProfile string                      `json:"defaultProfile"`
 	Profiles       []signing.ProfileCapability `json:"profiles"`
-	Problems       []string                    `json:"problems"`
-	OK             bool                        `json:"ok"`
+	// Tools is every allow-listed tool with its path, sha256 and pin.
+	Tools    []ToolRow `json:"tools"`
+	Problems []string  `json:"problems"`
+	OK       bool      `json:"ok"`
 }
 
 func cmdDoctor(ctx context.Context, a *App, args []string) (int, error) {
@@ -151,6 +153,13 @@ func cmdDoctor(ctx context.Context, a *App, args []string) (int, error) {
 	if idx.Default == "" {
 		rep.Problems = append(rep.Problems, "no default signing profile (impr profile default <name>)")
 	}
+	rep.Tools = a.toolRows()
+	for _, t := range rep.Tools {
+		if t.Problem != "" {
+			rep.Problems = append(rep.Problems, "tool "+t.Name+": "+t.Problem)
+		}
+	}
+	rep.Problems = append(rep.Problems, a.permissionProblems(d)...)
 	rep.OK = len(rep.Problems) == 0
 	if p.on("json") {
 		a.json(rep)
@@ -159,6 +168,15 @@ func cmdDoctor(ctx context.Context, a *App, args []string) (int, error) {
 		a.say("default   %s", orNone(rep.DefaultProfile))
 		for _, pc := range rep.Profiles {
 			a.say("profile   %s: ready for %s", pc.Name, orNone(strings.Join(pc.Ready, ", ")))
+		}
+		for _, t := range rep.Tools {
+			if t.Path != "" {
+				pin := "unpinned"
+				if t.Pinned {
+					pin = "pinned"
+				}
+				a.say("tool      %-13s %s %s (%s)", t.Name, t.Path, shortSum(t.SHA256), pin)
+			}
 		}
 		for _, x := range rep.Problems {
 			a.say("problem   %s", x)

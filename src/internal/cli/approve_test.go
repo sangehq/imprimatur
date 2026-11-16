@@ -202,3 +202,21 @@ func TestBundleVerifyPrintsOneDocumentOnFailure(t *testing.T) {
 		t.Fatalf("verify: %s", out)
 	}
 }
+
+// TestSecretsNeverReachOutput: a secret-shaped value in an error, a log line
+// or an event is masked wherever impr writes it.
+func TestSecretsNeverReachOutput(t *testing.T) {
+	h := newHarness(t)
+	tok := "impr_" + randHex(t, 20)
+	// An unknown flag value carrying a token reaches an error message.
+	code, out, errOut := h.impr("profile", "show", tok, "--json")
+	if code == 0 {
+		t.Fatal("showing a nonexistent profile succeeded")
+	}
+	if strings.Contains(out+errOut, tok) {
+		t.Fatalf("a token reached the output:\n%s\n%s", out, errOut)
+	}
+	if !strings.Contains(out+errOut, "[redacted]") {
+		t.Fatalf("the token was not masked:\n%s\n%s", out, errOut)
+	}
+}

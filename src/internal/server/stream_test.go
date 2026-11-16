@@ -251,7 +251,7 @@ func TestOpenAPIDescribesEveryRouteAndNoOther(t *testing.T) {
 
 func TestOpenAPISchemasMatchTheRequestStructs(t *testing.T) {
 	s := loadSpec(t)
-	for name, v := range map[string]any{"VerifyRequest": VerifyRequest{}, "SignRequest": SignRequest{}, "InboundRequest": InboundRequest{}, "Error": contract.ErrorDoc{}} {
+	for name, v := range map[string]any{"VerifyRequest": VerifyRequest{}, "SignRequest": SignRequest{}, "InboundRequest": InboundRequest{}, "Error": contract.ErrorDoc{}, "WebhookRequest": WebhookRequest{}} {
 		var fields []string
 		rt := reflect.TypeOf(v)
 		for i := 0; i < rt.NumField(); i++ {

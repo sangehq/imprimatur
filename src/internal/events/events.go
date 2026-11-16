@@ -8,6 +8,8 @@
 package events
 
 import (
+	"github.com/sangehq/imprimatur/src/internal/redact"
+
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -69,6 +71,7 @@ var Catalogue = map[string]string{
 	"profile.bundle.installed":   ClassInternal,
 	"approval.created":           ClassInternal,
 	"audit.head":                 ClassInternal,
+	"webhook.test":               ClassInternal,
 	"config.changed":             ClassLocal,
 	"hook.failed":                ClassLocal,
 	"hook.vetoed":                ClassLocal,
@@ -114,6 +117,10 @@ func (e Env) New(short, subject string, data any) (Event, error) {
 	if err != nil {
 		return Event{}, err
 	}
+	// Events reach the log, hooks, webhooks and the desktop: no secret shape
+	// leaves in one. The masks replace text inside JSON strings only, so the
+	// document stays valid.
+	raw = []byte(redact.String(string(raw)))
 	if len(raw) == 0 || raw[0] != '{' {
 		return Event{}, fmt.Errorf("event %s: data must be a JSON object", short)
 	}

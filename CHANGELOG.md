@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr webhooks add|rm|rotate|test`. Changes go through the same validation,
+  locks and rollback as `impr config set`. `rotate` overlaps two keys, then
+  `--finish` drops the old one. Deliveries now honour a receiver's
+  `Retry-After`.
+- REST endpoints.
+  - **Read scope.** `GET /v1/profiles/{name}/capabilities` and
+    `POST /v1/rules`, with the request as the body.
+  - **Admin scope.** `GET`, `POST` and `DELETE /v1/webhooks…` and
+    `POST /v1/webhooks/{name}/test`. Changing configuration also needs
+    `server.allowAdmin`, which is off by default.
+
+- `impr events replay --to WEBHOOK` resends logged events to one outbound
+  webhook. It sends only what the subscription receives, skips what it already
+  acknowledged (unless `--force`), and stops at `--limit`. `--since`, `--type`
+  and `--dry-run` narrow it.
+- `profile.created`, `profile.changed` and `profile.removed` are now emitted
+  (they were catalogued, but never raised). Each carries the profile's name,
+  scope, owner, purposes and identity digest.
+
+- `impr doctor` reports impr's folders that group or others can write, and key
+  files (`file://` references, the server's TLS key) they can read. It also
+  lists every allow-listed tool with its path, SHA-256 and pin.
+
+- `policy.strict` runs every sign and verify as if `--strict` were given, so a
+  `ci` or `prod` configuration profile fails closed.
+
+- Redaction. Secret-shaped text (impr's webhook secrets and API tokens, PEM
+  private keys, key=value credentials, bearer tokens, credentials in URLs,
+  forge, chat and cloud tokens) is masked in every error, log line, event and
+  audit record.
+- Ctrl-C and SIGTERM stop the running tool and let impr remove its temporary
+  keychain, credential files and decrypted keys before exiting 130. A second
+  Ctrl-C ends impr at once.
+
 - `impr build` embeds Windows version information, an application manifest and
   an optional `.ico` icon in every Windows binary, written natively with no
   go-winres. It reads `winres/winres.json` when present.

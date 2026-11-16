@@ -44,7 +44,11 @@ func (a *App) subscriptions(ctx context.Context, cfg config.Config) ([]webhook.S
 	return out, nil
 }
 
-var webhooksFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "all": boolFlag}
+var webhooksFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "all": boolFlag, "url": stringFlag, "secret-ref": stringFlag,
+	"types": listFlag, "allow-private": boolFlag, "finish": boolFlag, "profile": stringFlag}
+
+// webhookSub is a resolved outbound subscription.
+type webhookSub = webhook.Subscription
 
 // WebhooksList is `impr webhooks list --json`. It names key ids, never keys.
 type WebhooksList struct {
@@ -85,6 +89,8 @@ func cmdWebhooks(ctx context.Context, a *App, args []string) (int, error) {
 	}
 	ob := a.outbox(d)
 	switch sub {
+	case "add", "rm", "rotate", "test":
+		return a.webhooksManage(ctx, d, p, cfg, sub)
 	case "list":
 		pend, _ := ob.List("pending")
 		dead, _ := ob.List("dead")
@@ -146,5 +152,6 @@ func cmdWebhooks(ctx context.Context, a *App, args []string) (int, error) {
 		return 0, nil
 	}
 	return 0, contract.New(contract.Usage, "unknown webhooks subcommand %q", sub).
-		WithFix("impr webhooks list", "impr webhooks secret", "impr webhooks retry", "impr webhooks deliveries")
+		WithFix("impr webhooks list", "impr webhooks add NAME --url URL --secret-ref REF", "impr webhooks rm NAME",
+			"impr webhooks rotate NAME --secret-ref NEW", "impr webhooks test NAME", "impr webhooks secret", "impr webhooks retry", "impr webhooks deliveries")
 }

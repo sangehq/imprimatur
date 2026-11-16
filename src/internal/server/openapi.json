@@ -200,6 +200,36 @@
             "$ref": "#/components/schemas/VerifyRequest"
           }
         }
+      },
+      "WebhookRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "url",
+          "secretRef"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "secretRef": {
+            "type": "string",
+            "description": "A secret:// or env:// reference; never the secret."
+          },
+          "allowPrivate": {
+            "type": "boolean"
+          }
+        }
       }
     },
     "responses": {
@@ -684,6 +714,193 @@
           },
           "503": {
             "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/profiles/{name}/capabilities": {
+      "get": {
+        "operationId": "profileCapabilities",
+        "summary": "impr profile capabilities NAME. Scope: read.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/rules": {
+      "post": {
+        "operationId": "rules",
+        "summary": "impr rules --request, with the request as the body. Scope: read.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "An allow-rules request, as impr rules --request reads (docs/tools/rules.md)."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/webhooks": {
+      "get": {
+        "operationId": "listWebhooks",
+        "summary": "impr webhooks list. Scope: admin.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      },
+      "post": {
+        "operationId": "addWebhook",
+        "summary": "impr webhooks add. Scope: admin, and server.allowAdmin.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/webhooks/{name}": {
+      "delete": {
+        "operationId": "removeWebhook",
+        "summary": "impr webhooks rm NAME. Scope: admin, and server.allowAdmin.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/webhooks/{name}/test": {
+      "post": {
+        "operationId": "testWebhook",
+        "summary": "impr webhooks test NAME: one signed test delivery. Scope: admin.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
           }
         }
       }

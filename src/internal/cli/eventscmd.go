@@ -40,7 +40,10 @@ type EventTypeEntry struct {
 	Schema string `json:"dataschema"`
 }
 
-func cmdEvents(_ context.Context, a *App, args []string) (int, error) {
+func cmdEvents(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 && args[0] == "replay" {
+		return cmdEventsReplay(ctx, a, args[1:])
+	}
 	p, err := parse(args, eventsFlags)
 	if err != nil {
 		return 0, err

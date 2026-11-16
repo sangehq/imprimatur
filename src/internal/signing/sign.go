@@ -31,6 +31,9 @@ type Service struct {
 	Events *events.Bus
 	// Hooks runs the user's pre-sign and pre-verify gates; nil runs none.
 	Hooks *hooks.Runner
+	// Strict runs every sign and verify as if --strict were given
+	// (config policy.strict).
+	Strict bool
 	// RequireFullGPG refuses a gpg pin shorter than a full fingerprint
 	// (config policy.gpgFullFingerprint, audit N-B12).
 	RequireFullGPG bool
@@ -158,6 +161,7 @@ func (s *Service) windowsUnits(p profile.Profile, files []backend.Artifact) ([]u
 // purpose and allowed repositories, every file's digest, the host's
 // capability and every certificate's presence and expiry.
 func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
+	o.Strict = o.Strict || s.Strict
 	runID := events.NewID()
 	if s.Events != nil && s.Events.Env.NewID != nil {
 		runID = s.Events.Env.NewID()

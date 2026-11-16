@@ -8,6 +8,7 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/events"
+	"github.com/sangehq/imprimatur/src/internal/redact"
 )
 
 // audited are the commands the audit trail records: everything that signs,
@@ -56,7 +57,7 @@ func (a *App) audit(_ context.Context, cmd string, rest []string, code int, star
 	args := make([]string, len(rest))
 	for i, x := range rest {
 		args[i] = x
-		if secretLike.MatchString(x) {
+		if secretLike.MatchString(x) || redact.Found(x) {
 			args[i] = "[redacted]"
 		}
 	}

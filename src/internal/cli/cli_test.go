@@ -502,6 +502,15 @@ func TestSignFailsClosed(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &res); err != nil || res.OK || len(res.Skipped) != 1 {
 		t.Fatalf("skipped run: %s", out)
 	}
+
+	// policy.strict in a ci configuration profile fails closed without the flag;
+	// outside that profile the run still skips.
+	h.ok("config", "profile", "create", "ci")
+	h.ok("config", "set", "policy.strict", "true", "--profile", "ci")
+	h.exits(2, mac...)
+	h.env["IMPR_CONFIG_PROFILE"] = "ci"
+	h.exits(5, mac...)
+	delete(h.env, "IMPR_CONFIG_PROFILE")
 }
 
 func buildMacho(t *testing.T, root string) (string, string, string, string) {
