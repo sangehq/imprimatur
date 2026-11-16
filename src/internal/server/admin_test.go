@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"runtime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -97,7 +98,11 @@ func TestRulesAndCapabilitiesEndpoints(t *testing.T) {
 	if r := do(h2, "POST", "/v1/rules", read2, `{"contract":1}`, nil); r.Code != 200 || !strings.HasPrefix(f2.last(), "rules --strict --request=") {
 		t.Fatalf("rules: %d %s", r.Code, f2.last())
 	}
-	if !strings.HasPrefix(seen, `{"contract":1} -rw-------`) {
+	want := `{"contract":1} -rw-------`
+	if runtime.GOOS == "windows" {
+		want = `{"contract":1} ` // Windows has no Unix modes to check
+	}
+	if !strings.HasPrefix(seen, want) {
 		t.Fatalf("the request file: %q", seen)
 	}
 	if left, _ := filepath.Glob(filepath.Join(state, "server", "rules-*")); len(left) != 0 {
