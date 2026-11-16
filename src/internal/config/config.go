@@ -103,9 +103,13 @@ type Server struct {
 	// from. With none, those endpoints refuse.
 	Roots []string `json:"roots,omitempty"`
 	// AllowSign enables POST /v1/sign (off by default, design ID-05).
-	AllowSign bool      `json:"allowSign,omitempty"`
-	Tokens    []Token   `json:"tokens,omitempty"`
-	Inbound   []Inbound `json:"inbound,omitempty"`
+	AllowSign bool `json:"allowSign,omitempty"`
+	// AllowAdmin enables the API endpoints that change configuration (add or
+	// remove a webhook). Off by default: a webhook can carry internal events
+	// off the machine, so adding one is as weighty as signing.
+	AllowAdmin bool      `json:"allowAdmin,omitempty"`
+	Tokens     []Token   `json:"tokens,omitempty"`
+	Inbound    []Inbound `json:"inbound,omitempty"`
 }
 
 // ServerTLS is the server's certificate and the CA its clients' certificates
@@ -215,7 +219,7 @@ type Policy struct {
 func (p Policy) RequireFullGPG() bool { return p.GPGFullFingerprint == nil || *p.GPGFullFingerprint }
 
 // Scopes are the API token scopes.
-var Scopes = []string{"read", "verify", "sign", "events"}
+var Scopes = []string{"read", "verify", "sign", "events", "admin"}
 
 // InboundActions are what an inbound webhook may ask for. sign is never one:
 // a signature needs a bound manifest and an authenticated caller with the sign

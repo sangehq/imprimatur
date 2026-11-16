@@ -83,6 +83,12 @@ HTTP status:
 | `GET /v1/events/stream?type=GLOB` | events | — (Server-Sent Events, below) |
 | `POST /v1/verify` | verify | `verify` |
 | `POST /v1/sign` | sign, and `allowSign` | `sign` |
+| `GET /v1/profiles/{name}/capabilities` | read | `profile capabilities` |
+| `POST /v1/rules` | read | `rules --request`, with the request as the body |
+| `GET /v1/webhooks` | admin | `webhooks list` |
+| `POST /v1/webhooks` | admin, and `allowAdmin` | `webhooks add` (body: `name`, `url`, `secretRef`, `types`, `allowPrivate`) |
+| `DELETE /v1/webhooks/{name}` | admin, and `allowAdmin` | `webhooks rm` |
+| `POST /v1/webhooks/{name}/test` | admin | `webhooks test` |
 
 `POST /v1/verify` takes:
 
@@ -158,6 +164,11 @@ data: {"specversion":"1.0","id":"6f0c…","type":"sh.sange.imprimatur.signing.ru
   - With no roots configured, verify and sign refuse.
 - **Arguments.** The server builds each command's arguments only from validated fields. File names go
   after `--`, so a name like `--json` can never act as an option.
+- **Changing configuration.** Adding or removing a webhook over the API needs a token with the `admin`
+  scope and `server.allowAdmin`, which is off by default. A webhook can carry internal events off the
+  machine, so adding one weighs as much as signing. Config locks still apply, and every change is audited.
+  `POST /v1/rules` writes the request to a private temporary file under the state directory and removes it
+  afterwards. It reads nothing else from disk: the request names files by digest.
 - **Signing.**
   - `/v1/sign` is off unless `allowSign` is true. It needs the `sign` scope, and a build manifest bound to
     the commit and tree, exactly as the CLI does.

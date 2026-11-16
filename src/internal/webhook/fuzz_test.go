@@ -23,3 +23,20 @@ func FuzzVerify(f *testing.F) {
 		}
 	})
 }
+
+func TestParseRetryAfter(t *testing.T) {
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	for in, want := range map[string]time.Duration{
+		"":                              0,
+		"120":                           2 * time.Minute,
+		"-5":                            0,
+		"999999":                        24 * time.Hour,
+		"Mon, 16 Nov 2026 12:05:00 GMT": 5 * time.Minute,
+		"Mon, 16 Nov 2026 11:00:00 GMT": 0,
+		"soon":                          0,
+	} {
+		if got := parseRetryAfter(in, now); got != want {
+			t.Errorf("parseRetryAfter(%q) = %v, want %v", in, got, want)
+		}
+	}
+}

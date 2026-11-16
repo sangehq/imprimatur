@@ -96,3 +96,40 @@ func TestEventsReplay(t *testing.T) {
 	}
 	_ = os.Remove
 }
+
+func TestWebhooksAddRotateRemove(t *testing.T) {
+	h := newHarness(t)
+	list := func() []map[string]any {
+		t.Helper()
+		var r struct {
+			Subscriptions []map[string]any `json:"subscriptions"`
+		}
+		if err := json.Unmarshal([]byte(h.ok("webhooks", "list", "--json")), &r); err != nil {
+			t.Fatal(err)
+		}
+		return r.Subscriptions
+	}
+	h.exits(1, "webhooks", "add", "bus") // no --url / --secret-ref
+	h.ok("webhooks", "add", "bus", "--url", "https://bus.example.com/hooks/impr", "--secret-ref", "env://WH_A", "--types", "signing.*,cert.*")
+	if l := list(); len(l) != 1 || l[0]["name"] != "bus" || l[0]["secretRef"] != "env://WH_A" {
+		t.Fatalf("after add: %v", l)
+	}
+	h.exits(1, "webhooks", "add", "bus", "--url", "https://bus.example.com/x", "--secret-ref", "env://WH_A")   // duplicate
+	h.exits(1, "webhooks", "add", "evil", "--url", "http://169.254.169.254/", "--secret-ref", "env://WH_A")    // SSRF target
+	h.exits(1, "webhooks", "add", "bad", "--url", "https://bus.example.com/x", "--secret-ref", "whsec_inline") // not a reference
+
+	h.ok("webhooks", "rotate", "bus", "--secret-ref", "env://WH_B")
+	if l := list(); l[0]["secretRef"] != "env://WH_B" || l[0]["previousSecretRef"] != "env://WH_A" {
+		t.Fatalf("after rotate: %v", l)
+	}
+	h.ok("webhooks", "rotate", "bus", "--finish")
+	if l := list(); l[0]["previousSecretRef"] != nil {
+		t.Fatalf("after finish: %v", l)
+	}
+	h.exits(1, "webhooks", "rotate", "bus", "--finish") // nothing to finish
+	h.ok("webhooks", "rm", "bus")
+	if l := list(); len(l) != 0 {
+		t.Fatalf("after rm: %v", l)
+	}
+	h.exits(1, "webhooks", "rm", "bus")
+}

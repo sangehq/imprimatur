@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -180,6 +181,7 @@ func (o Outbox) Enqueue(ctx context.Context, s Subscription, ev events.Event) er
 // attempt sends once and files the delivery as done, pending (with the next
 // try) or dead.
 func (o Outbox) attempt(ctx context.Context, s Subscription, d Delivery) error {
+	var retryAfter time.Duration
 	u, err := CheckURL(s.URL, s.AllowPrivate)
 	if err == nil {
 		var req *http.Request
@@ -194,6 +196,7 @@ func (o Outbox) attempt(ctx context.Context, s Subscription, d Delivery) error {
 				_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 				_ = resp.Body.Close()
 				d.LastStatus = resp.StatusCode
+				retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"), o.Now())
 				if resp.StatusCode < 200 || resp.StatusCode > 299 {
 					err = fmt.Errorf("receiver answered %d", resp.StatusCode)
 				}
@@ -217,6 +220,9 @@ func (o Outbox) attempt(ctx context.Context, s Subscription, d Delivery) error {
 	d.NextTry = o.Now().Add(Backoff[d.Attempts])
 	if d.LastStatus == http.StatusTooManyRequests || d.LastStatus == http.StatusServiceUnavailable {
 		d.NextTry = d.NextTry.Add(Backoff[d.Attempts]) // back off harder when the receiver asks
+		if at := o.Now().Add(retryAfter); retryAfter > 0 && at.After(d.NextTry) {
+			d.NextTry = at // and never sooner than it said
+		}
 	}
 	o.warn("webhooks  %s: %s not delivered (attempt %d): %v", s.Name, d.EventID, d.Attempts, err)
 	return o.save("pending", d)
@@ -294,4 +300,22 @@ func (k Sink) Write(ctx context.Context, ev events.Event) error {
 		return errors.New(strings.Join(errs, "; "))
 	}
 	return nil
+}
+
+// parseRetryAfter reads Retry-After as seconds or an HTTP date, capped at a
+// day so a receiver cannot park a delivery for ever.
+func parseRetryAfter(v string, now time.Time) time.Duration {
+	if v == "" {
+		return 0
+	}
+	var d time.Duration
+	if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+		d = time.Duration(n) * time.Second
+	} else if t, err := http.ParseTime(v); err == nil {
+		d = t.Sub(now)
+	}
+	if d < 0 {
+		return 0
+	}
+	return min(d, 24*time.Hour)
 }
