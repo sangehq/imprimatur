@@ -333,7 +333,7 @@ func (a *App) service() (*signing.Service, error) {
 		return bundle.Check(context.Background(), host.Runner, d.Config, p, trusted)
 	}
 	return &signing.Service{Host: host, Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk,
-		RequireFullGPG: cfg.Policy.RequireFullGPG(), ManagedCheck: check, Approvals: cfg.Approvals, Confirm: a.confirm()}, nil
+		RequireFullGPG: cfg.Policy.RequireFullGPG(), Strict: cfg.Policy.Strict, ManagedCheck: check, Approvals: cfg.Approvals, Confirm: a.confirm()}, nil
 }
 
 // confirm asks the person at the terminal to type a value, or is nil when no

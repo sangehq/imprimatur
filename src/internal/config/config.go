@@ -204,6 +204,10 @@ type Policy struct {
 	// 40- or 64-hex fingerprint (audit N-B12). On unless set to false
 	// (owner decision 2026-11-15).
 	GPGFullFingerprint *bool `json:"gpgFullFingerprint,omitempty"`
+	// Strict runs every sign and verify as if --strict were given: a platform
+	// this host cannot sign or check is an error, never a skip. Set it in a
+	// ci or prod configuration profile, or lock it, so those fail closed.
+	Strict bool `json:"strict,omitempty"`
 }
 
 // RequireFullGPG reports whether short gpg pins are refused: true unless the

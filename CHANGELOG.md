@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `policy.strict` runs every sign and verify as if `--strict` were given, so a
+  `ci` or `prod` configuration profile fails closed.
+
 - Redaction. Secret-shaped text (impr's webhook secrets and API tokens, PEM
   private keys, key=value credentials, bearer tokens, credentials in URLs,
   forge, chat and cloud tokens) is masked in every error, log line, event and

@@ -38,6 +38,7 @@ type item struct {
 // The report is returned with the error, so a failed verification still
 // prints what failed.
 func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, error) {
+	o.Strict = o.Strict || s.Strict
 	if s.Hooks != nil {
 		ev, err := s.event("verification.run.started", o.Profile, map[string]any{"profile": o.Profile, "signed": o.Signed != "", "files": len(o.Files)})
 		if err != nil {
