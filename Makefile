@@ -41,7 +41,7 @@ BUILD_LAYOUT_MIN ?= 1
 # must find, so a rename that hides them fails instead of fuzzing nothing.
 FUZZTIME ?= 30s
 FUZZ_MIN ?= 10
-GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.1.4
+GOVULNCHECK := golang.org/x/vuln/cmd/govulncheck@v1.9.0
 
 help: ## list targets
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/' | sort
