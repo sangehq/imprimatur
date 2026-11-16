@@ -90,7 +90,23 @@ type Inbound struct {
 	PreviousPublicKey string   `json:"previousPublicKey,omitempty"`
 	Allow             []string `json:"allow"` // actions: verify, doctor, cert.list, profile.list
 	Tolerance         string   `json:"tolerance,omitempty"`
+	// Kind is "standard" (the default: Standard Webhooks v1/v1a, the body an
+	// impr action) or "github" (X-Hub-Signature-256, the body a GitHub event).
+	Kind string `json:"kind,omitempty"`
+	// Run is, for a github endpoint, the action each verified delivery runs
+	// (one of Allow, never verify). Empty records the delivery as a
+	// webhook.inbound.received event and runs nothing.
+	Run string `json:"run,omitempty"`
+	// GitHubEvents limits a github endpoint to these X-GitHub-Event names;
+	// empty accepts every event. ping is always answered.
+	GitHubEvents []string `json:"githubEvents,omitempty"`
 }
+
+// Inbound kinds.
+const (
+	InboundStandard = "standard"
+	InboundGitHub   = "github"
+)
 
 // Token is one API token, stored only as its sha256.
 type Token struct {
@@ -462,8 +478,28 @@ func (s Server) validate() []string {
 			ps = append(ps, at+": name must be unique lower-case letters, digits and dashes")
 		}
 		names[in.Name] = true
-		if in.SecretRef == "" && in.PublicKey == "" {
-			ps = append(ps, at+": set secretRef (v1) or publicKey (v1a)")
+		switch in.Kind {
+		case "", InboundStandard:
+			if in.SecretRef == "" && in.PublicKey == "" {
+				ps = append(ps, at+": set secretRef (v1) or publicKey (v1a)")
+			}
+			if in.Run != "" || len(in.GitHubEvents) > 0 {
+				ps = append(ps, at+": run and githubEvents are for a github endpoint")
+			}
+		case InboundGitHub:
+			if in.SecretRef == "" || in.PublicKey != "" || in.PreviousPublicKey != "" {
+				ps = append(ps, at+": a github endpoint takes secretRef (GitHub's webhook secret), not publicKey")
+			}
+			if in.Run == "verify" || (in.Run != "" && !slices.Contains(in.Allow, in.Run)) {
+				ps = append(ps, at+": run must be one of allow, and not verify (a GitHub event carries no verify request)")
+			}
+			for _, e := range in.GitHubEvents {
+				if !regexp.MustCompile(`^[a-z_]+$`).MatchString(e) {
+					ps = append(ps, at+": githubEvents holds GitHub event names, like push or release")
+				}
+			}
+		default:
+			ps = append(ps, at+": kind must be standard or github")
 		}
 		for _, ref := range []string{in.SecretRef, in.PreviousSecretRef} {
 			if ref != "" && !regexp.MustCompile(`^(secret|env)://.+`).MatchString(ref) {

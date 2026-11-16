@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A `github` inbound kind for `impr serve`. It checks `X-Hub-Signature-256`,
+  refuses a repeated `X-GitHub-Delivery` for 7 days, answers `ping`, and records
+  each delivery as `webhook.inbound.received`. With `run` set, a delivery also runs
+  one allowed action. `githubEvents` limits which events are accepted.
 - On Linux, `impr serve` checks each Unix-socket connection's peer uid and
   closes connections from any other user.
 - Standard Webhooks `v1a` (ed25519), opt-in. `impr webhooks secret --ed25519`

@@ -477,6 +477,10 @@ func (s *server) inbound(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusRequestEntityTooLarge, contract.Usage, "the body is too large or unreadable")
 		return
 	}
+	if ep.Kind == config.InboundGitHub {
+		s.inboundGitHub(w, r, ep, body, unauthorized)
+		return
+	}
 	keys, err := s.keys(r.Context(), ep)
 	var public []ed25519.PublicKey
 	if err == nil {

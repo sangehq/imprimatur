@@ -75,6 +75,7 @@ var Catalogue = map[string]string{
 	"webhook.delivery.dead":      ClassLocal,
 	"webhook.secret.rotated":     ClassLocal,
 	"server.auth.refused":        ClassLocal,
+	"webhook.inbound.received":   ClassLocal,
 	"config.changed":             ClassLocal,
 	"hook.failed":                ClassLocal,
 	"hook.vetoed":                ClassLocal,

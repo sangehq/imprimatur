@@ -37,6 +37,7 @@ verification step it takes.
 | `config.changed`, `hook.*` | configuration changes, and hook failures and vetoes |
 | `webhook.delivery.dead` | an outbound delivery ran out of attempts and moved to the dead letter. Written to the log only, never delivered |
 | `webhook.secret.rotated` | `impr webhooks rotate` started (`step: started`) or finished (`step: finished`) a key overlap |
+| `webhook.inbound.received` | a `github` inbound endpoint accepted a delivery: event name, delivery id, repository, ref ([serve](serve.md#github-deliveries)) |
 | `server.auth.refused` | `impr serve` refused a request for its token or an inbound signature; at most once a minute per caller, named by a short hash of its address |
 | `audit.head` | both chain heads, for anchoring off the machine ([audit](audit.md#anchoring-off-the-machine)) |
 
