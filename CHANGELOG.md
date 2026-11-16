@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr doctor` reports impr's folders that group or others can write, and key
+  files (`file://` references, the server's TLS key) they can read. It also
+  lists every allow-listed tool with its path, SHA-256 and pin.
+
 - `policy.strict` runs every sign and verify as if `--strict` were given, so a
   `ci` or `prod` configuration profile fails closed.
 

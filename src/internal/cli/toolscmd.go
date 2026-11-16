@@ -21,6 +21,33 @@ type ToolRow struct {
 	Problem string `json:"problem,omitempty"`
 }
 
+// toolRows is every allow-listed tool: where it is, its sha256, and whether
+// it is pinned (impr tools list, impr doctor).
+func (a *App) toolRows() []ToolRow {
+	r := a.runner()
+	pins := map[string]execx.Pin{}
+	if o, ok := r.(execx.OS); ok && o.Pins != nil {
+		pins = o.Pins
+	}
+	rows := []ToolRow{}
+	for _, name := range execx.Names() {
+		row := ToolRow{Name: name, Why: execx.Allowed[name]}
+		if pin, ok := pins[name]; ok {
+			row.Pinned, row.Path = true, pin.Path
+			if sum, err := execx.CheckPinned(pin.Path, pin.SHA256); err != nil {
+				row.Problem = err.Error()
+			} else {
+				row.SHA256 = sum
+			}
+		} else if path, err := r.LookPath(name); err == nil {
+			row.Path = path
+			row.SHA256, _ = execx.CheckPinned(path, "")
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
 func cmdTools(_ context.Context, a *App, args []string) (int, error) {
 	p, err := parse(args, toolsFlags)
 	if err != nil {
@@ -30,29 +57,9 @@ func cmdTools(_ context.Context, a *App, args []string) (int, error) {
 	if len(p.pos) > 0 {
 		sub = p.pos[0]
 	}
-	r := a.runner()
-	pins := map[string]execx.Pin{}
-	if o, ok := r.(execx.OS); ok && o.Pins != nil {
-		pins = o.Pins
-	}
 	switch sub {
 	case "list":
-		rows := []ToolRow{}
-		for _, name := range execx.Names() {
-			row := ToolRow{Name: name, Why: execx.Allowed[name]}
-			if pin, ok := pins[name]; ok {
-				row.Pinned, row.Path = true, pin.Path
-				if sum, err := execx.CheckPinned(pin.Path, pin.SHA256); err != nil {
-					row.Problem = err.Error()
-				} else {
-					row.SHA256 = sum
-				}
-			} else if path, err := r.LookPath(name); err == nil {
-				row.Path = path
-				row.SHA256, _ = execx.CheckPinned(path, "")
-			}
-			rows = append(rows, row)
-		}
+		rows := a.toolRows()
 		if p.on("json") {
 			a.json(map[string]any{"contract": contract.Version, "tools": rows})
 			return 0, nil
