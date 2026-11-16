@@ -60,9 +60,9 @@ func (s *Service) Verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 		}
 		data := map[string]any{"profile": res.Profile, "artifacts": len(res.Artifacts), "failed": failed, "exitCode": int(contract.CodeOf(err))}
 		if err == nil {
-			s.Events.Emit(ctx, "verification.run.completed", res.Profile, data)
+			s.finish(ctx, config.PhasePostVerify, "verification.run.completed", res.Profile, data)
 		} else {
-			s.Events.Emit(ctx, "verification.run.failed", res.Profile, data)
+			s.finish(ctx, config.PhasePostVerify, "verification.run.failed", res.Profile, data)
 		}
 	}
 	return res, err

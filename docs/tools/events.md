@@ -31,6 +31,9 @@ verification step it takes.
 | `approval.created` | `impr approve` wrote an approval |
 | `profile.created` / `.changed` / `.removed` | a profile was added, imported, edited or removed: its name, scope, owner, purposes and identity digest |
 | `config.changed`, `hook.*` | configuration changes, and hook failures and vetoes |
+| `webhook.delivery.dead` | an outbound delivery ran out of attempts and moved to the dead letter. Written to the log only, never delivered |
+| `webhook.secret.rotated` | `impr webhooks rotate` started (`step: started`) or finished (`step: finished`) a key overlap |
+| `server.auth.refused` | `impr serve` refused a request for its token or an inbound signature; at most once a minute per caller, named by a short hash of its address |
 | `audit.head` | both chain heads, for anchoring off the machine ([audit](audit.md#anchoring-off-the-machine)) |
 
 `impr events types --json` prints the full catalogue, with each type's class and schema URL.

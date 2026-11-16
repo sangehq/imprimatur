@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `post-sign` and `post-verify` hooks. Each runs once the run has finished,
+  with its last event on stdin. It cannot veto or change the exit code; a
+  failure is a warning plus a `hook.failed` event.
+- `webhook.delivery.dead`, `webhook.secret.rotated` and `server.auth.refused`
+  events. All three are local-class, and `server.auth.refused` is raised at
+  most once a minute per caller.
+
 - `impr webhooks add|rm|rotate|test`. Changes go through the same validation,
   locks and rollback as `impr config set`. `rotate` overlaps two keys, then
   `--finish` drops the old one. Deliveries now honour a receiver's

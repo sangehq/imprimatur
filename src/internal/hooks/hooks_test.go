@@ -138,6 +138,8 @@ func TestConfigRefusesUnsafeHooks(t *testing.T) {
 		"relative exec":   `{"schema":"imprimatur.config/v1","hooks":[{"name":"a","phase":"pre-sign","exec":"x.sh","sha256":"` + pin + `"}]}`,
 		"no pin":          `{"schema":"imprimatur.config/v1","hooks":[{"name":"a","phase":"pre-sign","exec":"/x.sh"}]}`,
 		"unknown field":   `{"schema":"imprimatur.config/v1","hookz":[]}`,
+		"veto on post":    `{"schema":"imprimatur.config/v1","hooks":[{"name":"a","phase":"post-sign","veto":true,"exec":"/x.sh","sha256":"` + pin + `"}]}`,
+		"unknown phase":   `{"schema":"imprimatur.config/v1","hooks":[{"name":"a","phase":"after-sign","exec":"/x.sh","sha256":"` + pin + `"}]}`,
 		"veto on event":   `{"schema":"imprimatur.config/v1","hooks":[{"name":"a","phase":"event","veto":true,"exec":"/x.sh","sha256":"` + pin + `"}]}`,
 		"misspelt filter": `{"schema":"imprimatur.config/v1","hooks":[{"name":"a","phase":"event","on":["signin.*"],"exec":"/x.sh","sha256":"` + pin + `"}]}`,
 	} {
@@ -188,5 +190,33 @@ func TestFullGPGPolicyDefaultsOn(t *testing.T) {
 	off := false
 	if !(config.Policy{}).RequireFullGPG() || (config.Policy{GPGFullFingerprint: &off}).RequireFullGPG() {
 		t.Fatal("policy.gpgFullFingerprint: unset must mean on, false must mean off")
+	}
+}
+
+func TestPostHookFailuresAreReportedNotRefusals(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "seen")
+	bad, badPin := script(t, `cat > "`+out+`"; echo broken; exit 5`)
+	good, goodPin := script(t, "exit 0")
+	ev := sampleEvent(t)
+	warned := 0
+	r := &Runner{Warn: func(string, ...any) { warned++ }, Hooks: []config.Hook{
+		{Name: "bad", Phase: config.PhasePostSign, Exec: bad, SHA256: badPin},
+		{Name: "good", Phase: config.PhasePostSign, Exec: good, SHA256: goodPin},
+		{Name: "other", Phase: config.PhasePostVerify, Exec: bad, SHA256: strings.Repeat("0", 64)},
+	}}
+	failed := r.Post(context.Background(), config.PhasePostSign, ev)
+	if len(failed) != 1 || failed[0].Hook != "bad" || !strings.Contains(failed[0].Reason, "exit 5: broken") || warned != 1 {
+		t.Fatalf("failures %+v, warned %d", failed, warned)
+	}
+	var got events.Event
+	if b, _ := os.ReadFile(out); json.Unmarshal(b, &got) != nil || got.ID != ev.ID {
+		t.Fatalf("stdin did not carry the event: %s", b)
+	}
+	// A hook that cannot run (a failed pin) is a failure too, never a refusal.
+	if failed := r.Post(context.Background(), config.PhasePostVerify, ev); len(failed) != 1 || failed[0].Hook != "other" {
+		t.Fatalf("post-verify failures %+v", failed)
+	}
+	if (*Runner)(nil).Post(context.Background(), config.PhasePostSign, ev) != nil {
+		t.Fatal("a nil runner ran something")
 	}
 }

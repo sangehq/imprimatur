@@ -36,15 +36,21 @@ const File = "config.json"
 
 // Hook phases.
 const (
-	PhasePreSign   = "pre-sign"
-	PhasePreVerify = "pre-verify"
-	PhaseEvent     = "event"
+	PhasePreSign    = "pre-sign"
+	PhasePreVerify  = "pre-verify"
+	PhasePostSign   = "post-sign"
+	PhasePostVerify = "post-verify"
+	PhaseEvent      = "event"
 )
+
+// IsPostPhase reports whether a phase runs after the run has finished, where a
+// hook can no longer change the outcome.
+func IsPostPhase(phase string) bool { return phase == PhasePostSign || phase == PhasePostVerify }
 
 // Hook is one configured hook.
 type Hook struct {
 	Name    string   `json:"name"`
-	Phase   string   `json:"phase"`        // pre-sign | pre-verify | event
+	Phase   string   `json:"phase"`        // pre-sign | pre-verify | post-sign | post-verify | event
 	On      []string `json:"on,omitempty"` // event type globs (phase event); default every type
 	Exec    string   `json:"exec"`         // absolute path
 	Args    []string `json:"args,omitempty"`
@@ -311,11 +317,11 @@ func (c Config) Validate() []string {
 		}
 		seen[h.Name] = true
 		switch h.Phase {
-		case PhasePreSign, PhasePreVerify, PhaseEvent:
+		case PhasePreSign, PhasePreVerify, PhasePostSign, PhasePostVerify, PhaseEvent:
 		default:
-			ps = append(ps, at+": phase must be pre-sign, pre-verify or event")
+			ps = append(ps, at+": phase must be pre-sign, pre-verify, post-sign, post-verify or event")
 		}
-		if h.Veto && h.Phase == PhaseEvent {
+		if h.Veto && (h.Phase == PhaseEvent || IsPostPhase(h.Phase)) {
 			ps = append(ps, at+": only a pre-* hook can veto")
 		}
 		if !filepath.IsAbs(h.Exec) {

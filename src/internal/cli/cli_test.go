@@ -721,6 +721,48 @@ func TestPreSignHookVetoSignsNothing(t *testing.T) {
 	}
 }
 
+// TestPostSignHookSeesTheResultAndCannotChangeIt: a post-sign hook gets the
+// run's last event on stdin; when it fails, the run still succeeds and
+// hook.failed is recorded.
+func TestPostSignHookSeesTheResultAndCannotChangeIt(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil || runtime.GOOS == "windows" {
+		t.Skip("needs ssh-keygen and a Unix shell")
+	}
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+
+	seen := filepath.Join(t.TempDir(), "seen")
+	hook := filepath.Join(t.TempDir(), "after.sh")
+	body := []byte("#!/bin/sh\ncat > " + seen + "\necho 'upload failed' >&2\nexit 2\n")
+	if err := os.WriteFile(hook, body, 0o700); err != nil { //nolint:gosec // G306: a test hook must be executable
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	cfg := fmt.Sprintf(`{"schema":"imprimatur.config/v1","hooks":[{"name":"after","phase":"post-sign","exec":%q,"sha256":%q}]}`,
+		hook, hex.EncodeToString(sum[:]))
+	if err := os.WriteFile(filepath.Join(h.env["IMPR_CONFIG_DIR"], "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	root, manifest, commit, tree := build(t)
+	h.ok("sign", "--json", "--strict", "--root", root, "--manifest", manifest, "--commit", commit, "--tree", tree,
+		"--profile", "p", "--purpose", "internal", "--platforms", "checksums")
+	if b, _ := os.ReadFile(seen); !strings.Contains(string(b), `"type":"sh.sange.imprimatur.signing.run.completed"`) {
+		t.Fatalf("the post-sign hook saw: %s", b)
+	}
+	if ev := h.ok("events", "tail", "--json"); !strings.Contains(ev, "hook.failed") || !strings.Contains(ev, "upload failed") {
+		t.Fatalf("events after a failed post hook: %s", ev)
+	}
+}
+
 // TestServerAnswersWhatTheCLIPrints: a token made by `impr server token add`
 // is stored as a digest only, and GET /v1/profiles over the real command code
 // returns the same document `impr profile list --json` prints.
