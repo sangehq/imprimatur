@@ -43,6 +43,9 @@ func (a *App) runCaptured(ctx context.Context, args []string) (int, []byte) {
 }
 
 func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 && args[0] == "install-unit" {
+		return cmdServeUnit(ctx, a, args[1:])
+	}
 	p, err := parse(args, serveFlags)
 	if err != nil {
 		return 0, err

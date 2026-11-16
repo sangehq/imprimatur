@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr serve install-unit --print` prints a systemd user service, a launchd
+  agent or a Windows logon task for `impr serve`, and how to install it. It
+  installs nothing itself, and it refuses a config the server would not start
+  with. The systemd unit is sandboxed and can write only impr's state directory
+  and the signing roots.
+
 - Fuzz tests for every parser that reads untrusted input: checksum files, build
   manifests, profiles, PE signatures and PKCS#7, SSH signature armor, rules
   requests (whose XML output must stay well-formed), webhook deliveries and

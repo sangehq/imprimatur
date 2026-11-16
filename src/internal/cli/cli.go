@@ -468,6 +468,7 @@ Usage:
   impr tools list [--json] | pin NAME
   impr audit tail [--limit N] [--json] | verify [--json]
   impr serve [--listen unix|HOST:PORT] [--check-config] [--yes]
+  impr serve install-unit --print [--for systemd|launchd|task] [--exe PATH]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
   impr completion bash|zsh|fish|powershell | install bash|zsh|fish | uninstall bash|zsh|fish
   impr install [--dir DIR] [--force]
