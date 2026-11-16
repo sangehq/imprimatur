@@ -373,6 +373,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- On macOS, signing with a `.p12` no longer puts its password on a command
+  line. impr re-wraps the `.p12` with `openssl pkcs12` under a one-time
+  password, passing the real password to openssl in its environment. `openssl`
+  is allow-listed in those two forms only.
+
 - The module now needs Go 1.27.4. Go 1.27.0 to 1.27.3 carry GO-2026-6859, an
   HTTP/1 server crash in `net/http`'s MaxBytesReader, which `impr serve`
   uses on every request. CI and release builds read the version from

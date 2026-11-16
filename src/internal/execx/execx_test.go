@@ -16,7 +16,9 @@ import (
 func TestAllowListIsExactly(t *testing.T) {
 	// powershell joined 2026-11-16 for impr rules test, in one form: impr's embedded
 	// Test-AppLockerPolicy script, checked byte for byte (powershell.go).
-	want := []string{"az", "certutil", "codesign", "cosign", "ditto", "git", "go", "gpg", "minisign", "osslsigncode", "powershell", "secret-tool", "security",
+	// openssl joined 2026-11-16 for the macOS .p12 re-wrap, in two pkcs12 forms
+	// with passwords from the environment only (openssl.go).
+	want := []string{"az", "certutil", "codesign", "cosign", "ditto", "git", "go", "gpg", "minisign", "openssl", "osslsigncode", "powershell", "secret-tool", "security",
 		"signtool", "spctl", "ssh-keygen", "xcrun"}
 	if got := Names(); !slices.Equal(got, want) {
 		t.Fatalf("allow-list %v, want %v", got, want)

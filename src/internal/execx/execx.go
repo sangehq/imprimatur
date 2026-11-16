@@ -37,6 +37,7 @@ var Allowed = map[string]string{
 	"git":          "impr build: the commit, tree, remote and whether the tree is clean (exact forms only)",
 	"az":           "whether the Azure CLI is signed in before Artifact Signing (az account show only)",
 	"powershell":   "impr rules test: Test-AppLockerPolicy through impr's own embedded script only (Windows)",
+	"openssl":      "re-wrap a macOS .p12 under a one-time password, so the real one never reaches a command line (two pkcs12 forms only)",
 }
 
 // gitForms are the only git command lines impr runs. status turns fsmonitor
@@ -123,6 +124,11 @@ func Check(c Cmd) error {
 			}
 		}
 	}
+	if c.Tool == "openssl" {
+		if err := checkOpenSSL(c.Args); err != nil {
+			return err
+		}
+	}
 	if c.Tool == "powershell" {
 		if err := checkPowerShell(c.Args); err != nil {
 			return err
@@ -160,6 +166,7 @@ var toolEnv = map[string][]string{
 	"git":         {},
 	"az":          {"AZURE_CONFIG_DIR"},
 	"powershell":  {"PSModulePath"},
+	"openssl":     {},
 }
 
 // ChildEnv filters environ down to baseEnv and the tool's own names, then
