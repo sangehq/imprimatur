@@ -28,6 +28,8 @@ make build      # build/{host-os}/impr
 make test       # go test -race ./...
 make check      # gofmt check, vet, lint, tests (every local gate)
 make lint       # golangci-lint (config in src/.golangci.yml)
+make fuzz       # every Fuzz function for 30s each (FUZZTIME=2m for longer)
+make vuln       # govulncheck: known vulnerabilities in the code paths impr uses
 make cross      # every target in build/targets.txt, plus build/checksums.txt
 ```
 

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Fuzz tests for every parser that reads untrusted input: checksum files, build
+  manifests, profiles, PE signatures and PKCS#7, SSH signature armor, rules
+  requests (whose XML output must stay well-formed), webhook deliveries and
+  config files. `make fuzz` runs them, and CI runs them weekly. `make vuln` runs
+  govulncheck, which CI runs on every pull request.
+
 - Desktop notifications through go-notifykit, impr's first dependency outside
   the standard library. Failed runs, hook vetoes and certificates near expiry
   appear under impr's own name and icon. Nothing is shown in tests or CI.
@@ -333,6 +339,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that publishes nowhere else, and its targets against `build/targets.txt`.
 
 ### Fixed
+
+- A malformed SSH signature whose markers overlap
+  (`-----BEGIN SSH SIGNATURE-----END SSH SIGNATURE-----`) no longer panics
+  `impr verify`. Found by `FuzzSSHSigKey`.
+- A checksum file line whose path holds a control character, such as a lone
+  carriage return, is refused. Before, it was accepted as a path that could not
+  be written back. Found by `FuzzParseChecksums`.
 
 - `impr verify --signed` re-hashes every file the signed `SHA256SUMS` lists.
   Before, it checked only the checksum file's signature, so a tampered archive
