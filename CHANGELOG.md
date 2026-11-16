@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Recipes for GPG and minisign checksums, Azure Artifact Signing, Certum,
+  trusting a test certificate, deploying allow rules, a project Makefile, a new
+  machine and a two-person release, and a troubleshooting page.
+
 - `impr serve install-unit --print` prints a systemd user service, a launchd
   agent or a Windows logon task for `impr serve`, and how to install it. It
   installs nothing itself, and it refuses a config the server would not start

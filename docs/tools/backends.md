@@ -96,8 +96,10 @@ splits it into owner-only temporary files and runs `osslsigncode sign -certs …
 
 ## Checksums and cosign
 
-- **gpg**: `keyRef` must be `gpg-agent://<the pinned fingerprint>`; impr signs
-  with `--local-user` set to that fingerprint.
+- **gpg**: `keyRef` is `gpg-agent://<the pinned fingerprint>` for a key in your
+  keyring, signed with `--local-user` set to that fingerprint; or a `secret://`
+  or `env://` reference to an armored secret key, which impr imports into a
+  throwaway gpg home for the run, with `passwordRef` for its passphrase.
 - **minisign**: `keyRef` names the secret key, which must be unencrypted
   (`minisign -G -W`), since a CI run has no terminal for a password;
   `publicKey` is the base64 line of `minisign.pub` and its key id must be the

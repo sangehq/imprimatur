@@ -62,6 +62,7 @@ else is in the [documentation](#documentation) below.
 - [Configuration](docs/configuration.md) — profiles, credential references, paths and environment variables
 - [Architecture](docs/architecture.md) — the backend port, the exec allow-list, and why
 - [Release](docs/release.md) — how binaries are released on the GitHub release, and the commands that start one
+- [Troubleshooting](docs/troubleshooting.md) — what each refusal means, and what to do about it
 
 ### Reference
 
@@ -95,6 +96,15 @@ else is in the [documentation](#documentation) below.
 - [Sign checksums with an SSH key](docs/recipes/ssh-checksums.md) — the backend that runs on every host
 - [Sign and notarise for macOS](docs/recipes/macos-notarization.md) — Developer ID, notarytool and stapler
 - [Use impr from sange's pipeline](docs/recipes/sange-pipeline.md) — the calls sange makes and what it checks
+- [Sign checksums with a GPG key](docs/recipes/gpg-checksums.md) — a key in gpg-agent, or one held in a secret for CI
+- [Sign checksums with minisign](docs/recipes/minisign-checksums.md) — a minisign key pinned by its key id
+- [Sign with Azure Artifact Signing](docs/recipes/artifact-signing.md) — the dlib, its metadata, and signing in
+- [Sign with a Certum certificate](docs/recipes/certum-signing.md) — a store certificate pinned by thumbprint, and renewal
+- [Trust a test certificate](docs/recipes/trust-test-certificate.md) — `impr cert create`, then trust it on a test machine
+- [Deploy allow rules](docs/recipes/deploy-allow-rules.md) — AppLocker and WDAC supplemental policies from signed files
+- [Sign from a project's Makefile](docs/recipes/project-makefile.md) — `make/impr.mk` and a project file
+- [Set up a new machine](docs/recipes/new-machine.md) — install, bring profiles over, check the host
+- [Require a second person to approve](docs/recipes/two-person-release.md) — signed approvals for a release profile
 
 ## Contributing and security
 
