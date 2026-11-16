@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Redaction. Secret-shaped text (impr's webhook secrets and API tokens, PEM
+  private keys, key=value credentials, bearer tokens, credentials in URLs,
+  forge, chat and cloud tokens) is masked in every error, log line, event and
+  audit record.
+- Ctrl-C and SIGTERM stop the running tool and let impr remove its temporary
+  keychain, credential files and decrypted keys before exiting 130. A second
+  Ctrl-C ends impr at once.
+
 - `impr build` embeds Windows version information, an application manifest and
   an optional `.ico` icon in every Windows binary, written natively with no
   go-winres. It reads `winres/winres.json` when present.

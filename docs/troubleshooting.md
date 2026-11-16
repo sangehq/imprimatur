@@ -12,6 +12,7 @@ explains the common ones.
 | 3 | sign failed: a rule refused the run, before anything was signed | the profile, the purpose, `allowedRepos`, approvals |
 | 4 | verify failed: a signature, pin or digest does not match | the file changed, or the profile was re-pinned |
 | 5 | unavailable: a tool, key or certificate is missing on this host | `impr doctor`, `impr cert list` |
+| 130 | interrupted (Ctrl-C or SIGTERM): the running tool was stopped and temporary keychains and credential files were removed; a second Ctrl-C ends impr at once | run it again |
 
 ## Signing
 

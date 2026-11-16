@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -53,5 +54,26 @@ func TestDailyExpiryCheckIsOptInAndOnceADay(t *testing.T) {
 	h.ok("doctor")
 	if again, _ := os.ReadFile(stamp); string(again) == string(first) {
 		t.Fatal("the check did not run again the next day")
+	}
+}
+
+func TestAnInterruptedRunExits130AndRestoresSignals(t *testing.T) {
+	h := newHarness(t)
+	var errOut strings.Builder
+	a := &App{Stdout: &strings.Builder{}, Stderr: &errOut, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: t.TempDir(),
+		User: "tester", Runner: h.run, Now: func() time.Time { return h.now }}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	restored := make(chan struct{})
+	if code := a.RunInterruptible(ctx, func() { close(restored) }, []string{"doctor"}); code != InterruptedExit {
+		t.Fatalf("exit %d, want %d", code, InterruptedExit)
+	}
+	select {
+	case <-restored:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the default signal handling was not restored")
+	}
+	if !strings.Contains(errOut.String(), "interrupted") {
+		t.Fatalf("no interrupted message: %s", errOut.String())
 	}
 }

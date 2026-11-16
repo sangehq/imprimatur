@@ -4,6 +4,9 @@
 package cli
 
 import (
+	"os/signal"
+	"syscall"
+
 	notifykit "github.com/simtabi/go-notifykit/src"
 
 	"context"
@@ -74,7 +77,31 @@ func Main(args []string) int {
 	}
 	a := &App{Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv, GOOS: runtime.GOOS, Home: home, User: name,
 		Runner: execx.OS{}, Now: time.Now, Stdin: os.Stdin, Interactive: stdinIsTerminal}
-	return a.Run(context.Background(), args)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return a.RunInterruptible(ctx, stop, args)
+}
+
+// InterruptedExit is the exit code after Ctrl-C or SIGTERM, by convention.
+const InterruptedExit = 130
+
+// RunInterruptible runs a command line on a context the first interrupt
+// cancels. The running tool is stopped (execx starts every tool with the
+// context), the command returns, and its deferred cleanup runs: temporary
+// keychains, credential files and decrypted keys are removed rather than
+// left behind by a killed process. restore puts the default signal handling
+// back, so a second interrupt ends impr at once.
+func (a *App) RunInterruptible(ctx context.Context, restore func(), args []string) int {
+	go func() {
+		<-ctx.Done()
+		restore()
+	}()
+	code := a.Run(ctx, args)
+	if ctx.Err() != nil {
+		a.say("impr: interrupted; temporary files and keychains were removed")
+		return InterruptedExit
+	}
+	return code
 }
 
 // ---- argument parsing ----------------------------------------------------------
