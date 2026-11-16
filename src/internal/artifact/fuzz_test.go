@@ -13,6 +13,9 @@ func FuzzParseChecksums(f *testing.F) {
 	f.Add([]byte(strings.Repeat("a", 64) + "  build/tool\n"))
 	f.Add([]byte(strings.Repeat("b", 64) + " *build/tool.exe\r\n\n"))
 	f.Add([]byte("x  ../escape\n"))
+	f.Add([]byte(strings.Repeat("c", 64) + "  **"))
+	f.Add([]byte(strings.Repeat("c", 64) + "  **x\n"))
+	f.Add([]byte(strings.Repeat("c", 64) + "   x \n"))
 	f.Fuzz(func(t *testing.T, b []byte) {
 		lines, err := ParseChecksums(b)
 		if err != nil {

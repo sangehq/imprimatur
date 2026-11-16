@@ -210,8 +210,12 @@ func ParseChecksums(b []byte) ([][2]string, error) {
 		// A path with a control character (a lone \r, a tab, NUL) is no
 		// artifact's, and would not survive being written back (found by
 		// FuzzParseChecksums).
+		// Nor is one that still starts with "*" after the binary-mode marker,
+		// or has spaces at either end: each reads back as another path
+		// (found by FuzzParseChecksums: "<hash>  **").
 		if !ok || !regexp.MustCompile(`^[0-9a-fA-F]{64}$`).MatchString(sum) || path == "" ||
-			strings.ContainsFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+			strings.ContainsFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }) ||
+			strings.HasPrefix(path, "*") || strings.TrimSpace(path) != path {
 			return nil, fmt.Errorf("line %d is not \"<sha256>  <path>\"", i+1)
 		}
 		if seen[path] {

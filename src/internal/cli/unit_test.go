@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -57,11 +58,13 @@ func TestInstallUnitPrintsOnlyAndNeedsAWorkingConfig(t *testing.T) {
 		t.Fatalf("without a token: %d %s", code, errOut)
 	}
 	h.ok("server", "token", "add", "--scopes", "read")
+	// An absolute path on this OS: "/usr/local/bin/impr" is not one on Windows.
+	exe := filepath.Join(t.TempDir(), "bin", "impr")
 	h.exits(1, "serve", "install-unit", "--print", "--exe", "impr")
-	h.exits(1, "serve", "install-unit", "--print", "--exe", "/usr/local/bin/impr", "--for", "upstart")
-	for kind, want := range map[string]string{"systemd": "ExecStart=\"/usr/local/bin/impr\" serve", "launchd": "<string>/usr/local/bin/impr</string>",
-		"task": "<Command>/usr/local/bin/impr</Command>"} {
-		code, out, errOut := h.impr("serve", "install-unit", "--print", "--exe", "/usr/local/bin/impr", "--for", kind)
+	h.exits(1, "serve", "install-unit", "--print", "--exe", exe, "--for", "upstart")
+	for kind, want := range map[string]string{"systemd": "ExecStart=" + systemdQuote(exe) + " serve", "launchd": "<string>" + xmlText(exe) + "</string>",
+		"task": "<Command>" + xmlText(exe) + "</Command>"} {
+		code, out, errOut := h.impr("serve", "install-unit", "--print", "--exe", exe, "--for", kind)
 		if code != 0 || !strings.Contains(out, want) || !strings.Contains(errOut, "installed nothing") {
 			t.Errorf("%s: %d %s %s", kind, code, out, errOut)
 		}

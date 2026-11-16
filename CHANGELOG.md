@@ -363,7 +363,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `impr verify`. Found by `FuzzSSHSigKey`.
 - A checksum file line whose path holds a control character, such as a lone
   carriage return, is refused. Before, it was accepted as a path that could not
-  be written back. Found by `FuzzParseChecksums`.
+  be written back. Found by `FuzzParseChecksums`. So is a path that starts
+  with `*` after the binary-mode marker, or has spaces at either end: each read
+  back as a different path. The fuzzer found this one in CI's weekly job.
 
 - `impr verify --signed` re-hashes every file the signed `SHA256SUMS` lists.
   Before, it checked only the checksum file's signature, so a tampered archive
