@@ -40,10 +40,31 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   - `file` (hash rules) is refused: a hash rule breaks with every build.
 - **WDAC needs a base policy.** A WDAC supplemental policy is rendered only with `--base-policy`, the base
   policy's `{GUID}`. Without one, the output is AppLocker only, and impr says so.
-- **Product name.** `--product` is the ProductName in the files' version information. impr does not read
-  version resources, so name it.
+- **Product name.** Without `--product`, impr reads the ProductName from the files' own version information
+  (which `impr build` embeds), and every file must name the same product. `--product` overrides it, and a
+  file with no ProductName needs it.
+- **Default rules.** `--include-default-rules` (or `"includeDefaultRules": true` in a request) adds
+  AppLocker's standard default rules to each collection: Program Files and the Windows folder for
+  everyone, and everything for Administrators. Without them, enforcing a collection also blocks Windows
+  itself, so add them unless the machine already has them. The Windows folder rule also allows the
+  user-writable folders under it, such as `Windows\Temp`, a known AppLocker bypass, and the answer's notes
+  say so.
 - **Same output as a request.** Everything else (AuditOnly unless `--enforce`, Everyone unless `--sid`) is
   exactly what a request produces.
+
+## Test a policy on Windows
+
+```powershell
+impr rules test --policy policies\applocker.xml --user Everyone build\windows\tool.exe build\windows\core.dll
+```
+
+- **What it asks.** It asks Windows, through `Test-AppLockerPolicy`, whether the policy would allow each
+  file for that user (default `Everyone`), without deploying anything. It exits 4 when any file would be
+  denied. `--json`: `{"contract":1,"ok":true,"policy":"…","user":"Everyone","results":[{"path":"…","decision":"Allowed","rule":"…"}]}`.
+- **Windows only.** Elsewhere it exits 5.
+- **How PowerShell runs.** impr writes its own fixed script to a temporary file. The tool allow-list runs
+  PowerShell only with that script, byte for byte. Paths and the user reach it as parameters, never as
+  code, and a value starting with `-` is refused, so it cannot bind as another parameter.
 
 ## The answer
 

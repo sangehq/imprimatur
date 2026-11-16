@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr build` embeds Windows version information, an application manifest and
+  an optional `.ico` icon in every Windows binary, written natively with no
+  go-winres. It reads `winres/winres.json` when present.
+  - **Flags.** `--product`, `--company`, `--description`, `--copyright`,
+    `--icon` and `--no-winres`.
+  - **Rules.** `impr rules FILE...` now reads the product name from the files
+    themselves when `--product` is not given.
+
+- Audit anchoring. With `audit.anchor.enabled`, impr emits an `audit.head` event
+  holding the audit trail's and event log's chain heads. It is sent after each
+  audited command, and on a schedule under `impr serve`.
+  - **Delivery.** Any outbound webhook subscribed to `audit.head`, sange's
+    server included, carries it off the machine.
+  - **Checking.** `impr audit anchor` emits one on demand, and
+    `impr audit verify --against FILE` checks a kept anchor. It catches a
+    consistent rewrite of the whole trail, which the chain alone cannot.
+
+- Two more ways to run the expiry check. `impr cert install-check --print`
+  prints a daily systemd timer, launchd job or Windows task, and installs
+  nothing. `notify.checkOnCommand` makes other commands run the check at most
+  once a day; it is off by default.
+
+- `impr rules test --policy FILE FILE...` asks Windows (`Test-AppLockerPolicy`)
+  whether a policy would allow each file, and exits 4 on a denial. PowerShell
+  is allow-listed for that one embedded script only, checked byte for byte,
+  with paths passed as parameters.
+
+- `impr rules --include-default-rules` (and `includeDefaultRules` in a request)
+  adds AppLocker's standard default rules to each collection, with a note that
+  the Windows folder rule also allows user-writable folders under it.
+
 - Recipes for GPG and minisign checksums, Azure Artifact Signing, Certum,
   trusting a test certificate, deploying allow rules, a project Makefile, a new
   machine and a two-person release, and a troubleshooting page.
@@ -350,6 +381,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- On macOS, signing with a `.p12` no longer puts its password on a command
+  line. impr re-wraps the `.p12` with `openssl pkcs12` under a one-time
+  password, passing the real password to openssl in its environment. `openssl`
+  is allow-listed in those two forms only.
+
 - The module now needs Go 1.27.4. Go 1.27.0 to 1.27.3 carry GO-2026-6859, an
   HTTP/1 server crash in `net/http`'s MaxBytesReader, which `impr serve`
   uses on every request. CI and release builds read the version from
@@ -357,6 +393,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   govulncheck in CI.
 
 ### Fixed
+
+- A build manifest listing a path outside the signing root (`/`, a drive
+  letter, `..`) is refused when read, so `impr approve` cannot approve one.
+  Signing already refused it. Found by `FuzzReadManifest` in CI's fuzz job.
+
+- `impr audit verify --json` and `impr events verify --json` printed two
+  documents when the chain was broken. Each now prints its result once and
+  exits 4.
+
+- `impr profile bundle verify --json` printed two documents when a profile
+  failed. It now prints its result once and exits 4.
+
+- A failure to render the AppLocker policy is now an error. Before, the error
+  was dropped and the policy came out empty.
 
 - A malformed SSH signature whose markers overlap
   (`-----BEGIN SSH SIGNATURE-----END SSH SIGNATURE-----`) no longer panics

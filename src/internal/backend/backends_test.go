@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -647,7 +648,8 @@ func TestAppleTemporaryKeychain(t *testing.T) {
 		t.Fatal(err)
 	}
 	failImport := false
-	f := execx.NewFake("codesign", "security", "spctl", "xcrun", "ditto")
+	pw := randHex(t, 6)
+	f := execx.NewFake("codesign", "security", "spctl", "xcrun", "ditto", "openssl")
 	f.Handle = func(c execx.Cmd) execx.Result {
 		if c.Tool == "security" && c.Args[0] == "import" && failImport {
 			return execx.Result{ExitCode: 1, Stderr: []byte("bad password")}
@@ -659,13 +661,28 @@ func TestAppleTemporaryKeychain(t *testing.T) {
 	}
 	spec := macSpec()
 	spec.CertRef, spec.PasswordRef = "env://IMPR_P12", "env://IMPR_P12_PW"
-	a := &Apple{H: fakeHost("darwin", f, map[string]string{"IMPR_P12": p12, "IMPR_P12_PW": randHex(t, 6)}), Spec: spec}
+	a := &Apple{H: fakeHost("darwin", f, map[string]string{"IMPR_P12": p12, "IMPR_P12_PW": pw}), Spec: spec}
 	if _, err := a.Sign(context.Background(), Artifact{Path: file, Rel: "tool"}, profile.Profile{Name: "mac"}); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("security", "create-keychain") || !f.Called("security", "import "+p12) || !f.Called("codesign", "--keychain") ||
+	if !f.Called("openssl", "-passin env:IMPR_P12_IN") || !f.Called("openssl", "-export") || !f.Called("security", "create-keychain") ||
+		!f.Called("security", "identity.p12 -k") || f.Called("security", "import "+p12) || !f.Called("codesign", "--keychain") ||
 		!f.Called("security", "delete-keychain") {
 		t.Fatalf("calls: %+v", f.Calls)
+	}
+	// The real password reaches openssl through its environment only, and no
+	// command line anywhere.
+	sawEnv := false
+	for _, c := range f.Calls {
+		if strings.Contains(strings.Join(c.Args, " "), pw) {
+			t.Fatalf("the .p12 password is on a command line: %s %v", c.Tool, c.Args)
+		}
+		if c.Tool == "openssl" && slices.Contains(c.Env, "IMPR_P12_IN="+pw) {
+			sawEnv = true
+		}
+	}
+	if !sawEnv {
+		t.Fatal("openssl was not given the password in its environment")
 	}
 	f.Calls = nil
 	failImport = true

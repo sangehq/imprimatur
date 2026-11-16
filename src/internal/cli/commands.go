@@ -181,6 +181,9 @@ func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
 	if len(args) > 0 && args[0] == "create" {
 		return cmdCertCreate(ctx, a, args[1:])
 	}
+	if len(args) > 0 && args[0] == "install-check" {
+		return cmdCertInstallCheck(ctx, a, args[1:])
+	}
 	p, err := parse(args, readFlags)
 	if err != nil {
 		return 0, err
@@ -303,7 +306,10 @@ func cmdVerify(ctx context.Context, a *App, args []string) (int, error) {
 	return 0, nil
 }
 
-func cmdRules(_ context.Context, a *App, args []string) (int, error) {
+func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 && args[0] == "test" {
+		return cmdRulesTest(ctx, a, args[1:])
+	}
 	p, err := parse(args, rulesFlags)
 	if err != nil {
 		return 0, err
@@ -329,6 +335,8 @@ func cmdRules(_ context.Context, a *App, args []string) (int, error) {
 		if err := json.Unmarshal(b, &req); err != nil {
 			return 0, contract.Wrap(contract.Usage, err, "the request is not an allow-rules request")
 		}
+		// The flag can add the default rules to a request; it never removes them.
+		req.Options.IncludeDefaultRules = req.Options.IncludeDefaultRules || p.on("include-default-rules")
 	}
 	res, err := rules.Render(req, "imprimatur "+version)
 	if err != nil {

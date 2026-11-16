@@ -65,10 +65,9 @@ type signedData struct {
 	SignerInfos      []signerInfo  `asn1:"set"`
 }
 
-// Signed writes dir/name as a PE whose signature names a leaf with the given
-// subject, issued by ca, with both certificates in the signature. It returns
-// the path and the leaf.
-func Signed(t *testing.T, dir, name string, subject pkix.Name, ca CA) (string, *x509.Certificate) {
+// signature is a PKCS#7 SignedData naming a leaf with the given subject,
+// issued by ca, with both certificates, as a PE certificate table carries.
+func signature(t *testing.T, subject pkix.Name, ca CA) ([]byte, *x509.Certificate) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -100,6 +99,46 @@ func Signed(t *testing.T, dir, name string, subject pkix.Name, ca CA) (string, *
 		T asn1.ObjectIdentifier
 		C asn1.RawValue
 	}{asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 2}, asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: must(sd)}})
+	return pkcs7, leaf
+}
+
+// SignFile attaches such a signature to an existing PE32+ file (a real Go
+// build, say), so tests can read signer and version information together.
+func SignFile(t *testing.T, path string, subject pkix.Name, ca CA) *x509.Certificate {
+	t.Helper()
+	pkcs7, leaf := signature(t, subject, ca)
+	b, err := os.ReadFile(path) //nolint:gosec // G304: a test file the caller made
+	if err != nil {
+		t.Fatal(err)
+	}
+	for len(b)%8 != 0 {
+		b = append(b, 0)
+	}
+	at := len(b)
+	win := make([]byte, 8)
+	binary.LittleEndian.PutUint32(win[0:], uint32(8+len(pkcs7))) //nolint:gosec // G115: a small test blob
+	binary.LittleEndian.PutUint16(win[4:], 0x0200)
+	binary.LittleEndian.PutUint16(win[6:], 2)
+	b = append(append(b, win...), pkcs7...)
+	oh := int(binary.LittleEndian.Uint32(b[0x3c:])) + 24
+	if binary.LittleEndian.Uint16(b[oh:]) != 0x20b {
+		t.Fatalf("%s is not a PE32+ file", path)
+	}
+	dd := oh + 112 + 4*8                                          // DataDirectory[4], the certificate table
+	binary.LittleEndian.PutUint32(b[dd:], uint32(at))             //nolint:gosec // G115: a small test file
+	binary.LittleEndian.PutUint32(b[dd+4:], uint32(8+len(pkcs7))) //nolint:gosec // G115: a small test blob
+	if err := os.WriteFile(path, b, 0o600); err != nil {          //nolint:gosec // G703: a test file the caller made
+		t.Fatal(err)
+	}
+	return leaf
+}
+
+// Signed writes dir/name as a PE whose signature names a leaf with the given
+// subject, issued by ca, with both certificates in the signature. It returns
+// the path and the leaf.
+func Signed(t *testing.T, dir, name string, subject pkix.Name, ca CA) (string, *x509.Certificate) {
+	t.Helper()
+	pkcs7, leaf := signature(t, subject, ca)
 	var buf bytes.Buffer
 	dos := make([]byte, 64)
 	copy(dos, "MZ")

@@ -68,10 +68,14 @@ func (a *App) audit(_ context.Context, cmd string, rest []string, code int, star
 	}
 	if err := (events.Log{Dir: filepath.Join(d.State, "audit")}).Write(context.Background(), ev); err != nil {
 		a.say("audit     not recorded: %v", err)
+		return
+	}
+	if _, err := a.anchor(context.Background(), false); err != nil {
+		a.say("audit     not anchored: %v", err)
 	}
 }
 
-var auditFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "limit": stringFlag}
+var auditFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "limit": stringFlag, "against": stringFlag}
 
 func cmdAudit(_ context.Context, a *App, args []string) (int, error) {
 	p, err := parse(args, auditFlags)
@@ -112,6 +116,9 @@ func cmdAudit(_ context.Context, a *App, args []string) (int, error) {
 		return 0, nil
 	case "verify":
 		n, err := log.Verify()
+		if err == nil && p.str("against") != "" {
+			err = a.verifyAnchor(d.State, p.str("against"))
+		}
 		if p.on("json") {
 			r := map[string]any{"contract": contract.Version, "ok": err == nil, "checked": n}
 			if err != nil {
@@ -120,11 +127,27 @@ func cmdAudit(_ context.Context, a *App, args []string) (int, error) {
 			a.json(r)
 		} else if err == nil {
 			a.say("audit     %d record(s), chain intact", n)
+			if p.str("against") != "" {
+				a.say("audit     matches the anchor in %s", p.str("against"))
+			}
 		}
 		if err != nil {
-			return 0, contract.Wrap(contract.VerifyFailed, err, "the audit trail does not verify")
+			// One JSON document on stdout, the error on stderr, the exit code 4.
+			_, _ = a.Stderr.Write([]byte(contract.Text(contract.Wrap(contract.VerifyFailed, err, "the audit trail does not verify"))))
+			return int(contract.VerifyFailed), nil
+		}
+		return 0, nil
+	case "anchor":
+		h, err := a.anchor(context.Background(), true)
+		if err != nil {
+			return 0, contract.Wrap(contract.Unavailable, err, "read the logs")
+		}
+		if p.on("json") {
+			a.json(map[string]any{"contract": contract.Version, "audit": h.Audit, "events": h.Events})
+		} else {
+			a.say("anchor    audit %d %s, events %d %s", h.Audit.Count, h.Audit.Hash, h.Events.Count, h.Events.Hash)
 		}
 		return 0, nil
 	}
-	return 0, contract.New(contract.Usage, "unknown audit subcommand %q", sub).WithFix("impr audit tail", "impr audit verify")
+	return 0, contract.New(contract.Usage, "unknown audit subcommand %q", sub).WithFix("impr audit tail", "impr audit verify [--against ANCHOR]", "impr audit anchor")
 }

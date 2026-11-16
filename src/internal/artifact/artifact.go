@@ -78,10 +78,23 @@ func ReadManifest(path string) (Loaded, error) {
 		if seen[a.Path] {
 			return Loaded{}, contract.New(contract.Usage, "%s is listed twice in the build manifest", a.Path)
 		}
+		// Refused when read, not only when signed: a manifest nothing could
+		// sign is not one to approve or record (found by FuzzReadManifest).
+		if leavesRoot(a.Path) {
+			return Loaded{}, contract.New(contract.Usage, "the build manifest lists %q, which is not a path inside the signing root", a.Path)
+		}
 		seen[a.Path] = true
 	}
 	h := sha256.Sum256(b)
 	return Loaded{Manifest: m, Path: abs, Digest: "sha256:" + hex.EncodeToString(h[:]), Dir: filepath.Dir(abs)}, nil
+}
+
+// leavesRoot reports whether a manifest path is empty, absolute or rooted,
+// names a volume, or climbs out with "..".
+func leavesRoot(rel string) bool {
+	clean := filepath.ToSlash(rel)
+	return rel == "" || filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" || strings.HasPrefix(clean, "/") ||
+		regexp.MustCompile(`(^|/)\.\.(/|$)`).MatchString(clean)
 }
 
 // Resolve turns a manifest path into a file under root. A path that is
@@ -89,7 +102,7 @@ func ReadManifest(path string) (Loaded, error) {
 // refused.
 func Resolve(root, rel string) (string, error) {
 	clean := filepath.ToSlash(rel)
-	if rel == "" || filepath.IsAbs(rel) || strings.HasPrefix(clean, "/") || regexp.MustCompile(`(^|/)\.\.(/|$)`).MatchString(clean) {
+	if leavesRoot(rel) {
 		return "", contract.New(contract.SignFailed, "manifest path %q leaves the signing root", rel)
 	}
 	full := filepath.Join(root, filepath.FromSlash(clean))

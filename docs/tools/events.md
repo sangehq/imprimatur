@@ -30,6 +30,7 @@ verification step it takes.
 | `cert.expiring` / `cert.expired` | `impr cert list` or `impr serve` found a certificate past a warning threshold, or expired; once per threshold ([notify](notify.md)) |
 | `approval.created` | `impr approve` wrote an approval |
 | `profile.*`, `config.changed`, `hook.*` | profile and configuration changes, and hook failures and vetoes |
+| `audit.head` | both chain heads, for anchoring off the machine ([audit](audit.md#anchoring-off-the-machine)) |
 
 `impr events types --json` prints the full catalogue, with each type's class and schema URL.
 

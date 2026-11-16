@@ -399,6 +399,7 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		code = a.fail(err, asJSON)
 	}
 	a.audit(ctx, cmd, rest, code, start)
+	a.dailyExpiryCheck(ctx, cmd)
 	return code
 }
 
@@ -449,12 +450,14 @@ Usage:
   impr profile bundle install BUNDLE.json [--sig FILE] | list [--json] | verify [--json]
   impr cert list [--json]
   impr cert create [--name NAME] [--subject CN] [--days N] [--json]
+  impr cert install-check --print [--for systemd|launchd|task] [--exe PATH]
   impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
             [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
             [--approval FILE]...
   impr approve --manifest FILE --profile NAME --purpose P --approver NAME --key SSH-KEY [--expires 24h] [--out FILE] [--json]
   impr notify send|ping|doctor ...
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
+  impr rules test --policy applocker.xml [--user Everyone] FILE... [--json]   (Windows)
   impr rules (--request FILE | FILE... [--scope publisher|product|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]
   impr build [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z --version-var PKG.VAR]
@@ -466,7 +469,7 @@ Usage:
   impr config path|show|validate [--json] | get KEY | set KEY VALUE [--profile NAME] | unset KEY [--profile NAME]
   impr config profile list [--json] | create NAME | use NAME | use --none | rm NAME
   impr tools list [--json] | pin NAME
-  impr audit tail [--limit N] [--json] | verify [--json]
+  impr audit tail [--limit N] [--json] | verify [--against ANCHOR] [--json] | anchor [--json]
   impr serve [--listen unix|HOST:PORT] [--check-config] [--yes]
   impr serve install-unit --print [--for systemd|launchd|task] [--exe PATH]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID

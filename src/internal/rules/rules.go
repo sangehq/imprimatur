@@ -65,6 +65,11 @@ type Options struct {
 	BinaryNames    map[string]string `json:"binaryNames,omitempty"`
 	AppLocker      bool              `json:"appLocker"`
 	WDAC           bool              `json:"wdac"`
+	// IncludeDefaultRules adds AppLocker's standard default rules to each
+	// collection: Program Files and Windows for everyone, everything for
+	// Administrators. Without them, enforcing a collection blocks Windows
+	// itself; with them, user-writable folders under Windows are allowed too.
+	IncludeDefaultRules bool `json:"includeDefaultRules,omitempty"`
 }
 
 // Request is what sange asks for (`impr rules --request <file>`).
@@ -132,7 +137,15 @@ func Render(req Request, renderer string) (Result, error) {
 	}
 	res.Notes = append(res.Notes, "no file-hash rules; no base WDAC policy")
 	if opt.AppLocker {
-		res.AppLocker = string(renderAppLocker(req, opt, files, level, fv))
+		al, err := renderAppLocker(req, opt, files, level, fv)
+		if err != nil {
+			return Result{}, err
+		}
+		res.AppLocker = string(al)
+		if opt.IncludeDefaultRules {
+			res.Notes = append(res.Notes, "AppLocker default rules included: Program Files and Windows for everyone, everything for Administrators; "+
+				"the Windows folder rule also allows user-writable folders under it (such as Windows\\Temp), a known AppLocker bypass")
+		}
 		if !opt.Enforce {
 			res.Notes = append(res.Notes, "AppLocker collections are AuditOnly; enforcement is a separate, deliberate change")
 		}
@@ -267,9 +280,51 @@ type alPolicy struct {
 }
 
 type alCollection struct {
-	Type            string   `xml:"Type,attr"`
-	EnforcementMode string   `xml:"EnforcementMode,attr"`
-	Rules           []alRule `xml:"FilePublisherRule"`
+	Type            string       `xml:"Type,attr"`
+	EnforcementMode string       `xml:"EnforcementMode,attr"`
+	PathRules       []alPathRule `xml:"FilePathRule"`
+	Rules           []alRule     `xml:"FilePublisherRule"`
+}
+
+type alPathRule struct {
+	ID          string     `xml:"Id,attr"`
+	Name        string     `xml:"Name,attr"`
+	Description string     `xml:"Description,attr"`
+	SID         string     `xml:"UserOrGroupSid,attr"`
+	Action      string     `xml:"Action,attr"`
+	Condition   alPathCond `xml:"Conditions>FilePathCondition"`
+}
+
+type alPathCond struct {
+	Path string `xml:"Path,attr"`
+}
+
+// Well-known SIDs for the default rules.
+const (
+	sidEveryone       = "S-1-1-0"
+	sidAdministrators = "S-1-5-32-544"
+)
+
+// defaultRules are AppLocker's standard default rules for a collection, as
+// the AppLocker console creates them.
+func defaultRules(c Collection) []alPathRule {
+	type d struct{ name, sid, path string }
+	var ds []d
+	switch c {
+	case Exe, Dll, Script:
+		ds = []d{{"All files located in the Program Files folder", sidEveryone, `%PROGRAMFILES%\*`},
+			{"All files located in the Windows folder", sidEveryone, `%WINDIR%\*`},
+			{"All files", sidAdministrators, "*"}}
+	case Msi:
+		ds = []d{{`All Windows Installer files in %systemdrive%\Windows\Installer`, sidEveryone, `%WINDIR%\Installer\*`},
+			{"All Windows Installer files", sidAdministrators, "*.*"}}
+	}
+	var out []alPathRule
+	for _, x := range ds {
+		out = append(out, alPathRule{ID: guid("applocker-default", string(c), x.sid, x.path), Name: "(Default Rule) " + x.name,
+			Description: "AppLocker default rule, added by impr rules --include-default-rules", SID: x.sid, Action: "Allow", Condition: alPathCond{Path: x.path}})
+	}
+	return out
 }
 
 type alRule struct {
@@ -300,7 +355,7 @@ func binaryName(opt Options, f File) string {
 	return f.BinaryName
 }
 
-func renderAppLocker(req Request, opt Options, files []File, level, fv string) []byte {
+func renderAppLocker(req Request, opt Options, files []File, level, fv string) ([]byte, error) {
 	mode := "AuditOnly"
 	if opt.Enforce {
 		mode = "Enabled"
@@ -318,6 +373,9 @@ func renderAppLocker(req Request, opt Options, files []File, level, fv string) [
 			continue
 		}
 		coll := alCollection{Type: string(c), EnforcementMode: mode}
+		if opt.IncludeDefaultRules {
+			coll.PathRules = defaultRules(c)
+		}
 		if level == "publisher" {
 			coll.Rules = append(coll.Rules, alRule{ID: guid("applocker", string(c), pub.Subject, "*"),
 				Name: "imprimatur: everything signed by " + pub.Subject, Description: desc, SID: opt.UserOrGroupSID, Action: "Allow",
@@ -339,8 +397,13 @@ func renderAppLocker(req Request, opt Options, files []File, level, fv string) [
 		}
 		pol.Collections = append(pol.Collections, coll)
 	}
-	b, _ := xml.MarshalIndent(pol, "", "  ")
-	return append([]byte(xml.Header), append(b, '\n')...)
+	// A marshal error is returned, never dropped: an empty policy would read as
+	// "allow nothing" and pass for a rendered one.
+	b, err := xml.MarshalIndent(pol, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append([]byte(xml.Header), append(b, '\n')...), nil
 }
 
 // ---- WDAC ---------------------------------------------------------------------

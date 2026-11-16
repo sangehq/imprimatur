@@ -280,6 +280,42 @@ func spctlArgs(path string) []string {
 	return []string{"-a", "-t", "exec", "-vv", path}
 }
 
+// rewrap decrypts the .p12 with its real password (passed to openssl in the
+// environment) and wraps it again under otp, with the PBE-SHA1-3DES and SHA-1
+// MAC that macOS's security import accepts. The decrypted PEM lives in dir
+// (owner-only) and is removed as soon as the new file is written. A .p12
+// whose cipher OpenSSL 3 keeps in its legacy provider is retried with
+// -legacy.
+func (a *Apple) rewrap(ctx context.Context, dir, p12, pw, otp string) (string, error) {
+	pem := filepath.Join(dir, "identity.pem")
+	out := filepath.Join(dir, "identity.p12")
+	defer func() { _ = os.Remove(pem) }()
+	decrypt := []string{"pkcs12", "-in", p12, "-nodes", "-passin", "env:" + execx.P12InEnv, "-out", pem}
+	env := []string{execx.P12InEnv + "=" + pw}
+	r, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "openssl", Args: decrypt, Env: env})
+	if err == nil && r.ExitCode != 0 && strings.Contains(strings.ToLower(r.Output()), "unsupported") {
+		r, err = a.H.Runner.Run(ctx, execx.Cmd{Tool: "openssl", Args: append(decrypt, "-legacy"), Env: env})
+	}
+	if err != nil {
+		return "", contract.Wrap(contract.Unavailable, err, "openssl could not run to re-wrap the .p12").
+			WithFix("install openssl (macOS ships /usr/bin/openssl)")
+	}
+	if r.ExitCode != 0 {
+		return "", contract.New(contract.SignFailed, "the .p12 could not be opened; check its password (passwordRef)").WithDetails(firstLine(r.Output()))
+	}
+	export := []string{"pkcs12", "-export", "-in", pem, "-out", out, "-passout", "env:" + execx.P12OutEnv,
+		"-keypbe", "PBE-SHA1-3DES", "-certpbe", "PBE-SHA1-3DES", "-macalg", "sha1"}
+	r, err = a.H.Runner.Run(ctx, execx.Cmd{Tool: "openssl", Args: export, Env: []string{execx.P12OutEnv + "=" + otp}})
+	if err != nil || r.ExitCode != 0 {
+		detail := ""
+		if err == nil {
+			detail = firstLine(r.Output())
+		}
+		return "", contract.New(contract.SignFailed, "the .p12 could not be re-wrapped for the temporary keychain").WithDetails(detail)
+	}
+	return out, nil
+}
+
 // tempKeychain imports the profile's .p12 (certRef, with passwordRef) into a
 // keychain that exists for this run only: created in a private temporary
 // folder with a random password, never added to the search list, and deleted
@@ -319,11 +355,25 @@ func (a *Apple) tempKeychain(ctx context.Context) (string, func(), error) {
 		p12.Close()
 		_ = os.RemoveAll(dir)
 	}
+	// The .p12 is re-wrapped under a one-time password before security sees
+	// it, so the real password never reaches a command line: openssl reads it
+	// from the environment.
+	once := make([]byte, 24)
+	if _, err := rand.Read(once); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	otp := hex.EncodeToString(once)
+	wrapped, err := a.rewrap(ctx, dir, p12.Path, pw, otp)
+	if err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
 	steps := [][]string{
 		{"create-keychain", "-p", kpw, kc},
 		{"set-keychain-settings", "-lut", "3600", kc},
 		{"unlock-keychain", "-p", kpw, kc},
-		{"import", p12.Path, "-k", kc, "-f", "pkcs12", "-P", pw, "-T", "/usr/bin/codesign"},
+		{"import", wrapped, "-k", kc, "-f", "pkcs12", "-P", otp, "-T", "/usr/bin/codesign"},
 		{"set-key-partition-list", "-S", "apple-tool:,apple:", "-s", "-k", kpw, kc},
 	}
 	for _, st := range steps {

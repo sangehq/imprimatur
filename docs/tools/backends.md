@@ -91,8 +91,15 @@ splits it into owner-only temporary files and runs `osslsigncode sign -certs …
 - **Developer ID.** `certRef` may hold a `.p12` (a path, or base64 in a CI secret), with `passwordRef`.
   impr creates a keychain in a private temporary folder with a random password, imports the `.p12` there
   for `/usr/bin/codesign`, signs with `codesign --keychain`, and deletes the keychain afterwards, even
-  when a step fails. The keychain is never added to your search list. `security import` takes the
-  `.p12` password as an argument, so it is briefly visible to other processes run by the same user.
+  when a step fails. The keychain is never added to your search list.
+- **The `.p12` password stays off command lines.** `security import` takes a password only as an
+  argument, which other processes run by the same user can see. So impr first re-wraps the `.p12` with
+  `openssl pkcs12`: openssl reads the real password from an environment variable, and writes a new
+  `.p12` under a random one-time password, with the PBE-SHA1-3DES encryption and SHA-1 MAC that
+  `security import` accepts. Only that one-time password reaches `security import`, and it opens
+  nothing but this run's temporary keychain. The decrypted key exists for a moment in an owner-only
+  temporary folder and is removed straight after. A `.p12` that OpenSSL 3 can open only with its legacy
+  provider is retried with `-legacy`. Both the system openssl (LibreSSL) and OpenSSL 3 work.
 
 ## Checksums and cosign
 

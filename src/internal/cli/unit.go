@@ -56,17 +56,9 @@ func cmdServeUnit(_ context.Context, a *App, args []string) (int, error) {
 		return 0, contract.New(contract.Usage, "no API token or inbound endpoint is configured, so the service would not start").
 			WithFix("impr server token add --scopes read,verify")
 	}
-	exe := p.str("exe")
-	if exe == "" {
-		if exe, err = os.Executable(); err != nil {
-			return 0, contract.Wrap(contract.Unavailable, err, "find this impr binary")
-		}
-		if r, err := filepath.EvalSymlinks(exe); err == nil {
-			exe = r
-		}
-	}
-	if !filepath.IsAbs(exe) {
-		return 0, contract.New(contract.Usage, "--exe must be an absolute path")
+	exe, err := unitExe(p.str("exe"))
+	if err != nil {
+		return 0, err
 	}
 	u := Unit{Exe: exe, Config: d.Config, State: d.State, Roots: cfg.Server.Roots}
 	var text, where, how string
@@ -87,6 +79,24 @@ func cmdServeUnit(_ context.Context, a *App, args []string) (int, error) {
 	a.say("unit      save it as %s, then: %s", where, how)
 	a.say("unit      impr installed nothing; check the config first with impr serve --check-config")
 	return 0, nil
+}
+
+// unitExe is the binary a unit runs: --exe, or this impr with symlinks
+// resolved. It must be absolute.
+func unitExe(exe string) (string, error) {
+	if exe == "" {
+		var err error
+		if exe, err = os.Executable(); err != nil {
+			return "", contract.Wrap(contract.Unavailable, err, "find this impr binary")
+		}
+		if r, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = r
+		}
+	}
+	if !filepath.IsAbs(exe) {
+		return "", contract.New(contract.Usage, "--exe must be an absolute path")
+	}
+	return exe, nil
 }
 
 const launchdLabel = "sh.sange.imprimatur.serve"

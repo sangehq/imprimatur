@@ -12,11 +12,13 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/backend"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/rules"
+	"github.com/sangehq/imprimatur/src/internal/winres"
 )
 
 var rulesFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "request": stringFlag, "out-dir": stringFlag,
 	"scope": stringFlag, "product": stringFlag, "file-version": stringFlag, "eku": stringFlag, "base-policy": stringFlag,
-	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag}
+	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag,
+	"include-default-rules": boolFlag}
 
 // rulesFromFiles builds an allow-rules request from signed Windows files, the
 // way the PowerShell toolkit read them: the publisher, leaf and issuing CA
@@ -33,9 +35,6 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 			return rules.Request{}, contract.New(contract.Usage, "--scope publisher allows anything the publisher signs; drop --product, or use --scope product")
 		}
 	case "product", "version":
-		if p.str("product") == "" {
-			return rules.Request{}, contract.New(contract.Usage, "--scope %s needs --product, the ProductName in the files' version information", scope)
-		}
 		if scope == "version" && p.str("file-version") == "" {
 			return rules.Request{}, contract.New(contract.Usage, "--scope version needs --file-version a.b.c.d")
 		}
@@ -47,6 +46,9 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 	var files []rules.File
 	var lines []string
 	var signer *backend.PESigner
+	product := p.str("product")
+	readProduct := product == "" && scope != "publisher"
+	productOf := map[string]string{}
 	for _, f := range p.pos {
 		abs, err := filepath.Abs(f)
 		if err != nil {
@@ -71,6 +73,14 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		if err != nil {
 			return rules.Request{}, err
 		}
+		if readProduct {
+			// The ProductName the file itself carries (impr build embeds it).
+			v, err := winres.ReadVersion(abs)
+			if err != nil {
+				return rules.Request{}, contract.Wrap(contract.Usage, err, "%s: its version information cannot be read", f)
+			}
+			productOf[f] = v["ProductName"]
+		}
 		coll := rules.Exe
 		if ext == ".dll" || ext == ".ocx" {
 			coll = rules.Dll
@@ -78,11 +88,25 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		files = append(files, rules.File{Path: filepath.ToSlash(f), SHA256: sum, Collection: coll, BinaryName: strings.ToUpper(filepath.Base(abs))})
 		lines = append(lines, sum+"  "+filepath.ToSlash(f))
 	}
+	if readProduct {
+		for f, pr := range productOf {
+			switch {
+			case pr == "":
+				return rules.Request{}, contract.New(contract.Usage, "--scope %s needs --product: %s carries no ProductName in its version information", scope, f).
+					WithFix("impr rules ... --product \"Product Name\"", "build it with impr build, which embeds the product name")
+			case product == "":
+				product = pr
+			case pr != product:
+				return rules.Request{}, contract.New(contract.Usage, "the files name different products (%q and %q); make one set of rules per product, or pass --product", product, pr)
+			}
+		}
+		a.say("rules     product %q, read from the files' version information", product)
+	}
 	sort.Strings(lines)
 	d := sha256.Sum256([]byte(strings.Join(lines, "\n") + "\n"))
 	pub := rules.Publisher{Subject: signer.Subject, LeafCN: signer.Leaf.Subject.CommonName, EKU: p.str("eku")}
 	if scope != "publisher" {
-		pub.Product = p.str("product")
+		pub.Product = product
 	}
 	if signer.Issuer != nil {
 		tbs, err := backend.TBSHash(signer.Issuer)
@@ -92,7 +116,7 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		pub.IssuerName, pub.IssuerTBS = signer.Issuer.Subject.CommonName, tbs
 	}
 	opt := rules.Options{Name: p.str("name"), Enforce: p.on("enforce"), BasePolicyID: p.str("base-policy"),
-		UserOrGroupSID: p.str("sid"), AppLocker: p.on("applocker"), WDAC: p.on("wdac")}
+		UserOrGroupSID: p.str("sid"), AppLocker: p.on("applocker"), WDAC: p.on("wdac"), IncludeDefaultRules: p.on("include-default-rules")}
 	if !opt.AppLocker && !opt.WDAC {
 		opt.AppLocker, opt.WDAC = true, p.str("base-policy") != ""
 		if !opt.WDAC {
