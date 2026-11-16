@@ -96,6 +96,12 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, contract.Wrap(contract.Unavailable, err, "the server cannot listen")
 	}
+	if strings.HasPrefix(where, "unix:") {
+		ln = peerListener{Listener: ln, uid: os.Getuid(), refused: func(uid int) {
+			a.say("server    refused a socket connection from uid %d", uid)
+			a.bus().Emit(context.Background(), "server.auth.refused", "server", map[string]any{"reason": "socket peer is another user", "uid": uid})
+		}}
+	}
 	if tlsCfg != nil {
 		ln = tls.NewListener(ln, tlsCfg)
 		where = "https+" + where

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- On Linux, `impr serve` checks each Unix-socket connection's peer uid and
+  closes connections from any other user.
 - Standard Webhooks `v1a` (ed25519), opt-in. `impr webhooks secret --ed25519`
   makes a `whsk_` signing key and its `whpk_` public key. An outbound
   `secretRef` holding a `whsk_` key signs `v1a`. An inbound endpoint takes

@@ -13,6 +13,9 @@ impr serve --listen 127.0.0.1:8743             # or a loopback port
 ```
 
 - **Socket.** The socket is 0600, in a 0700 directory, so only your user can connect.
+  On Linux impr also reads each connection's peer uid (`SO_PEERCRED`) and closes any from another
+  user, root included, recording `server.auth.refused`. On macOS the file modes are the whole check,
+  because Go's standard library has no peer-credential call there.
 - **Addresses.** A loopback port is the other everyday choice. An address other machines can reach is
   allowed only with `server.allowRemote` and `server.tls` set (see below).
 - **Stopping.** Ctrl-C or SIGTERM stops it gracefully.
