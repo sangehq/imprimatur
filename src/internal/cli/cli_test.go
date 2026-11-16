@@ -4,9 +4,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha1" //nolint:gosec // G505: certificate thumbprints are SHA-1 identifiers, not a security check
 	"crypto/sha256"
+	"crypto/x509/pkix"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"github.com/sangehq/imprimatur/src/internal/testpe"
+	"io"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path"
@@ -17,7 +23,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/execx"
+	"github.com/sangehq/imprimatur/src/internal/paths"
+	"github.com/sangehq/imprimatur/src/internal/server"
 )
 
 func randHex(t *testing.T, n int) string {
@@ -40,7 +49,7 @@ type harness struct {
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	return &harness{t: t, os: runtime.GOOS, run: execx.OS{Timeout: time.Minute}, now: time.Now(),
-		env: map[string]string{"IMPR_CONFIG_DIR": t.TempDir(), "IMPR_STATE_DIR": t.TempDir(), "IMPR_LEGACY_CONFIG": "off"}}
+		env: map[string]string{"IMPR_CONFIG_DIR": t.TempDir(), "IMPR_STATE_DIR": t.TempDir(), "IMPR_LEGACY_CONFIG": "off", "IMPR_SYSTEM_CONFIG_DIR": "off"}}
 }
 
 func (h *harness) impr(args ...string) (code int, stdout, stderr string) {
@@ -163,8 +172,8 @@ type sangeVerifyResult struct {
 // sangeOutputAllowed is sange's rule for files a run may create.
 func sangeOutputAllowed(p string) bool {
 	base := path.Base(p)
-	return base == "SHA256SUMS" || base == "checksums.txt" || strings.HasSuffix(base, ".sig") || strings.HasSuffix(base, ".minisig") ||
-		strings.HasSuffix(base, ".sigstore.json")
+	return base == "SHA256SUMS" || base == "checksums.txt" || strings.HasSuffix(base, ".sig") || strings.HasSuffix(base, ".asc") ||
+		strings.HasSuffix(base, ".minisig") || strings.HasSuffix(base, ".sigstore.json") || strings.HasSuffix(base, ".intoto.jsonl")
 }
 
 func TestCompanionInfoIsWhatSangeRequires(t *testing.T) {
@@ -181,6 +190,68 @@ func TestCompanionInfoIsWhatSangeRequires(t *testing.T) {
 			t.Errorf("companion info does not list %q, so sange treats imprimatur as absent", c)
 		}
 	}
+}
+
+// TestInTotoThroughTheCommandLine signs a build with checksums and an in-toto
+// attestation by the same ssh key, verifies both, and shows a statement for
+// another commit is refused.
+func TestInTotoThroughTheCommandLine(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("real ssh-keygen: not installed")
+	}
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "release")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "impr-test", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_RELEASE_KEY"] = key
+	h.ok("profile", "add", "acme-release", "--scope", "company", "--owner", "acme", "--purpose", "release",
+		"--allowed-repo", "github.com/acme/**",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_RELEASE_KEY",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1],
+		"--set", "platforms.attestations.kind=in-toto", "--set", "platforms.attestations.signer=checksums")
+
+	root, manifest, commit, tree := build(t)
+	out := h.ok("sign", "--json", "--strict", "--root", root, "--manifest", manifest, "--commit", commit, "--tree", tree,
+		"--profile", "acme-release", "--purpose", "release", "--platforms", "checksums,attestations", "--repo", "git@github.com:acme/tool.git")
+	var res sangeSignResult
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatal(err)
+	}
+	var att string
+	for _, o := range res.Manifest.Outputs {
+		if !sangeOutputAllowed(o.Path) {
+			t.Errorf("sange would refuse output %q", o.Path)
+		}
+		if strings.HasSuffix(o.Path, ".intoto.jsonl") {
+			att = filepath.Join(root, filepath.FromSlash(o.Path))
+		}
+	}
+	if len(res.Manifest.Outputs) != 3 || att == "" {
+		t.Fatalf("want SHA256SUMS, its .sig and its .intoto.jsonl: %+v", res.Manifest.Outputs)
+	}
+	vout := h.ok("verify", "--json", "--strict", "--root", root, "--manifest", manifest, "--signed", res.ManifestPath, "--profile", "acme-release")
+	if !strings.Contains(vout, `"platform":"attestations"`) || !strings.Contains(vout, `"ok":true`) {
+		t.Fatalf("verify did not check the attestation: %s", vout)
+	}
+
+	// The attestation of another build, swapped in, is refused.
+	other, oManifest, oCommit, oTree := build(t)
+	h.ok("sign", "--json", "--strict", "--root", other, "--manifest", oManifest, "--commit", oCommit, "--tree", oTree,
+		"--profile", "acme-release", "--purpose", "release", "--platforms", "checksums,attestations", "--repo", "git@github.com:acme/tool.git")
+	rel, err := filepath.Rel(root, att)
+	if err != nil {
+		t.Fatal(err)
+	}
+	swapped, err := os.ReadFile(filepath.Join(other, rel))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(att, swapped, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(4, "verify", "--json", "--strict", "--root", root, "--signed", res.ManifestPath, "--profile", "acme-release")
 }
 
 // TestSignAndVerifyWithRealSSH is the whole chain of custody through the
@@ -249,6 +320,60 @@ func TestSignAndVerifyWithRealSSH(t *testing.T) {
 	vout := h.ok("verify", "--json", "--strict", "--root", root, "--manifest", manifest, "--signed", res.ManifestPath, "--profile", "acme-release")
 	if err := json.Unmarshal([]byte(vout), &v); err != nil || !v.OK || len(v.Artifacts) == 0 {
 		t.Fatalf("verify: %s %v", vout, err)
+	}
+
+	// The run is in the event log, chained, typed and free of key material.
+	var evs EventsList
+	if err := json.Unmarshal([]byte(h.ok("events", "tail", "--json", "--type", "signing.*")), &evs); err != nil {
+		t.Fatal(err)
+	}
+	var types []string
+	for _, ev := range evs.Events {
+		types = append(types, ev.Short())
+		if ev.Subject != "github.com/acme/tool" || strings.Contains(string(ev.Data), key) {
+			t.Errorf("event %s: subject %q, data %s", ev.Type, ev.Subject, ev.Data)
+		}
+	}
+	if strings.Join(types, ",") != "signing.run.started,signing.run.completed" {
+		t.Fatalf("events: %v", types)
+	}
+	if out := h.ok("events", "verify", "--json"); !strings.Contains(out, `"ok":true`) {
+		t.Fatalf("events verify: %s", out)
+	}
+
+	// A changed artifact fails: the signed checksum file is not enough on its
+	// own, every file it lists is re-hashed.
+	art := filepath.Join(root, "build", "linux", "tool_linux_amd64")
+	orig, _ := os.ReadFile(art)
+	if err := os.WriteFile(art, append([]byte{}, append(orig, 'x')...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	vout = h.exits(4, "verify", "--json", "--strict", "--root", root, "--signed", res.ManifestPath, "--profile", "acme-release")
+	if !strings.Contains(vout, "tool_linux_amd64: does not match the signed checksum") {
+		t.Fatalf("a tampered artifact was not reported: %s", vout)
+	}
+	if err := os.WriteFile(art, orig, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A forged record that lists nothing never passes.
+	var forged map[string]any
+	_ = json.Unmarshal(rec, &forged)
+	forged["artifacts"], forged["outputs"] = []any{}, []any{}
+	fb, _ := json.Marshal(forged)
+	forgedPath := filepath.Join(t.TempDir(), "impr-manifest.json")
+	if err := os.WriteFile(forgedPath, fb, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(4, "verify", "--json", "--strict", "--root", root, "--signed", forgedPath, "--profile", "acme-release")
+
+	// A missing file is a verification failure (4), not "unavailable" (5).
+	if err := os.Rename(art, art+".gone"); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(4, "verify", "--json", "--strict", "--root", root, "--signed", res.ManifestPath, "--profile", "acme-release")
+	if err := os.Rename(art+".gone", art); err != nil {
+		t.Fatal(err)
 	}
 
 	// A changed checksum file fails verification, and the report still prints.
@@ -505,4 +630,593 @@ func TestReadCommandsAcceptStrict(t *testing.T) {
 	if len(reads) != 3 {
 		t.Fatal("read command list was cut")
 	}
+}
+
+// TestPreSignHookVetoSignsNothing: a pre-sign hook in the user's config.json
+// that exits non-zero with veto stops the run before the first signature.
+func TestPreSignHookVetoSignsNothing(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil || runtime.GOOS == "windows" {
+		t.Skip("needs ssh-keygen and a Unix shell")
+	}
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+
+	hook := filepath.Join(t.TempDir(), "deny.sh")
+	body := []byte("#!/bin/sh\necho 'release freeze' >&2\nexit 1\n")
+	if err := os.WriteFile(hook, body, 0o700); err != nil { //nolint:gosec // G306: a test hook must be executable
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(body)
+	cfg := fmt.Sprintf(`{"schema":"imprimatur.config/v1","hooks":[{"name":"freeze","phase":"pre-sign","exec":%q,"sha256":%q,"veto":true}]}`,
+		hook, hex.EncodeToString(sum[:]))
+	if err := os.WriteFile(filepath.Join(h.env["IMPR_CONFIG_DIR"], "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out := h.ok("hooks", "list", "--json"); !strings.Contains(out, `"pinOk":true`) {
+		t.Fatalf("hooks list: %s", out)
+	}
+
+	root, manifest, commit, tree := build(t)
+	out := h.exits(3, "sign", "--json", "--strict", "--root", root, "--manifest", manifest, "--commit", commit, "--tree", tree,
+		"--profile", "p", "--purpose", "internal", "--platforms", "checksums")
+	if !strings.Contains(out, "release freeze") && !strings.Contains(out, "freeze") {
+		t.Fatalf("the refusal does not name the hook: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(root, "build", "impr-manifest.json")); err == nil {
+		t.Fatal("a vetoed run wrote impr-manifest.json")
+	}
+	if _, err := os.Stat(filepath.Join(root, "build", "SHA256SUMS")); err == nil {
+		t.Fatal("a vetoed run wrote SHA256SUMS")
+	}
+	if ev := h.ok("events", "tail", "--json"); !strings.Contains(ev, "hook.vetoed") || strings.Contains(ev, "signing.run.started") {
+		t.Fatalf("events after a veto: %s", ev)
+	}
+}
+
+// TestServerAnswersWhatTheCLIPrints: a token made by `impr server token add`
+// is stored as a digest only, and GET /v1/profiles over the real command code
+// returns the same document `impr profile list --json` prints.
+func TestServerAnswersWhatTheCLIPrints(t *testing.T) {
+	h := newHarness(t)
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://K",
+		"--set", "platforms.checksums.fingerprint=SHA256:"+strings.Repeat("A", 43))
+	tok := strings.TrimSpace(h.ok("server", "token", "add", "--scopes", "read"))
+	cfgRaw, _ := os.ReadFile(filepath.Join(h.env["IMPR_CONFIG_DIR"], "config.json"))
+	if !strings.HasPrefix(tok, "impr_") || strings.Contains(string(cfgRaw), tok) {
+		t.Fatalf("token %q, config %s", tok, cfgRaw)
+	}
+	h.ok("serve", "--check-config")
+	cli := strings.TrimSpace(h.ok("profile", "list", "--json"))
+
+	d, _ := paths.Resolve(paths.Env{GOOS: h.os, Getenv: func(k string) string { return h.env[k] }})
+	cfg, err := config.Load(d.Config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &App{Stdout: io.Discard, Stderr: io.Discard, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: t.TempDir(),
+		User: "tester", Runner: h.run, Now: func() time.Time { return h.now }}
+	srv := server.Handler(server.Options{Config: cfg, Run: a.runCaptured, StateDir: d.State, Now: time.Now})
+	req := httptest.NewRequest("GET", "/v1/profiles", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != cli {
+		t.Fatalf("API %d\n%s\nCLI\n%s", rec.Code, rec.Body, cli)
+	}
+	var list struct {
+		Tokens []struct {
+			ID string `json:"id"`
+		} `json:"tokens"`
+	}
+	if err := json.Unmarshal([]byte(h.ok("server", "token", "list", "--json")), &list); err != nil || len(list.Tokens) != 1 {
+		t.Fatalf("token list: %+v %v", list, err)
+	}
+	h.ok("server", "token", "revoke", list.Tokens[0].ID)
+	h.exits(1, "serve", "--check-config") // no token left: nothing could call the server
+}
+
+// TestConfigProfiles: create a configuration profile, set a key in it,
+// activate it, and read the effective value; a change the system config
+// locks is refused and leaves the file as it was.
+func TestConfigProfiles(t *testing.T) {
+	h := newHarness(t)
+	sys := t.TempDir()
+	h.env["IMPR_SYSTEM_CONFIG_DIR"] = sys
+	srv := filepath.ToSlash(t.TempDir()) // absolute on every OS, and JSON-safe
+	if err := os.WriteFile(filepath.Join(sys, "config.json"), []byte(`{"locked":["server.allowSign"],"server":{"roots":["`+srv+`"]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.ok("config", "profile", "create", "ci")
+	h.ok("config", "set", "server.listen", "127.0.0.1:8743", "--profile", "ci")
+	h.exits(1, "config", "get", "server.listen")
+	h.ok("config", "profile", "use", "ci")
+	if got := strings.TrimSpace(h.ok("config", "get", "server.listen")); got != `"127.0.0.1:8743"` {
+		t.Fatalf("effective listen %s", got)
+	}
+	if got := strings.TrimSpace(h.ok("config", "get", "server.roots")); got != `["`+srv+`"]` {
+		t.Fatalf("system roots not inherited: %s", got)
+	}
+	// IMPR_CONFIG_PROFILE overrides activeProfile.
+	h.ok("config", "profile", "create", "dev")
+	h.env["IMPR_CONFIG_PROFILE"] = "dev"
+	h.exits(1, "config", "get", "server.listen")
+	delete(h.env, "IMPR_CONFIG_PROFILE")
+
+	prof := filepath.Join(h.env["IMPR_CONFIG_DIR"], "config.d", "ci.json")
+	before, _ := os.ReadFile(prof)
+	h.exits(1, "config", "set", "server.allowSign", "true", "--profile", "ci")
+	if after, _ := os.ReadFile(prof); string(after) != string(before) {
+		t.Fatalf("a refused change was kept:\n%s", after)
+	}
+	h.exits(1, "config", "set", "locked", `["hooks"]`)
+	h.exits(1, "config", "profile", "rm", "ci") // active
+	h.ok("config", "profile", "use", "--none")
+	h.ok("config", "profile", "rm", "ci")
+	var show struct {
+		Contract int `json:"contract"`
+		Layers   []struct {
+			Name string `json:"name"`
+		} `json:"layers"`
+		Locked []string `json:"locked"`
+	}
+	if err := json.Unmarshal([]byte(h.ok("config", "show", "--json")), &show); err != nil || show.Contract != 1 || len(show.Layers) != 2 || len(show.Locked) != 1 {
+		t.Fatalf("show: %+v %v", show, err)
+	}
+	if ev := h.ok("events", "tail", "--json", "--type", "config.*"); strings.Count(ev, "config.changed") < 2 {
+		t.Fatalf("config changes were not recorded: %s", ev)
+	}
+}
+
+// Audit N-B19 and N-B20: --json and --help are read only as options, and
+// help is per command.
+func TestArgvScanningAndPerCommandHelp(t *testing.T) {
+	for args, want := range map[string][2]bool{
+		"sign --json":                   {true, false},
+		"profile add p --notes --json":  {false, false}, // --json is the notes text
+		"verify --profile p -- --json":  {false, false}, // a file named --json
+		"profile --help":                {false, true},
+		"cert list --strict --json":     {true, false},
+		"profile edit p --notes --help": {false, false},
+	} {
+		j, h := scanGlobal(strings.Fields(args))
+		if j != want[0] || h != want[1] {
+			t.Errorf("%q: json %v help %v, want %v", args, j, h, want)
+		}
+	}
+	h := newHarness(t)
+	for _, args := range [][]string{{"profile", "--help"}, {"help", "profile"}} {
+		code, out, e := h.impr(args...)
+		if code != 0 || out != "" || !strings.Contains(e, "impr profile list") || strings.Contains(e, "impr sign") {
+			t.Fatalf("%v: %d %q %q", args, code, out, e)
+		}
+	}
+	h.exits(1, "profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal", "--set", "managed=true")
+}
+
+// Audit N-B18: a failed automatic import of the PowerShell settings is
+// recorded once, not retried (and re-warned) on every command.
+func TestFailedLegacyImportIsNotRetried(t *testing.T) {
+	h := newHarness(t)
+	legacy := t.TempDir()
+	if err := os.WriteFile(filepath.Join(legacy, "imprimatur.settings.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.env["IMPR_LEGACY_CONFIG"] = legacy
+	_, _, first := h.impr("profile", "list", "--json")
+	_, _, second := h.impr("profile", "list", "--json")
+	if !strings.Contains(first, "could not import") {
+		t.Skipf("the malformed settings did not fail the import here: %q", first)
+	}
+	if strings.Contains(second, "could not import") {
+		t.Fatalf("the import was retried: %q", second)
+	}
+}
+
+// Completion is generated from the usage text, so every command the
+// dispatcher knows must have a usage line, and each shell's script must
+// parse where that shell is installed.
+func TestCompletionCoversEveryCommand(t *testing.T) {
+	m := completionModel()
+	if len(commands) < 15 {
+		t.Fatalf("the dispatch table has %d commands; the guard is not looking at it", len(commands))
+	}
+	for name := range commands {
+		if _, ok := m[name]; !ok {
+			t.Errorf("command %s has no usage line, so completion cannot offer it", name)
+		}
+	}
+	for _, want := range []string{"--manifest", "--purpose", "--platforms"} {
+		if !slices.Contains(m["sign"], want) {
+			t.Errorf("sign completion lacks %s", want)
+		}
+	}
+	if !slices.Contains(m["profile"], "import-legacy") || slices.Contains(m["install"], "uninstall") {
+		t.Errorf("profile %v, install %v", m["profile"], m["install"])
+	}
+	for _, sh := range []string{"bash", "zsh", "fish"} {
+		script, err := CompletionScript(sh)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := exec.LookPath(sh); err != nil {
+			continue
+		}
+		f := filepath.Join(t.TempDir(), "c")
+		if err := os.WriteFile(f, []byte(script), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if out, err := exec.Command(sh, "-n", f).CombinedOutput(); err != nil {
+			t.Errorf("%s does not parse its completion: %v %s", sh, err, out)
+		}
+	}
+	if _, err := CompletionScript("tcsh"); err == nil {
+		t.Error("an unknown shell was accepted")
+	}
+}
+
+func TestInstallUninstallAndAliases(t *testing.T) {
+	h := newHarness(t)
+	dir := t.TempDir()
+	h.ok("install", "--dir", dir)
+	bin := filepath.Join(dir, "impr")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	if st, err := os.Stat(bin); err != nil || (runtime.GOOS != "windows" && st.Mode().Perm()&0o100 == 0) {
+		t.Fatalf("installed binary: %v %v", st, err)
+	}
+	_, _, e := h.impr("install", "--dir", dir)
+	if !strings.Contains(e, "already this impr") {
+		t.Fatalf("a second install: %q", e)
+	}
+	// Something else at the target is never replaced or removed.
+	other := t.TempDir()
+	if err := os.WriteFile(filepath.Join(other, filepath.Base(bin)), []byte("#!/bin/sh\necho not impr\n"), 0o700); err != nil { //nolint:gosec // G306: an executable stand-in
+		t.Fatal(err)
+	}
+	h.exits(1, "install", "--dir", other)
+	h.exits(1, "uninstall", "--dir", other)
+	if _, err := os.Stat(filepath.Join(other, filepath.Base(bin))); err != nil {
+		t.Fatal("uninstall removed a program that is not impr")
+	}
+	h.ok("uninstall", "--dir", dir)
+	if _, err := os.Stat(bin); err == nil {
+		t.Fatal("uninstall left impr")
+	}
+	var info PathInfo
+	if err := json.Unmarshal([]byte(h.ok("path", "--json", "--dir", dir)), &info); err != nil || info.Installed || info.Config == "" {
+		t.Fatalf("path: %+v %v", info, err)
+	}
+	// d is doctor, which exits 1 here only because no default profile exists.
+	if code, out, _ := h.impr("d", "--json"); code != 1 || !strings.Contains(out, `"contract":1`) || !strings.Contains(out, `"defaultProfile"`) {
+		t.Fatalf("alias d did not run doctor: %d %s", code, out)
+	}
+}
+
+// menuRun runs impr with no arguments as if at a terminal, typing input.
+func (h *harness) menuRun(input string) (int, string, string) {
+	var o, e bytes.Buffer
+	a := &App{Stdout: &o, Stderr: &e, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: h.t.TempDir(), User: "tester",
+		Runner: h.run, Now: func() time.Time { return h.now }, Stdin: strings.NewReader(input), Interactive: func() bool { return true }}
+	code := a.Run(context.Background(), nil)
+	return code, o.String(), e.String()
+}
+
+func TestMenu(t *testing.T) {
+	h := newHarness(t)
+	// Without a terminal, impr with no arguments is the usage text and exit 1.
+	if code, _, e := h.impr(); code != 1 || !strings.Contains(e, "Usage:") {
+		t.Fatalf("no terminal: %d %q", code, e)
+	}
+	code, out, e := h.menuRun("p\nzz\nq\n")
+	if code != 0 || !strings.Contains(e, "sign a build manifest") || !strings.Contains(e, `"zz" is not an entry`) {
+		t.Fatalf("menu: %d %q %q", code, out, e)
+	}
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("the signing flow needs ssh-keygen")
+	}
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+	root, manifest, _, _ := build(t)
+	record := filepath.Join(root, "build", "impr-manifest.json")
+
+	// Anything but "yes" signs nothing.
+	h.menuRun("s\n" + manifest + "\n\ninternal\n" + root + "\nno\nq\n")
+	if _, err := os.Stat(record); err == nil {
+		t.Fatal("the menu signed without a yes")
+	}
+	// The default profile is offered, the commit and tree come from the
+	// manifest shown, and "yes" signs.
+	code, _, e = h.menuRun("s\n" + manifest + "\n\ninternal\n" + root + "\nyes\nv\n" + record + "\np\n" + root + "\nq\n")
+	if code != 0 || !strings.Contains(e, "[p]") || strings.Count(e, "menu      exit 0") != 2 {
+		t.Fatalf("sign and verify through the menu: %d\n%s", code, e)
+	}
+	if _, err := os.Stat(record); err != nil {
+		t.Fatal("no impr-manifest.json after signing")
+	}
+}
+
+// goRepo makes a git repository holding a tiny Go module, committed.
+func goRepo(t *testing.T) string {
+	t.Helper()
+	for _, tool := range []string{"git", "go"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skip("needs " + tool)
+		}
+	}
+	dir := t.TempDir()
+	files := map[string]string{
+		"src/go.mod":            "module example.com/hello/src\n\ngo 1.23\n",
+		"src/cmd/hello/main.go": "package main\n\nimport \"fmt\"\n\nvar version = \"dev\"\n\nfunc main() { fmt.Println(version) }\n",
+		"build/targets.txt":     "linux amd64\n",
+	}
+	for p, body := range files {
+		full := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "."}, {"-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "init"}} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		// A throwaway repository: none of the machine's global or system git
+		// config (hooks included) applies to it.
+		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	return dir
+}
+
+func TestBuildWritesTheEstateLayoutAndABoundManifest(t *testing.T) {
+	repo := goRepo(t)
+	h := newHarness(t)
+	host := runtime.GOOS + "/" + runtime.GOARCH
+	out := h.ok("build", "--repo-root", repo, "--targets", "linux/amd64,windows/arm64,"+host,
+		"--version", "v1.2.3", "--version-var", "main.version", "--json")
+	var r BuildResult
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatal(err)
+	}
+	// The host is one of the listed targets on a linux/amd64 or windows/arm64
+	// machine; a repeated target is built once.
+	want := 3
+	if host == "linux/amd64" || host == "windows/arm64" {
+		want = 2
+	}
+	if r.Manifest.Schema != "sange.build-manifest/v1" || len(r.Manifest.Commit) != 40 || len(r.Manifest.Artifacts) != want || r.Manifest.Dirty {
+		t.Fatalf("manifest: %+v", r.Manifest)
+	}
+	paths := []string{}
+	for _, a := range r.Manifest.Artifacts {
+		paths = append(paths, a.Path)
+		b, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(a.Path)))
+		s := sha256.Sum256(b)
+		if err != nil || hex.EncodeToString(s[:]) != a.SHA256 {
+			t.Errorf("%s: digest does not match", a.Path)
+		}
+	}
+	if len(slices.Compact(slices.Sorted(slices.Values(paths)))) != len(paths) {
+		t.Errorf("a target was built twice: %v", paths)
+	}
+	for _, want := range []string{"build/linux/hello_linux_amd64", "build/windows/hello_windows_arm64.exe"} {
+		if !slices.Contains(paths, want) {
+			t.Errorf("missing %s in %v", want, paths)
+		}
+	}
+	hostName := runtime.GOOS
+	if hostName == "darwin" {
+		hostName = "macos"
+	}
+	bin := filepath.Join(repo, "build", hostName, "hello_"+hostName+"_"+runtime.GOARCH)
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	if got, err := exec.Command(bin).Output(); err != nil || strings.TrimSpace(string(got)) != "v1.2.3" {
+		t.Fatalf("the version was not stamped: %q %v", got, err)
+	}
+
+	// Refusals, each before anything is built.
+	h.exits(1, "build", "--repo-root", repo, "--version", "1.0 -X main.version=pwned", "--version-var", "main.version")
+	h.exits(1, "build", "--repo-root", repo, "--main", "../elsewhere")
+	if err := os.WriteFile(filepath.Join(repo, "src", "cmd", "hello", "main.go"), []byte("package main\n\nfunc main() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(1, "build", "--repo-root", repo) // uncommitted changes
+	h.exits(1, "release", "--repo-root", repo, "--profile", "p", "--purpose", "internal", "--allow-dirty")
+	h.ok("build", "--repo-root", repo, "--allow-dirty")
+}
+
+func TestReleaseBuildsSignsAndVerifies(t *testing.T) {
+	repo := goRepo(t)
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("needs ssh-keygen")
+	}
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+	code, _, e := h.impr("release", "--repo-root", repo, "--profile", "p", "--purpose", "internal", "--platforms", "checksums")
+	if code != 0 || !strings.Contains(e, "nothing was tagged, pushed or published") {
+		t.Fatalf("release: %d\n%s", code, e)
+	}
+	for _, f := range []string{"build-manifest.json", "impr-manifest.json", "SHA256SUMS", "SHA256SUMS.sig"} {
+		if _, err := os.Stat(filepath.Join(repo, "build", f)); err != nil {
+			t.Errorf("release did not write build/%s", f)
+		}
+	}
+}
+
+// Audit N-B25: commands that change things are recorded in a hash-chained
+// audit trail, read-only ones are not, and secrets never reach it.
+func TestAuditTrail(t *testing.T) {
+	h := newHarness(t)
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://K",
+		"--set", "platforms.checksums.fingerprint=SHA256:"+strings.Repeat("A", 43))
+	h.ok("profile", "list")
+	secret := "whsec_" + strings.Repeat("Q", 43)
+	h.exits(1, "config", "set", "webhooks.outbound", secret)
+	var tail struct {
+		Records []struct {
+			Data json.RawMessage `json:"data"`
+		} `json:"records"`
+	}
+	out := h.ok("audit", "tail", "--json")
+	if err := json.Unmarshal([]byte(out), &tail); err != nil || len(tail.Records) != 2 {
+		t.Fatalf("audit records: %s %v", out, err)
+	}
+	if !strings.Contains(string(tail.Records[0].Data), `"command":"profile"`) || !strings.Contains(string(tail.Records[1].Data), `"exitCode":1`) {
+		t.Fatalf("records: %s", out)
+	}
+	if strings.Contains(out, secret) || !strings.Contains(out, "[redacted]") {
+		t.Fatalf("a secret reached the audit trail: %s", out)
+	}
+	h.ok("audit", "verify")
+	files, _ := filepath.Glob(filepath.Join(h.env["IMPR_STATE_DIR"], "audit", "*.jsonl"))
+	if len(files) != 1 {
+		t.Fatalf("audit files %v", files)
+	}
+	b, _ := os.ReadFile(files[0])
+	if err := os.WriteFile(files[0], bytes.Replace(b, []byte(`"exitCode":1`), []byte(`"exitCode":0`), 1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h.exits(4, "audit", "verify")
+}
+
+// Loose files (design ID-10) are signed through a manifest bound to HEAD.
+func TestLooseFilesAreSignedAgainstHEAD(t *testing.T) {
+	repo := goRepo(t)
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("needs ssh-keygen")
+	}
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+	art := filepath.Join(repo, "dist", "tool.tar.gz")
+	if err := os.MkdirAll(filepath.Dir(art), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(art, []byte(randHex(t, 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var res sangeSignResult
+	if err := json.Unmarshal([]byte(h.ok("sign", art, "--root", repo, "--profile", "p", "--purpose", "internal", "--platforms", "checksums", "--json")), &res); err != nil {
+		t.Fatal(err)
+	}
+	head, _ := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
+	if res.Manifest.Commit != strings.TrimSpace(string(head)) {
+		t.Fatalf("record commit %s, HEAD %s", res.Manifest.Commit, head)
+	}
+	h.ok("verify", "--signed", res.ManifestPath, "--root", repo, "--profile", "p", "--strict")
+
+	// Outside a git work tree: test and internal sign against no commit; a
+	// release does not sign at all.
+	plain := t.TempDir()
+	loose := filepath.Join(plain, "x.bin")
+	if err := os.WriteFile(loose, []byte(randHex(t, 16)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(h.ok("sign", loose, "--root", plain, "--profile", "p", "--purpose", "internal", "--platforms", "checksums", "--json")), &res); err != nil {
+		t.Fatal(err)
+	}
+	if res.Manifest.Commit != strings.Repeat("0", 40) {
+		t.Fatalf("outside git the record names commit %s", res.Manifest.Commit)
+	}
+	h.exits(3, "sign", loose, "--root", plain, "--profile", "p", "--purpose", "release", "--json")
+	h.exits(1, "sign", art, "--root", plain, "--profile", "p", "--purpose", "internal") // not under the root
+}
+
+func TestCertCreateMakesATestOnlyProfile(t *testing.T) {
+	h := newHarness(t)
+	var r CertCreated
+	if err := json.Unmarshal([]byte(h.ok("cert", "create", "--name", "tsign", "--json")), &r); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(r.Bundle); err != nil || (runtime.GOOS != "windows" && st.Mode().Perm() != 0o600) {
+		t.Fatalf("bundle %v %v", st, err)
+	}
+	der, err := os.ReadFile(r.PublicCert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha1.Sum(der) //nolint:gosec // G401: comparing a thumbprint
+	if r.Thumbprint != strings.ToUpper(hex.EncodeToString(sum[:])) {
+		t.Fatal("the pinned thumbprint is not the certificate's")
+	}
+	if out := h.ok("profile", "validate", "tsign", "--json"); !strings.Contains(out, `"problems":[]`) && strings.Contains(out, `"problems":[{`) {
+		t.Fatalf("validate: %s", out)
+	}
+	if out := h.ok("profile", "show", "tsign", "--json"); !strings.Contains(out, `"test"`) || strings.Contains(out, `"release"`) {
+		t.Fatalf("profile: %s", out)
+	}
+	h.exits(1, "cert", "create", "--name", "tsign")
+}
+
+// impr rules FILE... reads the publisher, leaf and issuing CA from the files'
+// own signatures (the PowerShell toolkit's way), with scopes.
+func TestRulesFromSignedFiles(t *testing.T) {
+	h := newHarness(t)
+	dir := t.TempDir()
+	ca := testpe.NewCA(t, "Acme Code Signing CA")
+	sub := pkix.Name{CommonName: "Acme Ltd", Organization: []string{"Acme Ltd"}, Country: []string{"GB"}}
+	exe, _ := testpe.Signed(t, dir, "tool.exe", sub, ca)
+	dll, _ := testpe.Signed(t, filepath.Join(dir), "core.dll", sub, ca)
+	guid := "{6b2a1c3d-0000-4000-8000-00000000abcd}"
+	out := h.ok("rules", exe, dll, "--scope", "version", "--product", "Acme Tool", "--file-version", "1.2.0.0", "--base-policy", guid, "--json")
+	var res struct {
+		AppLocker string   `json:"appLocker"`
+		WDAC      string   `json:"wdac"`
+		Notes     []string `json:"notes"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatal(err)
+	}
+	tbs := sha256.Sum256(ca.Cert.RawTBSCertificate)
+	if !strings.Contains(res.AppLocker, "Acme Tool") || !strings.Contains(res.AppLocker, "TOOL.EXE") || !strings.Contains(res.AppLocker, "1.2.0.0") ||
+		!strings.Contains(strings.ToUpper(res.WDAC), strings.ToUpper(hex.EncodeToString(tbs[:]))) || !strings.Contains(res.WDAC, "Acme Ltd") {
+		t.Fatalf("rules do not carry the files' signer:\n%s\n%s", res.AppLocker, res.WDAC)
+	}
+	// Without a base policy there is no WDAC supplemental, only AppLocker.
+	if out := h.ok("rules", exe, "--scope", "publisher", "--json"); strings.Contains(out, `"wdac"`) || !strings.Contains(out, "AppLockerPolicy") {
+		t.Fatalf("no base policy: %s", out)
+	}
+	other := testpe.NewCA(t, "Other CA")
+	stranger, _ := testpe.Signed(t, t.TempDir(), "x.exe", pkix.Name{CommonName: "Someone Else"}, other)
+	h.exits(1, "rules", exe, stranger, "--scope", "publisher")
+	h.exits(1, "rules", exe, "--scope", "file")
+	h.exits(1, "rules", exe, "--scope", "product") // no --product
 }

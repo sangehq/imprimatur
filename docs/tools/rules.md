@@ -22,6 +22,29 @@ does not know are ignored, since shapes only gain fields:
 }
 ```
 
+## From signed files
+
+```bash
+impr rules build/windows/tool.exe build/windows/core.dll --scope version --product "Acme Tool" \
+  --file-version 1.2.0.0 --base-policy {6b2a1c3d-0000-4000-8000-00000000abcd} --out-dir policies
+```
+
+- **What it reads.** Instead of a `--request`, impr reads each named `.exe` or `.dll`'s Authenticode
+  signature. It takes the publisher's subject and the leaf's common name. It also takes the issuing CA,
+  pinned by its TBS hash, computed with the same hash as the CA certificate's own signature.
+- **One publisher.** Every file must share one publisher and issuing CA, which is one set of rules.
+- **Scopes.**
+  - `publisher` allows anything that publisher signs.
+  - `product` (the default) allows the named product's binaries.
+  - `version` allows the named product at `--file-version` or newer.
+  - `file` (hash rules) is refused: a hash rule breaks with every build.
+- **WDAC needs a base policy.** A WDAC supplemental policy is rendered only with `--base-policy`, the base
+  policy's `{GUID}`. Without one, the output is AppLocker only, and impr says so.
+- **Product name.** `--product` is the ProductName in the files' version information. impr does not read
+  version resources, so name it.
+- **Same output as a request.** Everything else (AuditOnly unless `--enforce`, Everyone unless `--sid`) is
+  exactly what a request produces.
+
 ## The answer
 
 ```json

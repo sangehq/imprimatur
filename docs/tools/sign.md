@@ -36,8 +36,26 @@ only, so it is never a signing oracle.
 3. With `checksums`, `containers` or `attestations` requested, writes
    `SHA256SUMS` beside the build manifest, over the post-sign digests, and
    signs it: `SHA256SUMS.sig` (gpg, ssh), `SHA256SUMS.minisig` (minisign),
-   `SHA256SUMS.sigstore.json` (cosign).
+   `SHA256SUMS.sigstore.json` (cosign), and `SHA256SUMS.intoto.jsonl` (an in-toto attestation, see
+   [backends](backends.md#in-toto-attestations)).
 4. Writes `impr-manifest.json` beside the build manifest.
+
+## Loose files
+
+```bash
+impr sign dist/tool.tar.gz dist/tool.exe --profile dev --purpose internal --root .
+```
+
+- **What impr writes.** For files named on the command line, impr writes `impr-loose-manifest.json` at
+  the signing root, listing each file's sha256 and bound to `git rev-parse HEAD` and its tree. It then
+  signs that manifest exactly as it signs a build stage's, with every check.
+- **Where the files may be.** Every file must be under `--root`.
+- **Releases.** A `release` signature needs a git work tree with no uncommitted changes to tracked files,
+  so the record names the commit the files came from.
+- **Outside git.** Only `test` and `internal` sign, and their record names commit `000…0`, never one that
+  does not exist.
+- **Not with `--manifest`.** Naming files together with `--manifest`, `--commit` or `--tree` is a usage
+  error.
 
 ## Output
 

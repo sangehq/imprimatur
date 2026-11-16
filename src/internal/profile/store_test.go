@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -38,7 +39,7 @@ func TestStoreSaveAndResolve(t *testing.T) {
 		t.Fatalf("an invalid profile was saved: %v", err)
 	}
 	st, err := os.Stat(filepath.Join(s.Dir, "profiles", "me-test.json"))
-	if err != nil || st.Mode().Perm() != 0o600 {
+	if err != nil || (runtime.GOOS != "windows" && st.Mode().Perm() != 0o600) {
 		t.Fatalf("profile file mode: %v %v", st, err)
 	}
 	if _, err := s.Resolve(""); err == nil {

@@ -7,6 +7,7 @@
 //	developer-id  codesign, notarytool, stapler (macOS)
 //	gpg, minisign, ssh   the checksum file's detached signature
 //	cosign        a Sigstore bundle over the checksum file, key or keyless
+//	in-toto       a DSSE-signed in-toto statement over the checksum file's entries
 package backend
 
 import (
@@ -49,6 +50,17 @@ type Artifact struct {
 	Path      string // absolute
 	Rel       string // as recorded
 	Notarized bool   // verify: the run recorded a notarisation ticket
+	// Build is the build the checksum file came from; an in-toto
+	// attestation records it as SLSA provenance.
+	Build *Build
+}
+
+// Build identifies the source a set of artifacts was built from.
+type Build struct {
+	Repo           string
+	Commit         string
+	Tree           string
+	ManifestDigest string
 }
 
 // Output is a file a signature created beside the artifact.
@@ -88,6 +100,7 @@ type CertEntry struct {
 	NotAfter    *time.Time `json:"notAfter,omitempty"`
 	Present     bool       `json:"present"`
 	Source      string     `json:"source,omitempty"` // store | keychain | gpg | file | declared | unknown
+	Signer      string     `json:"signer,omitempty"` // the windows signer id, for a multi-certificate profile
 }
 
 // Backend signs and verifies for one platform of a profile.
@@ -139,35 +152,12 @@ func For(h Host, p profile.Profile, platform string) (Backend, error) {
 		if p.Platforms.Attestations == nil {
 			break
 		}
-		return Attestation{}, nil
+		return newAttestation(h, p)
 	default:
 		return nil, contract.New(contract.Usage, "%q is not a platform (%v)", platform, profile.AllPlatforms())
 	}
 	return nil, contract.New(contract.Usage, "signing profile %s has no %s configuration", p.Name, platform).
 		WithFix("impr profile edit " + p.Name + " --set platforms." + platform + ".kind=...")
-}
-
-// Attestation is the in-toto platform, which imprimatur does not sign yet.
-type Attestation struct{}
-
-// Capability reports it unsupported.
-func (Attestation) Capability(Host) Capability {
-	return Capability{Platform: profile.Attestations, Kind: "in-toto", Reason: "in-toto attestations are not implemented yet"}
-}
-
-// Certificate has nothing to report.
-func (Attestation) Certificate(_ context.Context, p profile.Profile) CertEntry {
-	return CertEntry{Profile: p.Name, Platform: profile.Attestations, Source: "unknown"}
-}
-
-// Sign refuses.
-func (Attestation) Sign(context.Context, Artifact, profile.Profile) (Signature, error) {
-	return Signature{}, contract.New(contract.Unavailable, "in-toto attestations are not implemented in imprimatur yet")
-}
-
-// Verify refuses.
-func (Attestation) Verify(context.Context, Artifact, profile.Profile) error {
-	return contract.New(contract.Unavailable, "in-toto attestations are not implemented in imprimatur yet")
 }
 
 // tool reports whether the named tools resolve, and the first missing one.

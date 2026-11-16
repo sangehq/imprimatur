@@ -26,6 +26,21 @@ func (s *Service) Certificates(ctx context.Context) (CertList, error) {
 			if pl == profile.Attestations {
 				continue
 			}
+			if pl == profile.Windows {
+				// One entry per certificate: a multi-certificate spec lists each signer.
+				for _, v := range p.WindowsVariants() {
+					be, err := s.backendFor(v.Profile, pl)
+					if err != nil {
+						continue
+					}
+					e := be.Certificate(ctx, v.Profile)
+					if v.Dated {
+						e.Signer = v.ID
+					}
+					out.Certificates = append(out.Certificates, e)
+				}
+				continue
+			}
 			be, err := s.backendFor(p, pl)
 			if err != nil {
 				continue
@@ -79,6 +94,14 @@ func (s *Service) Capabilities(_ context.Context, name string) (CapabilityReport
 		}
 		pc.Valid = len(pc.Problems) == 0
 		for _, pl := range p.Platforms.Names() {
+			if pl == profile.Windows && len(p.Platforms.Windows.Signers) > 0 {
+				c := s.windowsCapability(p)
+				pc.Platforms[pl] = c
+				if c.Sign {
+					pc.Ready = append(pc.Ready, pl)
+				}
+				continue
+			}
 			be, err := s.backendFor(p, pl)
 			if err != nil {
 				pc.Platforms[pl] = backend.Capability{Platform: pl, Reason: err.Error()}
@@ -117,8 +140,9 @@ func HostCapabilities(h backend.Host) (platforms map[string]bool, backends map[s
 	ok = (&backend.Cosign{H: h}).Capability(h).Sign
 	backends["containers/cosign"] = ok
 	platforms[profile.Containers] = ok
-	backends["attestations/in-toto"] = false
-	platforms[profile.Attestations] = false
+	// in-toto is signed by the checksum key or cosign, so it works where either does.
+	platforms[profile.Attestations] = platforms[profile.Checksums] || platforms[profile.Containers]
+	backends["attestations/in-toto"] = platforms[profile.Attestations]
 	return platforms, backends
 }
 
@@ -128,4 +152,25 @@ func HostName(goos string) string {
 		return "macos"
 	}
 	return goos
+}
+
+// windowsCapability is a multi-certificate spec's capability: ready only when
+// every signer can sign here, since which one a run needs depends on its files.
+func (s *Service) windowsCapability(p profile.Profile) backend.Capability {
+	out := backend.Capability{Platform: profile.Windows, Kind: "authenticode", Supported: true, Sign: true, Verify: true}
+	for _, v := range p.WindowsVariants() {
+		be, err := s.backendFor(v.Profile, profile.Windows)
+		if err != nil {
+			return backend.Capability{Platform: profile.Windows, Reason: err.Error()}
+		}
+		c := be.Capability(s.Host)
+		out.Tools = append(out.Tools, c.Tools...)
+		if !c.Sign || !c.Verify {
+			out.Sign, out.Verify = out.Sign && c.Sign, out.Verify && c.Verify
+			if out.Reason == "" {
+				out.Reason = "signer " + v.ID + ": " + c.Reason
+			}
+		}
+	}
+	return out
 }

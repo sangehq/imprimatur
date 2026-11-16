@@ -49,6 +49,9 @@ type ValidateProfile struct {
 }
 
 func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 && args[0] == "bundle" {
+		return cmdBundle(ctx, a, args[1:])
+	}
 	p, err := parse(args, profileFlags)
 	if err != nil {
 		return 0, err
@@ -398,6 +401,11 @@ func applyOptions(x profile.Profile, p parsed) (profile.Profile, error) {
 		}
 		if g[1] == "name" {
 			return x, contract.New(contract.Usage, "a profile cannot be renamed with --set; export it, change the name, and import it")
+		}
+		if g[1] == "managed" {
+			// Managed profiles come from an organisation; marking one by hand
+			// would only fake that (audit N-B17).
+			return x, contract.New(contract.Usage, "managed is set by an organisation's profile distribution, not with --set")
 		}
 		setPath(m, g[1], valueOf(g[2]))
 	}

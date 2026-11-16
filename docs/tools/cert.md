@@ -1,4 +1,4 @@
-# `impr cert list`
+# `impr cert`
 
 Lists every certificate or key the profiles use, with whether this host has it
 and when it expires, where that can be read.
@@ -28,6 +28,36 @@ impr cert list [--json]
 `impr sign` refuses an expired certificate (exit 3), and a `store`, `keychain`,
 `gpg` or `file` entry that is not present (exit 5), before signing anything.
 sange raises its expiry triage items from this list.
+
+## Windows store expiry
+
+For a `cert-store` or `certum` certificate on Windows, `cert list` asks `certutil` to export the pinned
+certificate and reads its real expiry from the exported file. A declared `notAfter` is used only when the
+store cannot be read.
+
+## Create a test certificate
+
+```bash
+impr cert create                          # profile test-signer, valid 365 days
+impr cert create --name ci-test --subject "CN=Acme CI test" --days 90 --json
+```
+
+- **What it makes.** A self-signed RSA 3072 code-signing certificate.
+- **Where the files go.** `<config>/test-certs/`:
+  - `<name>.pem` holds the certificate and its private key, owner-only (0600).
+  - `<name>.cer` is the public certificate.
+- **The profile.** A profile of the same name, scope `personal` and purpose `test`. It uses the `pfx`
+  backend with `certRef: file://…/<name>.pem` and the certificate's thumbprint pinned. It signs through
+  osslsigncode on any host, and can never sign a release.
+- **Trusting it on a Windows test machine.**
+
+  ```powershell
+  certutil -user -addstore Root C:\path\to\test-signer.cer
+  certutil -user -addstore TrustedPublisher C:\path\to\test-signer.cer
+  ```
+
+  Undo it with `certutil -user -delstore Root <thumbprint>`, and the same for `TrustedPublisher`.
+- **No overwriting.** An existing profile of the same name is never overwritten.
 
 ---
 

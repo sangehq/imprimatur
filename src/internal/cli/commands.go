@@ -34,12 +34,38 @@ type CompanionInfo struct {
 // call without first learning which ones take it.
 const StrictReadsCapability = "strictReads"
 
+// EventsCapability tells a caller that impr records CloudEvents in its event
+// log (`impr events tail|verify|types`). Events never appear on stdout, so the
+// --json documents are unchanged.
+const EventsCapability = "events"
+
+// HooksCapability tells a caller that impr runs the host owner's pinned
+// pre-sign, pre-verify and event hooks from config.json (impr hooks list).
+const HooksCapability = "hooks"
+
+// WebhooksCapability tells a caller that impr can send its events to other
+// apps as signed Standard Webhooks deliveries (impr webhooks list).
+const WebhooksCapability = "webhooks"
+
+// ServerCapability tells a caller that `impr serve` exposes these commands
+// as a REST API, with signed inbound webhooks.
+const ServerCapability = "server"
+
+// MultiSignerCapability tells a caller that a profile's Windows spec may list
+// several certificates (signers), one chosen per file. Such a profile's
+// identity pins every signer, and its records name the signer (signerId).
+const MultiSignerCapability = "multiSigner"
+
+// ConfigProfilesCapability tells a caller that config.json is layered
+// (system < user < configuration profile) and `impr config` reads and edits it.
+const ConfigProfilesCapability = "configProfiles"
+
 // readFlags are the flags of the read commands.
 var readFlags = flagSpec{"json": boolFlag, "strict": boolFlag}
 
 func (a *App) companionInfo() CompanionInfo {
 	platforms, backends := signing.HostCapabilities(a.host())
-	caps := map[string]bool{"rules": true, StrictReadsCapability: true}
+	caps := map[string]bool{"rules": true, StrictReadsCapability: true, EventsCapability: true, HooksCapability: true, WebhooksCapability: true, ServerCapability: true, MultiSignerCapability: true, ConfigProfilesCapability: true}
 	list := []string{}
 	for k, v := range platforms {
 		caps[k] = v
@@ -152,12 +178,15 @@ func orNone(s string) string {
 }
 
 func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 && args[0] == "create" {
+		return cmdCertCreate(ctx, a, args[1:])
+	}
 	p, err := parse(args, readFlags)
 	if err != nil {
 		return 0, err
 	}
 	if len(p.pos) != 1 || p.pos[0] != "list" {
-		return 0, contract.New(contract.Usage, "impr cert list is the cert command").WithFix("impr cert list --json")
+		return 0, contract.New(contract.Usage, "impr cert list | impr cert create").WithFix("impr cert list --json")
 	}
 	svc, err := a.service()
 	if err != nil {
@@ -198,9 +227,15 @@ func cmdSign(ctx context.Context, a *App, args []string) (int, error) {
 		return 0, nil
 	}
 	if len(p.pos) > 0 {
-		return 0, contract.New(contract.Usage, "impr sign signs the files a build manifest lists, not files named on the command line").
-			WithDetails("Signing loose files would make imprimatur a signing oracle; the build manifest binds them to a commit and tree.").
-			WithFix("impr sign --manifest build-manifest.json --commit SHA --tree ID --profile NAME --purpose test")
+		if p.str("manifest") != "" || p.str("commit") != "" || p.str("tree") != "" {
+			return 0, contract.New(contract.Usage, "name files or --manifest, not both; loose files take their commit and tree from git")
+		}
+		manifest, commit, tree, err := a.looseManifest(ctx, p)
+		if err != nil {
+			return 0, err
+		}
+		p.strs["manifest"], p.strs["commit"], p.strs["tree"] = manifest, commit, tree
+		p.seen["manifest"], p.seen["commit"], p.seen["tree"] = true, true, true
 	}
 	if p.str("manifest") == "" {
 		return 0, contract.New(contract.Usage, "--manifest is required").WithFix("impr help")
@@ -267,26 +302,31 @@ func cmdVerify(ctx context.Context, a *App, args []string) (int, error) {
 }
 
 func cmdRules(_ context.Context, a *App, args []string) (int, error) {
-	p, err := parse(args, flagSpec{"json": boolFlag, "strict": boolFlag, "request": stringFlag, "out-dir": stringFlag})
+	p, err := parse(args, rulesFlags)
 	if err != nil {
 		return 0, err
 	}
-	if err := needNoArgs(p, "impr rules"); err != nil {
-		return 0, err
-	}
-	if p.str("request") == "" {
-		return 0, contract.New(contract.Usage, "--request is required").
-			WithDetails("impr rules renders allow rules for the signed files a request lists (sange writes it from a signed manifest).").
-			WithFix("impr rules --json --strict --request rules-request.json")
-	}
-	b, err := os.ReadFile(p.str("request"))
-	if err != nil {
-		return 0, contract.Wrap(contract.Usage, err, "read the request")
-	}
-	// Shapes only ever gain fields, so a newer caller's extra fields are ignored.
 	var req rules.Request
-	if err := json.Unmarshal(b, &req); err != nil {
-		return 0, contract.Wrap(contract.Usage, err, "the request is not an allow-rules request")
+	switch {
+	case len(p.pos) > 0 && p.str("request") != "":
+		return 0, contract.New(contract.Usage, "name signed files or --request, not both")
+	case len(p.pos) > 0:
+		if req, err = rulesFromFiles(a, p); err != nil {
+			return 0, err
+		}
+	case p.str("request") == "":
+		return 0, contract.New(contract.Usage, "--request or signed files are required").
+			WithDetails("impr rules renders allow rules for signed files: named on the command line, or listed in a request (sange writes one from a signed manifest).").
+			WithFix("impr rules build/windows/tool.exe --base-policy {GUID}", "impr rules --json --strict --request rules-request.json")
+	default:
+		b, err := os.ReadFile(p.str("request"))
+		if err != nil {
+			return 0, contract.Wrap(contract.Usage, err, "read the request")
+		}
+		// Shapes only ever gain fields, so a newer caller's extra fields are ignored.
+		if err := json.Unmarshal(b, &req); err != nil {
+			return 0, contract.Wrap(contract.Usage, err, "the request is not an allow-rules request")
+		}
 	}
 	res, err := rules.Render(req, "imprimatur "+version)
 	if err != nil {

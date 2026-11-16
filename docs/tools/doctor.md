@@ -9,7 +9,7 @@ impr doctor [--json]
 
 ```json
 {"contract":1,"version":"v1.8.0","config":"/Users/me/.config/imprimatur","state":"/Users/me/.local/state/imprimatur",
- "capabilities":{"windows":false,"macos":true,"checksums":true,"containers":false,"attestations":false,"rules":true},
+ "capabilities":{"windows":false,"macos":true,"checksums":true,"containers":false,"attestations":true,"rules":true,"strictReads":true,"events":true,"hooks":true,"webhooks":true,"server":true,"multiSigner":true,"configProfiles":true},
  "defaultProfile":"me-test",
  "profiles":[{"name":"me-test","valid":true,"platforms":{"checksums":{"platform":"checksums","kind":"ssh","sign":true,"verify":true,"tools":["ssh-keygen"],"supported":true}},"ready":["checksums"]}],
  "problems":[],"ok":true}

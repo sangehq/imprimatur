@@ -35,8 +35,8 @@ impr profile add me-test --scope personal --owner me --purpose test \
 impr profile capabilities me-test     # what this host can sign with it
 ```
 
-Profiles live in `~/.config/imprimatur/profiles/` (`%AppData%\imprimatur` on
-Windows) and hold credential references only, never a key or password.
+Profiles live in `~/.config/imprimatur/profiles/` on every OS, Windows
+included, and hold credential references only, never a key or password.
 
 ### Usage
 
@@ -67,11 +67,24 @@ else is in the [documentation](#documentation) below.
 
 - [`impr companion info`](docs/tools/companion.md) — the contract v1 other tools call
 - [`impr profile`](docs/tools/profile.md) — list, show, add, edit, rm, import, export, validate, default, capabilities, import-legacy
+- [`impr build`](docs/tools/build.md) — cross-compile a Go module into `build/{os}/` with a commit-bound build manifest
+- [`impr release`](docs/tools/release.md) — build, sign and verify in one step; never tags, pushes or publishes
 - [`impr sign`](docs/tools/sign.md) — signing a build manifest, `impr-manifest.json`
 - [`impr verify`](docs/tools/verify.md) — checking signatures against a pinned identity
 - [`impr cert list`](docs/tools/cert.md) — the certificates and keys profiles use, with expiry
 - [`impr rules`](docs/tools/rules.md) — AppLocker and WDAC supplemental policies from a request
 - [`impr doctor`](docs/tools/doctor.md) — a health report of profiles and host capability
+- [`impr menu`](docs/tools/menu.md) — the interactive menu, for a person at a terminal
+- [`impr completion`](docs/tools/completion.md) — tab completion for bash, zsh, fish and PowerShell
+- [`impr install`](docs/tools/install.md) — install, uninstall and `impr path`
+- [`make/impr.mk`](docs/tools/make.md) — impr's commands as Make targets for a project's Makefile
+- [`.imprimatur/project.json`](docs/tools/project.md) — a repository's own tighten-only signing rules
+- [`impr config`](docs/tools/config.md) — layered configuration (system, user, configuration profiles) and locked keys
+- [`impr hooks`](docs/tools/hooks.md) — pinned programs that gate signing and verification or react to events
+- [`impr serve`](docs/tools/serve.md) — the REST API and signed inbound webhooks, over a private socket
+- [`impr webhooks`](docs/tools/webhooks.md) — signed Standard Webhooks deliveries of impr's events to other apps
+- [`impr audit`](docs/tools/audit.md) — the hash-chained record of every command that signs or changes configuration
+- [`impr events`](docs/tools/events.md) — the CloudEvents log of signing and verification runs, and its hash chain
 - [Backends](docs/tools/backends.md) — every signing backend, the tools it runs and what it pins
 
 ### Recipes

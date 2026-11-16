@@ -33,7 +33,22 @@ var Allowed = map[string]string{
 	"minisign":     "minisign checksum signatures",
 	"ssh-keygen":   "SSH checksum signatures (ssh-keygen -Y)",
 	"cosign":       "Sigstore cosign blob signatures, key and keyless",
+	"go":           "impr build: go build only, never -toolexec, -exec, -overlay or -modfile",
+	"git":          "impr build: the commit, tree, remote and whether the tree is clean (exact forms only)",
+	"az":           "whether the Azure CLI is signed in before Artifact Signing (az account show only)",
 }
+
+// gitForms are the only git command lines impr runs. status turns fsmonitor
+// off, so a repository's config cannot make git start a program.
+var gitForms = [][]string{
+	{"rev-parse", "HEAD"},
+	{"rev-parse", "HEAD^{tree}"},
+	{"remote", "get-url", "origin"},
+	{"-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=no"},
+}
+
+// goRefused are go build flags that run or substitute programs or files.
+var goRefused = []string{"-toolexec", "-exec", "-overlay", "-modfile", "-pkgdir"}
 
 // xcrunTools are the only subcommands xcrun may start.
 var xcrunTools = []string{"notarytool", "stapler"}
@@ -89,10 +104,75 @@ func Check(c Cmd) error {
 	if _, ok := Allowed[c.Tool]; !ok {
 		return fmt.Errorf("%q: %w", c.Tool, ErrNotAllowed)
 	}
+	if c.Tool == "git" && !slices.ContainsFunc(gitForms, func(f []string) bool { return slices.Equal(f, c.Args) }) {
+		return fmt.Errorf("git %s: %w (only %d exact forms)", strings.Join(c.Args, " "), ErrNotAllowed, len(gitForms))
+	}
+	if c.Tool == "az" && !slices.Equal(c.Args, []string{"account", "show", "--output", "none"}) {
+		return fmt.Errorf("az %s: %w (only az account show)", strings.Join(c.Args, " "), ErrNotAllowed)
+	}
+	if c.Tool == "go" {
+		if len(c.Args) == 0 || c.Args[0] != "build" {
+			return fmt.Errorf("go %s: %w (only go build)", strings.Join(c.Args, " "), ErrNotAllowed)
+		}
+		for _, a := range c.Args {
+			for _, r := range goRefused {
+				if a == r || strings.HasPrefix(a, r+"=") {
+					return fmt.Errorf("go build %s: %w", r, ErrNotAllowed)
+				}
+			}
+		}
+	}
 	if c.Tool == "xcrun" && (len(c.Args) == 0 || !slices.Contains(xcrunTools, c.Args[0])) {
 		return fmt.Errorf("xcrun %s: %w (only %s)", strings.Join(c.Args, " "), ErrNotAllowed, strings.Join(xcrunTools, ", "))
 	}
 	return nil
+}
+
+// baseEnv is what every child sees from impr's own environment: enough to
+// find programs, temp space, the user's home, locale, TLS roots and proxies,
+// and on Windows the system folders. Nothing else is inherited, so a secret
+// held in an env:// variable reaches a tool only when a backend passes it on
+// purpose (Cmd.Env).
+var baseEnv = []string{
+	"PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "TMP", "TEMP", "TZ", "LANG", "LC_*",
+	"SSL_CERT_FILE", "SSL_CERT_DIR", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
+	"SystemRoot", "SYSTEMROOT", "windir", "WINDIR", "SystemDrive", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "ProgramData",
+	"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "CommonProgramFiles", "PATHEXT", "COMPUTERNAME", "USERNAME", "USERDOMAIN",
+}
+
+// toolEnv is what one tool needs beyond baseEnv, and why.
+var toolEnv = map[string][]string{
+	"gpg":         {"GNUPGHOME", "GPG_TTY"},                                                                                                                 // keyring location, pinentry
+	"ssh-keygen":  {"SSH_AUTH_SOCK"},                                                                                                                        // agent-held keys
+	"secret-tool": {"DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR"},                                                                                          // the Secret Service bus
+	"cosign":      {"SIGSTORE_*", "TUF_ROOT", "COSIGN_EXPERIMENTAL"},                                                                                        // keyless endpoints and trust root
+	"xcrun":       {"DEVELOPER_DIR", "SDKROOT"},                                                                                                             // which Xcode
+	"codesign":    {"DEVELOPER_DIR"},                                                                                                                        //
+	"signtool":    {},                                                                                                                                       //
+	"security":    {},                                                                                                                                       //
+	"go":          {"GOPATH", "GOCACHE", "GOMODCACHE", "GOROOT", "GOPROXY", "GOPRIVATE", "GONOPROXY", "GONOSUMDB", "GONOSUMCHECK", "GOSUMDB", "GOINSECURE"}, // module and build caches, proxies
+	"git":         {},
+	"az":          {"AZURE_CONFIG_DIR"},
+}
+
+// ChildEnv filters environ down to baseEnv and the tool's own names, then
+// appends extra (which a backend sets on purpose and always wins).
+func ChildEnv(environ []string, tool string, extra []string) []string {
+	allow := append(append([]string{}, baseEnv...), toolEnv[tool]...)
+	out := make([]string, 0, len(allow)+len(extra))
+	for _, kv := range environ {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok || k == "" {
+			continue
+		}
+		for _, a := range allow {
+			if a == k || (strings.HasSuffix(a, "*") && strings.HasPrefix(k, strings.TrimSuffix(a, "*"))) {
+				out = append(out, kv)
+				break
+			}
+		}
+	}
+	return append(out, extra...)
 }
 
 // maxOutput bounds what is kept from one call.
@@ -102,12 +182,28 @@ const maxOutput = 4 << 20
 type OS struct {
 	// Timeout bounds one call; zero means 30 minutes (notarisation waits).
 	Timeout time.Duration
+	// Pins names exactly which file a tool is, by absolute path and sha256
+	// (config.json tools). A pinned tool is never looked up on PATH, and a
+	// file whose digest no longer matches is refused before it runs.
+	Pins map[string]Pin
+}
+
+// Pin is one pinned tool.
+type Pin struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
 }
 
 // LookPath resolves an allowed tool to an absolute path.
-func (OS) LookPath(tool string) (string, error) {
+func (o OS) LookPath(tool string) (string, error) {
 	if _, ok := Allowed[tool]; !ok {
 		return "", fmt.Errorf("%q: %w", tool, ErrNotAllowed)
+	}
+	if p, ok := o.Pins[tool]; ok {
+		if _, err := CheckPinned(p.Path, p.SHA256); err != nil {
+			return "", fmt.Errorf("pinned %s: %w", tool, err)
+		}
+		return p.Path, nil
 	}
 	p, err := exec.LookPath(tool)
 	if err != nil {
@@ -138,7 +234,7 @@ func (o OS) Run(ctx context.Context, c Cmd) (Result, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, c.Args...) //nolint:gosec // G204: an allow-listed tool by absolute path, no shell
 	cmd.Dir = c.Dir
-	cmd.Env = append(os.Environ(), c.Env...)
+	cmd.Env = ChildEnv(os.Environ(), c.Tool, c.Env)
 	cmd.WaitDelay = time.Second
 	if c.Stdin != nil {
 		cmd.Stdin = bytes.NewReader(c.Stdin)
@@ -150,6 +246,11 @@ func (o OS) Run(ctx context.Context, c Cmd) (Result, error) {
 	res := Result{Path: path, Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
 	if ctx.Err() == context.DeadlineExceeded {
 		return res, fmt.Errorf("%s timed out after %s", c.Tool, d)
+	}
+	if stdout.truncated || stderr.truncated {
+		// A cut-off answer (notarytool's JSON, a gpg status stream) must not
+		// be read as a whole one (audit N-B24).
+		return res, fmt.Errorf("%s printed more than %d bytes; its output was cut off, so it is not trusted", c.Tool, maxOutput)
 	}
 	if err != nil {
 		var ee *exec.ExitError
@@ -164,7 +265,8 @@ func (o OS) Run(ctx context.Context, c Cmd) (Result, error) {
 
 type limited struct {
 	bytes.Buffer
-	max int
+	max       int
+	truncated bool
 }
 
 func (b *limited) Write(p []byte) (int, error) {
@@ -172,6 +274,7 @@ func (b *limited) Write(p []byte) (int, error) {
 		if room > 0 {
 			b.Buffer.Write(p[:room])
 		}
+		b.truncated = true
 		return len(p), nil
 	}
 	return b.Buffer.Write(p)

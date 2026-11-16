@@ -154,15 +154,49 @@ type WindowsSpec struct {
 	PasswordRef string `json:"passwordRef,omitempty"`
 	// NotAfter is a declared expiry, for certificates this host cannot read.
 	NotAfter *time.Time `json:"notAfter,omitempty"`
+	// Signers lists several certificates (design ID-07). When present, the
+	// fields above that name a certificate stay empty and each file is signed
+	// by exactly one signer its selector matches; see Variants and Choose.
+	Signers []WindowsSigner `json:"signers,omitempty"`
+	// Mode is "select" (the default): one signer per file. "all" (dual
+	// signing) is reserved and refused until the backends append signatures.
+	Mode string `json:"mode,omitempty"`
+}
+
+// WindowsSigner is one certificate of a multi-certificate Windows spec.
+type WindowsSigner struct {
+	ID           string     `json:"id"`
+	Backend      string     `json:"backend"`
+	CertRef      string     `json:"certRef,omitempty"`
+	Subject      string     `json:"subject,omitempty"`
+	Thumbprint   string     `json:"thumbprint,omitempty"`
+	Timestamp    string     `json:"timestamp,omitempty"`
+	DlibPath     string     `json:"dlibPath,omitempty"`
+	MetadataPath string     `json:"metadataPath,omitempty"`
+	PasswordRef  string     `json:"passwordRef,omitempty"`
+	NotBefore    *time.Time `json:"notBefore,omitempty"`
+	NotAfter     *time.Time `json:"notAfter,omitempty"`
+	Select       *Selector  `json:"select,omitempty"`
+}
+
+// Selector picks the files a signer signs. An empty selector matches every
+// file; each list that is set must match.
+type Selector struct {
+	Arch []string `json:"arch,omitempty"` // PE machine: 386, amd64, arm, arm64
+	Glob []string `json:"glob,omitempty"` // matched against the base name and the manifest path
 }
 
 // MacOSSpec is Developer ID signing and notarisation.
 type MacOSSpec struct {
-	Kind     string      `json:"kind"`     // developer-id
-	TeamID   string      `json:"teamId"`   // pinned
-	Identity string      `json:"identity"` // pinned
-	CertRef  string      `json:"certRef,omitempty"`
-	Notary   *NotarySpec `json:"notary,omitempty"`
+	Kind     string `json:"kind"`     // developer-id
+	TeamID   string `json:"teamId"`   // pinned
+	Identity string `json:"identity"` // pinned
+	// CertRef holds a .p12 (path or base64) imported into a temporary
+	// keychain for one run; empty means the identity is in a keychain.
+	CertRef string `json:"certRef,omitempty"`
+	// PasswordRef is the .p12's password, as a reference.
+	PasswordRef string      `json:"passwordRef,omitempty"`
+	Notary      *NotarySpec `json:"notary,omitempty"`
 	// Entitlements is a plist path, relative to the signing root.
 	Entitlements string     `json:"entitlements,omitempty"`
 	NotAfter     *time.Time `json:"notAfter,omitempty"`
@@ -186,6 +220,9 @@ type ChecksumSpec struct {
 	// Namespace is the ssh-keygen -Y namespace; "file" when empty.
 	Namespace string     `json:"namespace,omitempty"`
 	NotAfter  *time.Time `json:"notAfter,omitempty"`
+	// PasswordRef is the passphrase of a gpg key held in a secret (keyRef
+	// secret:// or env://) rather than by gpg-agent.
+	PasswordRef string `json:"passwordRef,omitempty"`
 }
 
 // ContainerSpec is cosign.
@@ -208,7 +245,7 @@ type AttestationSpec struct {
 }
 
 // RefSchemes are the reference schemes a profile may use for a credential.
-var RefSchemes = []string{"secret://", "env://", "keychain://", "cert-store://", "gpg-agent://"}
+var RefSchemes = []string{"secret://", "env://", "keychain://", "cert-store://", "gpg-agent://", "file://"}
 
 // IsRef reports whether v is a credential reference rather than a value.
 func IsRef(v string) bool {
@@ -296,8 +333,8 @@ func (p Profile) Validate() Problems {
 		ps.add("profile.allowedRepos", "a release profile lists the repositories it may sign (allowedRepos)")
 	}
 	for _, r := range p.AllowedRepos {
-		if t := strings.TrimSpace(r); t == "" || t == "**" || t == "*" {
-			ps.add("profile.allowedRepos", "%q would allow every repository", r)
+		if !repoPatternNarrow(r) {
+			ps.add("profile.allowedRepos", "%q is too broad: name the host and owner literally (host/owner/**), as in github.com/acme/**", r)
 		}
 	}
 	if len(p.Platforms.Names()) == 0 {
@@ -311,9 +348,17 @@ func (p Profile) Validate() Problems {
 			ps.add(field, "must be a reference (%s), never the credential itself", strings.Join(RefSchemes, ", "))
 		}
 	}
-	if w := p.Platforms.Windows; w != nil {
+	if w := p.Platforms.Windows; w != nil && len(w.Signers) > 0 {
 		if w.Kind != "authenticode" {
 			ps.add("platforms.windows.kind", "%q is not authenticode", w.Kind)
+		}
+		ps = append(ps, w.validateSigners(ref)...)
+	} else if w != nil {
+		if w.Kind != "authenticode" {
+			ps.add("platforms.windows.kind", "%q is not authenticode", w.Kind)
+		}
+		if w.Mode != "" && w.Mode != "select" {
+			ps.add("platforms.windows.mode", "mode %q needs signers", w.Mode)
 		}
 		if !slices.Contains(WindowsBackends(), w.Backend) {
 			ps.add("platforms.windows.backend", "%q is not %s", w.Backend, strings.Join(WindowsBackends(), ", "))
@@ -322,6 +367,11 @@ func (p Profile) Validate() Problems {
 		ref("platforms.windows.passwordRef", w.PasswordRef, false)
 		if w.Thumbprint == "" && w.Subject == "" {
 			ps.add("platforms.windows.pin", "pin the certificate by thumbprint or exact subject")
+		}
+		if (w.Backend == BackendCertStore || w.Backend == BackendCertum) && w.Thumbprint == "" {
+			// Signing refuses these without a thumbprint (signtool /n would take
+			// any matching certificate), so validation says so too (audit N-B7).
+			ps.add("platforms.windows.thumbprint", "a %s certificate is pinned by its SHA-1 thumbprint; a subject alone is ambiguous", w.Backend)
 		}
 		if w.Thumbprint != "" && !thumbprintRe.MatchString(w.Thumbprint) {
 			ps.add("platforms.windows.thumbprint", "%q is not a 40-hex SHA-1 thumbprint", w.Thumbprint)
@@ -338,6 +388,7 @@ func (p Profile) Validate() Problems {
 			ps.add("platforms.macos.identity", "pin the exact signing identity, which names the team ID in parentheses")
 		}
 		ref("platforms.macos.certRef", m.CertRef, false)
+		ref("platforms.macos.passwordRef", m.PasswordRef, false)
 		if m.Notary != nil {
 			ref("platforms.macos.notary.apiKeyRef", m.Notary.APIKeyRef, true)
 		}
@@ -347,6 +398,7 @@ func (p Profile) Validate() Problems {
 			ps.add("platforms.checksums.kind", "%q is not gpg, minisign or ssh", c.Kind)
 		}
 		ref("platforms.checksums.keyRef", c.KeyRef, true)
+		ref("platforms.checksums.passwordRef", c.PasswordRef, false)
 		if !fprRe.MatchString(c.Fingerprint) {
 			ps.add("platforms.checksums.fingerprint", "pin the signing key's fingerprint")
 		}
@@ -450,6 +502,17 @@ func (p Profile) Pinned() PinnedIdentity {
 	sort.Strings(id.AllowedRepos)
 	if w := p.Platforms.Windows; w != nil {
 		id.Windows = "thumbprint=" + strings.ToUpper(w.Thumbprint) + ";subject=" + w.Subject
+		if len(w.Signers) > 0 {
+			// A multi-certificate spec pins every signer, in id order. A
+			// single-certificate profile keeps the form above, so its digest
+			// (which sange computes too) does not change.
+			var parts []string
+			for _, sg := range w.Signers {
+				parts = append(parts, "id="+sg.ID+";thumbprint="+strings.ToUpper(sg.Thumbprint)+";subject="+sg.Subject)
+			}
+			sort.Strings(parts)
+			id.Windows = strings.Join(parts, "|")
+		}
 	}
 	if m := p.Platforms.MacOS; m != nil {
 		id.MacOS = "team=" + m.TeamID + ";identity=" + m.Identity

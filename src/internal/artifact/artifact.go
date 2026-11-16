@@ -6,6 +6,7 @@ package artifact
 import (
 	"bytes"
 	"crypto/sha256"
+	"debug/pe"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -191,4 +192,75 @@ func Checksums(lines [][2]string) []byte {
 		fmt.Fprintf(&b, "%s  %s\n", l[0], l[1])
 	}
 	return []byte(b.String())
+}
+
+// ParseChecksums reads "<hex>  <path>" lines (the format Checksums writes, and
+// sha256sum's binary-mode "*path"). Blank lines are skipped; anything else
+// that is not a 64-hex digest followed by a path is an error, so a tampered
+// file cannot hide an entry behind a line impr does not understand.
+func ParseChecksums(b []byte) ([][2]string, error) {
+	var out [][2]string
+	seen := map[string]bool{}
+	for i, line := range strings.Split(strings.ReplaceAll(string(b), "\r\n", "\n"), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		sum, path, ok := strings.Cut(line, " ")
+		path = strings.TrimPrefix(strings.TrimPrefix(path, " "), "*")
+		if !ok || !regexp.MustCompile(`^[0-9a-fA-F]{64}$`).MatchString(sum) || path == "" {
+			return nil, fmt.Errorf("line %d is not \"<sha256>  <path>\"", i+1)
+		}
+		if seen[path] {
+			return nil, fmt.Errorf("line %d lists %s twice", i+1, path)
+		}
+		seen[path] = true
+		out = append(out, [2]string{strings.ToLower(sum), path})
+	}
+	return out, nil
+}
+
+// WriteFile writes data to path without following a symlink already at path:
+// it writes a temporary file in the same directory and renames it over path,
+// so a planted link is replaced rather than written through.
+func WriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer func() { _ = os.Remove(tmp) }()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Chmod(perm); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+// PEArch is a PE file's machine as a Go architecture name ("386", "amd64",
+// "arm", "arm64"), or "" for anything else, including an .msi.
+func PEArch(path string) string {
+	f, err := pe.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = f.Close() }()
+	switch f.Machine {
+	case pe.IMAGE_FILE_MACHINE_I386:
+		return "386"
+	case pe.IMAGE_FILE_MACHINE_AMD64:
+		return "amd64"
+	case pe.IMAGE_FILE_MACHINE_ARMNT, pe.IMAGE_FILE_MACHINE_ARM:
+		return "arm"
+	case pe.IMAGE_FILE_MACHINE_ARM64:
+		return "arm64"
+	}
+	return ""
 }

@@ -1,10 +1,12 @@
 package backend
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -72,14 +74,28 @@ func (g *GPG) Sign(ctx context.Context, art Artifact, p profile.Profile) (Signat
 	}
 	sig := art.Path + ".sig"
 	_ = os.Remove(sig)
-	r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: []string{"--batch", "--yes", "--local-user", g.fpr(), "--detach-sign", "--output", sig, art.Path}})
+	sign := func(home []string, passFile string) error {
+		args := append(append([]string{}, home...), "--yes")
+		if passFile != "" {
+			args = append(args, "--pinentry-mode", "loopback", "--passphrase-file", passFile)
+		}
+		args = append(args, "--local-user", g.fpr(), "--detach-sign", "--output", sig, art.Path)
+		r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: args})
+		if err != nil {
+			return contract.Wrap(contract.Unavailable, err, "gpg could not run")
+		}
+		if r.ExitCode != 0 {
+			return contract.New(contract.SignFailed, "gpg could not sign %s", art.Rel).WithDetails(firstLine(r.Output()))
+		}
+		return g.verifyWith(ctx, art, home)
+	}
+	var err error
+	if g.agent() {
+		err = sign([]string{"--batch"}, "")
+	} else {
+		err = g.withHome(ctx, sign)
+	}
 	if err != nil {
-		return Signature{}, contract.Wrap(contract.Unavailable, err, "gpg could not run")
-	}
-	if r.ExitCode != 0 {
-		return Signature{}, contract.New(contract.SignFailed, "gpg could not sign %s", art.Rel).WithDetails(firstLine(r.Output()))
-	}
-	if err := g.Verify(ctx, art, p); err != nil {
 		return Signature{}, err
 	}
 	return Signature{Kind: "gpg", Signer: g.fpr(), Outputs: []Output{{Path: sig, Kind: "gpg"}}}, nil
@@ -87,11 +103,49 @@ func (g *GPG) Sign(ctx context.Context, art Artifact, p profile.Profile) (Signat
 
 // Verify requires a good signature (VALIDSIG) by the pinned key.
 func (g *GPG) Verify(ctx context.Context, art Artifact, _ profile.Profile) error {
-	r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: []string{"--batch", "--status-fd", "1", "--verify", art.Path + ".sig", art.Path}})
+	if !g.agent() && g.Spec.PublicKey != "" {
+		// A key held in a secret: verify against its public key in a
+		// throwaway home, not whatever the user's keyring holds.
+		dir, err := os.MkdirTemp("", "impr-gpgv-")
+		if err != nil {
+			return err
+		}
+		defer func() { _ = os.RemoveAll(dir) }()
+		home := []string{"--homedir", dir, "--batch"}
+		pub, err := os.ReadFile(g.Spec.PublicKey) //nolint:gosec // G304: the profile's public key file
+		if err != nil {
+			return contract.Wrap(contract.Unavailable, err, "the gpg public key %s cannot be read", g.Spec.PublicKey)
+		}
+		if r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: append(append([]string{}, home...), "--import"), Stdin: pub}); err != nil || r.ExitCode != 0 {
+			return contract.New(contract.Unavailable, "the gpg public key %s could not be imported", g.Spec.PublicKey)
+		}
+		return g.verifyWith(ctx, art, home)
+	}
+	return g.verifyWith(ctx, art, []string{"--batch"})
+}
+
+// verifyWith checks a signature with the given gpg home arguments.
+func (g *GPG) verifyWith(ctx context.Context, art Artifact, home []string) error {
+	r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: append(append([]string{}, home...), "--status-fd", "1", "--verify", art.Path+".sig", art.Path)})
 	if err != nil {
 		return contract.Wrap(contract.Unavailable, err, "gpg could not run")
 	}
-	for _, line := range strings.Split(string(r.Stdout), "\n") {
+	lines := strings.Split(string(r.Stdout), "\n")
+	// A revoked or expired key, an expired signature, or any bad or
+	// unverifiable signature fails, whatever else gpg printed.
+	for _, line := range lines {
+		f := strings.Fields(line)
+		if len(f) >= 2 && f[0] == "[GNUPG:]" {
+			switch f[1] {
+			case "REVKEYSIG", "EXPKEYSIG", "EXPSIG", "BADSIG", "ERRSIG", "KEYREVOKED", "KEYEXPIRED":
+				return contract.New(contract.VerifyFailed, "%s.sig: gpg reports %s", art.Rel, f[1])
+			}
+		}
+	}
+	if r.ExitCode != 0 {
+		return contract.New(contract.VerifyFailed, "%s.sig did not verify (gpg exit %d)", art.Rel, r.ExitCode).WithDetails(firstLine(r.Output()))
+	}
+	for _, line := range lines {
 		f := strings.Fields(line)
 		if len(f) < 3 || f[0] != "[GNUPG:]" || f[1] != "VALIDSIG" {
 			continue
@@ -101,7 +155,7 @@ func (g *GPG) Verify(ctx context.Context, art Artifact, _ profile.Profile) error
 			cands = append(cands, f[11]) // the primary key's fingerprint
 		}
 		for _, c := range cands {
-			if strings.HasSuffix(strings.ToUpper(c), g.fpr()) {
+			if gpgPinMatches(c, g.fpr()) {
 				return nil
 			}
 		}
@@ -133,10 +187,10 @@ func (m *Minisign) Capability(h Host) Capability {
 // reference resolves.
 func (m *Minisign) Certificate(ctx context.Context, p profile.Profile) CertEntry {
 	e := CertEntry{Profile: p.Name, Platform: profile.Checksums, Fingerprint: strings.ToUpper(m.Spec.Fingerprint), Source: "file", NotAfter: m.Spec.NotAfter}
+	// Present when the reference resolves; the key is never written to disk
+	// just to say so (audit N-B10).
 	if v, err := m.H.Secrets.Resolve(ctx, m.Spec.KeyRef); err == nil {
-		f, err := secrets.AsFile(v, false)
-		e.Present = err == nil
-		f.Close()
+		e.Present = strings.TrimSpace(v) != ""
 	}
 	return e
 }
@@ -269,12 +323,15 @@ func (s *SSH) Certificate(ctx context.Context, p profile.Profile) CertEntry {
 	if err != nil {
 		return e
 	}
-	f, err := secrets.AsFile(v, false)
-	if err != nil {
-		return e
-	}
-	defer f.Close()
-	if fp, err := s.keyFingerprint(ctx, f.Path); err == nil {
+	// A key file referenced by path is read where it is. Key text is not
+	// written to a temporary file just to report presence (audit N-B10): the
+	// public key sits unencrypted in the OpenSSH header, so its fingerprint
+	// is computed here without touching the secret part.
+	if fileExists(v) {
+		if fp, err := s.keyFingerprint(ctx, v); err == nil {
+			e.Present = fp == s.Spec.Fingerprint
+		}
+	} else if fp, err := OpenSSHPublicFingerprint(v); err == nil {
 		e.Present = fp == s.Spec.Fingerprint
 	}
 	return e
@@ -392,14 +449,122 @@ func (s *SSH) Verify(ctx context.Context, art Artifact, _ profile.Profile) error
 	return nil
 }
 
-// Preflight checks the key reference names the pinned key.
+// Preflight checks the key reference: gpg-agent://<the pinned fingerprint>
+// for a key in the user's keyring, or secret:// / env:// for an armored key
+// impr imports into a throwaway gpg home for the run.
 func (g *GPG) Preflight(_ context.Context, p profile.Profile) error {
-	if s, n, _ := secrets.Scheme(g.Spec.KeyRef); s != "gpg-agent" || !strings.EqualFold(n, g.Spec.Fingerprint) {
-		return contract.New(contract.Usage, "a gpg checksum key is referenced as gpg-agent://<the pinned fingerprint>, not %q", g.Spec.KeyRef).
-			WithFix("impr profile edit " + p.Name + " --set platforms.checksums.keyRef=gpg-agent://" + g.fpr())
+	s, n, _ := secrets.Scheme(g.Spec.KeyRef)
+	switch {
+	case s == "gpg-agent" && strings.EqualFold(n, g.Spec.Fingerprint):
+		return nil
+	case s == "secret" || s == "env":
+		return nil
 	}
-	return nil
+	return contract.New(contract.Usage, "a gpg checksum key is gpg-agent://<the pinned fingerprint>, or a secret:// or env:// holding the armored key, not %q", g.Spec.KeyRef).
+		WithFix("impr profile edit " + p.Name + " --set platforms.checksums.keyRef=gpg-agent://" + g.fpr())
+}
+
+// agent reports whether the key lives in the user's own keyring.
+func (g *GPG) agent() bool {
+	s, _, _ := secrets.Scheme(g.Spec.KeyRef)
+	return s == "gpg-agent"
+}
+
+// withHome imports the armored key into a fresh 0700 gpg home, checks it is
+// the pinned key, runs fn with the home's arguments, and removes the home.
+// The user's keyring is never touched.
+func (g *GPG) withHome(ctx context.Context, fn func(home []string, passFile string) error) error {
+	key, err := g.H.Secrets.Resolve(ctx, g.Spec.KeyRef)
+	if err != nil {
+		return err
+	}
+	dir, err := os.MkdirTemp("", "impr-gpg-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	home := []string{"--homedir", dir, "--batch"}
+	r, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: append(append([]string{}, home...), "--import"), Stdin: []byte(key)})
+	if err != nil {
+		return contract.Wrap(contract.Unavailable, err, "gpg could not run")
+	}
+	if r.ExitCode != 0 {
+		return contract.New(contract.SignFailed, "the gpg key could not be imported").WithDetails(firstLine(r.Output()))
+	}
+	l, err := g.H.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: append(append([]string{}, home...), "--with-colons", "--list-secret-keys", g.fpr())})
+	if err != nil || l.ExitCode != 0 {
+		return contract.New(contract.SignFailed, "the gpg key in %s is not the pinned key %s", g.Spec.KeyRef, g.fpr())
+	}
+	passFile := ""
+	if g.Spec.PasswordRef != "" {
+		pw, err := g.H.Secrets.Resolve(ctx, g.Spec.PasswordRef)
+		if err != nil {
+			return err
+		}
+		f, err := secrets.TempText(pw)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		passFile = f.Path
+	}
+	return fn(home, passFile)
 }
 
 // Preflight checks the public key is the pinned one.
 func (m *Minisign) Preflight(context.Context, profile.Profile) error { return m.checkPin() }
+
+// gpgPinMatches compares a VALIDSIG fingerprint with the pin. A full
+// fingerprint (40 or 64 hex) must be equal. A shorter pin (a 16-hex long key
+// id, which older profiles carry) still matches as a suffix, as before; doctor
+// and validate ask for the full fingerprint (audit N-B12).
+func gpgPinMatches(got, pin string) bool {
+	got, pin = strings.ToUpper(got), strings.ToUpper(pin)
+	if len(pin) >= 40 {
+		return got == pin
+	}
+	return pin != "" && strings.HasSuffix(got, pin)
+}
+
+// OpenSSHPublicFingerprint reads the public key from an "openssh-key-v1"
+// private key's unencrypted header and returns its SHA256 fingerprint in
+// ssh-keygen's form. The private part is never decoded.
+func OpenSSHPublicFingerprint(text string) (string, error) {
+	block, _ := pem.Decode([]byte(text))
+	if block == nil || block.Type != "OPENSSH PRIVATE KEY" {
+		return "", fmt.Errorf("not an OpenSSH private key")
+	}
+	b := block.Bytes
+	magic := []byte("openssh-key-v1\x00")
+	if !bytes.HasPrefix(b, magic) {
+		return "", fmt.Errorf("not an openssh-key-v1 key")
+	}
+	b = b[len(magic):]
+	next := func() ([]byte, error) {
+		if len(b) < 4 {
+			return nil, fmt.Errorf("truncated key")
+		}
+		n := binary.BigEndian.Uint32(b)
+		if uint64(n) > uint64(len(b)-4) { //nolint:gosec // G115: len(b) >= 4 was checked just above
+			return nil, fmt.Errorf("truncated key")
+		}
+		v := b[4 : 4+n]
+		b = b[4+n:]
+		return v, nil
+	}
+	for i := 0; i < 3; i++ { // cipher name, kdf name, kdf options
+		if _, err := next(); err != nil {
+			return "", err
+		}
+	}
+	if len(b) < 4 || binary.BigEndian.Uint32(b) != 1 {
+		return "", fmt.Errorf("expected exactly one key")
+	}
+	b = b[4:]
+	pub, err := next()
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(pub)
+	return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]), nil
+}

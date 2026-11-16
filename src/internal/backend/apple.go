@@ -2,9 +2,12 @@ package backend
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/x509"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -97,6 +100,14 @@ func (a *Apple) Sign(ctx context.Context, art Artifact, p profile.Profile) (Sign
 		}
 		args = append(args, "--entitlements", ent)
 	}
+	if a.Spec.CertRef != "" {
+		kc, cleanup, err := a.tempKeychain(ctx)
+		if err != nil {
+			return Signature{}, err
+		}
+		defer cleanup()
+		args = append(args, "--keychain", kc)
+	}
 	args = append(args, "--sign", a.Spec.Identity, art.Path)
 	r, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "codesign", Args: args})
 	if err != nil {
@@ -149,7 +160,7 @@ func (a *Apple) check(ctx context.Context, art Artifact, gatekeeper bool) error 
 		return contract.New(contract.VerifyFailed, "%s is not signed by the pinned identity %q", art.Rel, a.Spec.Identity)
 	}
 	if gatekeeper {
-		g, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "spctl", Args: []string{"-a", "-t", "exec", "-vv", art.Path}})
+		g, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "spctl", Args: spctlArgs(art.Path)})
 		if err != nil {
 			return contract.Wrap(contract.Unavailable, err, "spctl could not run")
 		}
@@ -193,12 +204,18 @@ func (a *Apple) Notarize(ctx context.Context, files []Artifact) (string, error) 
 	if err := os.Mkdir(stage, 0o700); err != nil {
 		return "", err
 	}
-	for _, f := range files {
+	for i, f := range files {
 		b, err := os.ReadFile(f.Path)
 		if err != nil {
 			return "", err
 		}
-		if err := os.WriteFile(filepath.Join(stage, filepath.Base(f.Path)), b, 0o600); err != nil { //nolint:gosec // G703: the base name of a manifest file, inside a fresh temporary directory
+		// One folder per file, so two files with the same base name in
+		// different directories are both submitted (audit N-B5).
+		dir := filepath.Join(stage, fmt.Sprintf("%03d", i))
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			return "", err
+		}
+		if err := os.WriteFile(filepath.Join(dir, filepath.Base(f.Path)), b, 0o600); err != nil { //nolint:gosec // G703: the base name of a manifest file, inside a fresh temporary directory
 			return "", err
 		}
 	}
@@ -247,4 +264,78 @@ func (a *Apple) literalOrRef(ctx context.Context, v string) (string, error) {
 		return a.H.Secrets.Resolve(ctx, v)
 	}
 	return v, nil
+}
+
+// spctlArgs asks Gatekeeper the question that fits the format: a disk image
+// is opened (with its primary signature), an installer package is installed,
+// and anything else is executed. Asking "exec" of a .dmg rejects a correctly
+// notarised image (audit N-B4).
+func spctlArgs(path string) []string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".dmg":
+		return []string{"-a", "-t", "open", "--context", "context:primary-signature", "-vv", path}
+	case ".pkg":
+		return []string{"-a", "-t", "install", "-vv", path}
+	}
+	return []string{"-a", "-t", "exec", "-vv", path}
+}
+
+// tempKeychain imports the profile's .p12 (certRef, with passwordRef) into a
+// keychain that exists for this run only: created in a private temporary
+// folder with a random password, never added to the search list, and deleted
+// when signing ends. It restores the PowerShell toolkit's MACOS_SIGN_P12 flow
+// without leaving the identity on the machine.
+func (a *Apple) tempKeychain(ctx context.Context) (string, func(), error) {
+	v, err := a.H.Secrets.Resolve(ctx, a.Spec.CertRef)
+	if err != nil {
+		return "", func() {}, err
+	}
+	p12, err := secrets.AsFile(v, true)
+	if err != nil {
+		return "", func() {}, err
+	}
+	pw := ""
+	if a.Spec.PasswordRef != "" {
+		if pw, err = a.H.Secrets.Resolve(ctx, a.Spec.PasswordRef); err != nil {
+			p12.Close()
+			return "", func() {}, err
+		}
+	}
+	dir, err := os.MkdirTemp("", "impr-keychain-")
+	if err != nil {
+		p12.Close()
+		return "", func() {}, err
+	}
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		p12.Close()
+		_ = os.RemoveAll(dir)
+		return "", func() {}, err
+	}
+	kpw := hex.EncodeToString(b)
+	kc := filepath.Join(dir, "impr-signing.keychain-db")
+	cleanup := func() {
+		_, _ = a.H.Runner.Run(context.Background(), execx.Cmd{Tool: "security", Args: []string{"delete-keychain", kc}})
+		p12.Close()
+		_ = os.RemoveAll(dir)
+	}
+	steps := [][]string{
+		{"create-keychain", "-p", kpw, kc},
+		{"set-keychain-settings", "-lut", "3600", kc},
+		{"unlock-keychain", "-p", kpw, kc},
+		{"import", p12.Path, "-k", kc, "-f", "pkcs12", "-P", pw, "-T", "/usr/bin/codesign"},
+		{"set-key-partition-list", "-S", "apple-tool:,apple:", "-s", "-k", kpw, kc},
+	}
+	for _, st := range steps {
+		r, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "security", Args: st})
+		if err != nil || r.ExitCode != 0 {
+			cleanup()
+			detail := ""
+			if err == nil {
+				detail = firstLine(r.Output())
+			}
+			return "", func() {}, contract.New(contract.SignFailed, "the .p12 could not be put in a temporary keychain (security %s)", st[0]).WithDetails(detail)
+		}
+	}
+	return kc, cleanup, nil
 }

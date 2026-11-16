@@ -83,3 +83,21 @@ func (p Profile) AllowsRepo(url string) bool {
 	}
 	return false
 }
+
+// repoPatternNarrow reports whether an allowedRepos pattern names its host
+// and owner literally: wildcards may only appear from the repository segment
+// on. "*/**", "**/x", "github.com" (which means github.com/**) and
+// "github.com/*/x" all fail (audit N-B8).
+func repoPatternNarrow(pattern string) bool {
+	p := strings.TrimSuffix(strings.Trim(strings.ToLower(strings.TrimSpace(pattern)), "/"), ".git")
+	segs := strings.Split(p, "/")
+	if len(segs) < 2 {
+		return false
+	}
+	for _, s := range segs[:2] {
+		if s == "" || strings.ContainsAny(s, "*?[") {
+			return false
+		}
+	}
+	return true
+}

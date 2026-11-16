@@ -11,8 +11,7 @@ hold credential references and pinned identities, never a secret.
 | `<config>/profiles.json` | `{"default": "<name>", "migratedFrom": "...", "migratedAt": "..."}` |
 
 `<config>` is `~/.config/imprimatur` (or `$XDG_CONFIG_HOME/imprimatur`) on every
-Unix, macOS included, and `%AppData%\imprimatur` on Windows
-([installation](installation.md)).
+OS, Windows included ([installation](installation.md)).
 
 ## The profile
 

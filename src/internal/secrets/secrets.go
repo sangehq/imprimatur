@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
@@ -52,6 +53,10 @@ func (r Resolver) Resolve(ctx context.Context, ref string) (string, error) {
 		return v, nil
 	case "keychain", "cert-store", "gpg-agent":
 		return name, nil
+	case "file":
+		// A key file impr made or the owner placed: an absolute path to a
+		// regular file nobody else can read or write.
+		return name, checkKeyFile(name)
 	case "secret":
 		return r.store(ctx, name)
 	}
@@ -143,4 +148,23 @@ func TempText(text string) (File, error) {
 		return File{}, err
 	}
 	return File{Path: path, cleanup: func() { _ = os.RemoveAll(dir) }}, nil
+}
+
+// checkKeyFile accepts an absolute path to a regular file with no group or
+// other permissions (Unix).
+func checkKeyFile(p string) error {
+	if !filepath.IsAbs(p) {
+		return contract.New(contract.Usage, "file://%s: the path must be absolute", p)
+	}
+	st, err := os.Lstat(p)
+	if err != nil {
+		return contract.Wrap(contract.Unavailable, err, "file://%s cannot be read", p)
+	}
+	if !st.Mode().IsRegular() {
+		return contract.New(contract.Usage, "file://%s is not a regular file (symlinks are not followed)", p)
+	}
+	if runtime.GOOS != "windows" && st.Mode().Perm()&0o077 != 0 {
+		return contract.New(contract.Usage, "file://%s is readable or writable by others (%v); chmod 600 it", p, st.Mode().Perm())
+	}
+	return nil
 }

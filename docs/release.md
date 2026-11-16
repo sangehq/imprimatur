@@ -32,8 +32,13 @@ gh workflow run release.yml --repo sangehq/imprimatur -f tag=vX.Y.Z
 
 - The shared workflow also pushes `src/vX.Y.Z` on the same commit, the tag Go
   resolves the module in `src/` through. It matches no release trigger.
-- Build provenance is not attested: GitHub Free refuses attestations on a
-  private repository, so the shared workflow skips that step here.
+- The shared workflow attests build provenance for every asset (the
+  repository is public, so GitHub accepts the attestation). Check a download
+  with:
+
+  ```bash
+  gh attestation verify impr_linux_amd64 --repo sangehq/imprimatur --signer-workflow simtabi/.github/.github/workflows/go-release.yml
+  ```
 
 `src/internal/guardtest` fails if `release.yml` gains a branch or schedule
 trigger, stops calling the pinned shared workflow, or stops passing the tag;

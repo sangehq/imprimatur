@@ -10,18 +10,24 @@ import (
 	"io"
 	"os"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/backend"
+	"github.com/sangehq/imprimatur/src/internal/bundle"
+	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
+	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/execx"
+	"github.com/sangehq/imprimatur/src/internal/hooks"
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 	"github.com/sangehq/imprimatur/src/internal/secrets"
 	"github.com/sangehq/imprimatur/src/internal/signing"
+	"github.com/sangehq/imprimatur/src/internal/webhook"
 )
 
 // Build metadata, stamped with -ldflags -X.
@@ -43,6 +49,11 @@ type App struct {
 	User           string
 	Runner         execx.Runner
 	Now            func() time.Time
+	// Stdin feeds the interactive menu; Interactive reports whether a person
+	// is at a terminal. Both nil means no menu: impr with no arguments prints
+	// its usage, as scripts and sange expect.
+	Stdin       io.Reader
+	Interactive func() bool
 }
 
 // Main runs impr with the real host and returns the exit code.
@@ -56,7 +67,7 @@ func Main(args []string) int {
 		name = u.Username
 	}
 	a := &App{Stdout: os.Stdout, Stderr: os.Stderr, Getenv: os.Getenv, GOOS: runtime.GOOS, Home: home, User: name,
-		Runner: execx.OS{}, Now: time.Now}
+		Runner: execx.OS{}, Now: time.Now, Stdin: os.Stdin, Interactive: stdinIsTerminal}
 	return a.Run(context.Background(), args)
 }
 
@@ -177,6 +188,12 @@ func (a *App) fail(err error, asJSON bool) int {
 
 // ---- wiring --------------------------------------------------------------------
 
+// effective is the merged configuration: system < user < active profile.
+func (a *App) effective(d paths.Dirs) (config.Effective, error) {
+	sys := paths.SystemConfig(paths.Env{GOOS: a.GOOS, Getenv: a.Getenv, Home: a.Home})
+	return config.LoadEffective(config.Sources{SystemDir: sys, UserDir: d.Config, Profile: a.Getenv("IMPR_CONFIG_PROFILE")})
+}
+
 func (a *App) dirs() (paths.Dirs, error) {
 	return paths.Resolve(paths.Env{GOOS: a.GOOS, Getenv: a.Getenv, Home: a.Home})
 }
@@ -185,6 +202,11 @@ func (a *App) store() (profile.Store, error) {
 	d, err := a.dirs()
 	if err != nil {
 		return profile.Store{}, contract.Wrap(contract.Unavailable, err, "locate the imprimatur config")
+	}
+	if copied, err := paths.MigrateLegacy(d, a.Now()); err != nil {
+		a.say("config    could not copy the old Windows config: %v", err)
+	} else if len(copied) > 0 {
+		a.say("config    copied %s into %s; the old folder is kept", strings.Join(copied, ", "), d.Config)
 	}
 	s := profile.Store{Dir: d.Config}
 	a.migrateOnce(s, d)
@@ -205,6 +227,10 @@ func (a *App) migrateOnce(s profile.Store, d paths.Dirs) {
 	rep, err := profile.ImportLegacy(s, src, env)
 	if err != nil {
 		a.say("profiles  could not import the PowerShell settings from %s: %v (run impr profile import-legacy)", src, err)
+		// Write the index anyway, naming the source, so the import is not
+		// retried, and its warning not repeated, on every command (audit
+		// N-B18). impr profile import-legacy still runs it on request.
+		_ = s.SaveIndex(profile.Index{MigratedFrom: src + " (failed: run impr profile import-legacy)", MigratedAt: a.Now().UTC().Format(time.RFC3339)})
 		return
 	}
 	a.say("profiles  imported the PowerShell line's settings from %s: %s", src, strings.Join(rep.Imported, ", "))
@@ -218,8 +244,25 @@ func (a *App) legacyEnv(d paths.Dirs) profile.LegacyEnv {
 }
 
 func (a *App) host() backend.Host {
-	return backend.Host{GOOS: a.GOOS, Runner: a.Runner, Now: a.Now,
-		Secrets: secrets.Resolver{Runner: a.Runner, Getenv: a.Getenv, GOOS: a.GOOS}}
+	r := a.runner()
+	return backend.Host{GOOS: a.GOOS, Runner: r, Now: a.Now,
+		Secrets: secrets.Resolver{Runner: r, Getenv: a.Getenv, GOOS: a.GOOS}}
+}
+
+// runner is the tool runner with the config's tool pins applied. A config
+// that does not load leaves the pins off here; every command that signs or
+// verifies loads the config itself and fails on it first.
+func (a *App) runner() execx.Runner {
+	o, ok := a.Runner.(execx.OS)
+	if !ok {
+		return a.Runner
+	}
+	if d, err := a.dirs(); err == nil {
+		if eff, err := a.effective(d); err == nil && len(eff.Config.Tools) > 0 {
+			o.Pins = eff.Config.Tools
+		}
+	}
+	return o
 }
 
 func (a *App) service() (*signing.Service, error) {
@@ -227,22 +270,72 @@ func (a *App) service() (*signing.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &signing.Service{Host: a.host(), Store: s, Version: version, Log: a.Stderr}, nil
+	d, err := a.dirs()
+	if err != nil {
+		return nil, contract.Wrap(contract.Unavailable, err, "locate the imprimatur config")
+	}
+	eff, err := a.effective(d)
+	cfg := eff.Config
+	if err != nil {
+		// config.json decides which gates run; a broken one never means "no gates".
+		return nil, contract.Wrap(contract.Unavailable, err, "the imprimatur config cannot be read").
+			WithFix("impr hooks list", "fix or remove "+filepath.Join(d.Config, config.File))
+	}
+	hk := &hooks.Runner{Hooks: cfg.Hooks, Warn: a.say}
+	bus := a.bus()
+	if bus != nil {
+		bus.Sinks = append(bus.Sinks, hk)
+		if subs, err := a.subscriptions(ctxBackground(), cfg); err != nil {
+			a.say("webhooks  not sending: %v", err)
+		} else if len(subs) > 0 {
+			bus.Sinks = append(bus.Sinks, webhook.Sink{Outbox: a.outbox(d), Subs: subs})
+		}
+	}
+	host := a.host()
+	trusted := cfg.Bundles.TrustedKeys
+	check := func(p profile.Profile) error {
+		return bundle.Check(context.Background(), host.Runner, d.Config, p, trusted)
+	}
+	return &signing.Service{Host: host, Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk,
+		RequireFullGPG: cfg.Policy.RequireFullGPG(), ManagedCheck: check}, nil
+}
+
+// bus is the event bus for this run: the hash-chained log in the state dir.
+// An unusable state dir costs the events, never the command (a warning says
+// so), so signing still works on a read-only home.
+func (a *App) bus() *events.Bus {
+	d, err := a.dirs()
+	if err != nil {
+		return nil
+	}
+	id, err := events.InstallID(d.State)
+	if err != nil {
+		a.say("events    not recorded: %v", err)
+		return nil
+	}
+	return &events.Bus{Env: events.Env{Now: a.Now, NewID: events.NewID, InstallID: id},
+		Sinks: []events.Sink{events.Log{Dir: filepath.Join(d.State, "events")}}, Warn: a.say}
 }
 
 // ---- dispatch ------------------------------------------------------------------
 
 // Run runs one command line and returns the exit code.
 func (a *App) Run(ctx context.Context, args []string) int {
-	asJSON := false
-	for _, x := range args {
-		asJSON = asJSON || x == "--json"
-	}
+	asJSON, wantHelp := scanGlobal(args)
 	if len(args) == 0 {
+		if a.Interactive != nil && a.Interactive() && a.Stdin != nil {
+			return a.menu(ctx)
+		}
 		a.usage()
 		return int(contract.Usage)
 	}
-	cmd, rest := args[0], args[1:]
+	cmd, rest := resolveAlias(args[0]), args[1:]
+	if cmd == "help" && len(rest) > 0 {
+		return a.helpFor(resolveAlias(rest[0]))
+	}
+	if wantHelp && cmd != "-h" && cmd != "--help" {
+		return a.helpFor(cmd)
+	}
 	switch cmd {
 	case "-h", "--help", "help":
 		a.usage()
@@ -255,10 +348,12 @@ func (a *App) Run(ctx context.Context, args []string) int {
 	if !ok {
 		return a.fail(contract.New(contract.Usage, "unknown command %q", cmd).WithFix("impr help"), asJSON)
 	}
+	start := a.Now()
 	code, err := h(ctx, a, rest)
 	if err != nil {
-		return a.fail(err, asJSON)
+		code = a.fail(err, asJSON)
 	}
+	a.audit(ctx, cmd, rest, code, start)
 	return code
 }
 
@@ -268,13 +363,28 @@ var commands map[string]handler
 
 func init() {
 	commands = map[string]handler{
-		"companion": cmdCompanion,
-		"doctor":    cmdDoctor,
-		"profile":   cmdProfile,
-		"cert":      cmdCert,
-		"sign":      cmdSign,
-		"verify":    cmdVerify,
-		"rules":     cmdRules,
+		"companion":  cmdCompanion,
+		"doctor":     cmdDoctor,
+		"profile":    cmdProfile,
+		"cert":       cmdCert,
+		"sign":       cmdSign,
+		"verify":     cmdVerify,
+		"rules":      cmdRules,
+		"events":     cmdEvents,
+		"hooks":      cmdHooks,
+		"webhooks":   cmdWebhooks,
+		"serve":      cmdServe,
+		"server":     cmdServer,
+		"config":     cmdConfig,
+		"completion": cmdCompletion,
+		"install":    cmdInstall,
+		"uninstall":  cmdUninstall,
+		"path":       cmdPath,
+		"menu":       cmdMenu,
+		"build":      cmdBuild,
+		"release":    cmdRelease,
+		"tools":      cmdTools,
+		"audit":      cmdAudit,
 	}
 }
 
@@ -289,12 +399,34 @@ Usage:
   impr companion info [--json]
   impr doctor [--json]
   impr profile list|show|add|edit|rm|import|export|validate|default|capabilities|import-legacy ... [--json]
+  impr profile bundle install BUNDLE.json [--sig FILE] | list [--json] | verify [--json]
   impr cert list [--json]
-  impr sign --manifest FILE --commit SHA --tree ID --profile NAME --purpose release|test|internal
-            [--platforms windows,macos,checksums,containers] [--root DIR] [--repo URL] [--json] [--strict]
+  impr cert create [--name NAME] [--subject CN] [--days N] [--json]
+  impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
+            [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
-  impr rules --request FILE [--json] [--strict] [--out-dir DIR]
+  impr rules (--request FILE | FILE... [--scope publisher|product|version] [--product NAME] [--file-version a.b.c.d]
+            [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]
+  impr build [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z --version-var PKG.VAR]
+            [--targets os/arch,...] [--clean] [--allow-dirty] [--json]
+  impr release --profile NAME --purpose release|test|internal [--repo URL] [--platforms ...] [build options] [--json]
+  impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
+  impr hooks list [--json] | pin FILE | test NAME
+  impr webhooks list [--json] | secret | retry [--all] | deliveries [--json]
+  impr config path|show|validate [--json] | get KEY | set KEY VALUE [--profile NAME] | unset KEY [--profile NAME]
+  impr config profile list [--json] | create NAME | use NAME | use --none | rm NAME
+  impr tools list [--json] | pin NAME
+  impr audit tail [--limit N] [--json] | verify [--json]
+  impr serve [--listen unix|HOST:PORT] [--check-config] [--yes]
+  impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
+  impr completion bash|zsh|fish|powershell | install bash|zsh|fish | uninstall bash|zsh|fish
+  impr install [--dir DIR] [--force]
+  impr uninstall [--dir DIR]
+  impr path [--json]
+  impr menu
   impr version
+
+Aliases: s sign, v verify, d doctor, h help, b build, r release.
 
 Exit codes: 0 ok, 1 usage, 2 skipped (without --strict), 3 signing failed,
 4 verification failed, 5 unavailable.`
@@ -306,4 +438,78 @@ func needNoArgs(p parsed, what string) error {
 		return contract.New(contract.Usage, "%s takes no arguments (got %s)", what, strings.Join(p.pos, " "))
 	}
 	return nil
+}
+
+// boolOptions are the options that take no value, across every command; any
+// other --option consumes the next word as its value.
+var boolOptions = map[string]bool{"--json": true, "--strict": true, "--force": true, "--requires-approval": true,
+	"--check-config": true, "--none": true, "--all": true, "--help": true, "-h": true}
+
+// scanGlobal finds --json and --help before "--", skipping a word that is
+// the value of the option before it, so `--notes --json` or a file named
+// --json after "--" does not switch modes (audit N-B19).
+func scanGlobal(args []string) (asJSON, help bool) {
+	for i := 0; i < len(args); i++ {
+		x := args[i]
+		if x == "--" {
+			break
+		}
+		if i > 0 {
+			prev := args[i-1]
+			if strings.HasPrefix(prev, "--") && !strings.Contains(prev, "=") && !boolOptions[prev] {
+				continue // x is prev's value
+			}
+		}
+		switch x {
+		case "--json":
+			asJSON = true
+		case "--help", "-h":
+			help = true
+		}
+	}
+	return asJSON, help
+}
+
+// helpFor prints the usage lines of one command (audit N-B20), or the whole
+// usage for an unknown one.
+func (a *App) helpFor(cmd string) int {
+	var out []string
+	keep := false
+	for _, line := range strings.Split(usageText, "\n") {
+		switch {
+		case strings.HasPrefix(line, "  impr "+cmd+" ") || line == "  impr "+cmd:
+			keep = true
+			out = append(out, line)
+		case keep && strings.HasPrefix(line, "            "):
+			out = append(out, line) // a continuation of the line above
+		default:
+			keep = false
+		}
+	}
+	if len(out) == 0 {
+		a.usage()
+		return int(contract.Usage)
+	}
+	_, _ = fmt.Fprintln(a.Stderr, "Usage:\n"+strings.Join(out, "\n")+"\n\nExit codes: 0 ok, 1 usage, 2 skipped, 3 signing failed, 4 verification failed, 5 unavailable.")
+	return 0
+}
+
+func systemDir(a *App) string {
+	return paths.SystemConfig(paths.Env{GOOS: a.GOOS, Getenv: a.Getenv, Home: a.Home})
+}
+
+// stdinIsTerminal reports whether stdin is a terminal, not a pipe or file.
+func stdinIsTerminal() bool {
+	st, err := os.Stdin.Stat()
+	return err == nil && st.Mode()&os.ModeCharDevice != 0 && os.Getenv("CI") == ""
+}
+
+func cmdMenu(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 {
+		return 0, contract.New(contract.Usage, "impr menu takes no arguments")
+	}
+	if a.Stdin == nil {
+		return 0, contract.New(contract.Usage, "the menu needs a terminal")
+	}
+	return a.menu(ctx), nil
 }

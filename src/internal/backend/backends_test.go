@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -306,9 +307,47 @@ func TestGPGVerifiesThePinnedKey(t *testing.T) {
 	}
 	g.Spec.Fingerprint = randHex(t, 20)
 	wantCode(t, g.Verify(context.Background(), Artifact{Path: "/x/SHA256SUMS"}, profile.Profile{}), contract.VerifyFailed)
-	g.Spec.KeyRef = "env://GPG_KEY"
+	g.Spec.KeyRef = "keychain://GPG_KEY" // not gpg-agent://, secret:// or env://
 	_, err := g.Sign(context.Background(), Artifact{Path: "/x/SHA256SUMS"}, profile.Profile{Name: "g"})
 	wantCode(t, err, contract.Usage)
+
+	// A revoked key, an expired signature or a non-zero exit fails even with
+	// a VALIDSIG line for the pinned key; a longer fingerprint that merely ends
+	// in a full pin does not match.
+	g.Spec = spec
+	for name, out := range map[string]execx.Result{
+		"revoked key":   {Stdout: []byte(fmt.Sprintf("[GNUPG:] REVKEYSIG X\n[GNUPG:] VALIDSIG %s x\n", fpr))},
+		"expired sig":   {Stdout: []byte(fmt.Sprintf("[GNUPG:] EXPSIG X\n[GNUPG:] VALIDSIG %s x\n", fpr))},
+		"non-zero exit": {Stdout: []byte(fmt.Sprintf("[GNUPG:] VALIDSIG %s x\n", fpr)), ExitCode: 2},
+		"suffix only":   {Stdout: []byte(fmt.Sprintf("[GNUPG:] VALIDSIG %s x\n", "AB"+fpr))},
+	} {
+		f.Handle = func(execx.Cmd) execx.Result { return out }
+		if err := g.Verify(context.Background(), Artifact{Path: "/x/SHA256SUMS", Rel: "SHA256SUMS"}, profile.Profile{}); contract.CodeOf(err) != contract.VerifyFailed {
+			t.Errorf("%s: %v, want verification failed", name, err)
+		}
+	}
+}
+
+func TestPEOversizedCertificateTableIsRefused(t *testing.T) {
+	// A minimal PE32+ whose security directory claims 1 GiB at offset 0x200.
+	b := make([]byte, 0x400)
+	copy(b, "MZ")
+	binary.LittleEndian.PutUint32(b[0x3c:], 0x80)
+	copy(b[0x80:], "PE\x00\x00")
+	binary.LittleEndian.PutUint16(b[0x84:], 0x8664) // machine
+	binary.LittleEndian.PutUint16(b[0x94:], 240)    // SizeOfOptionalHeader
+	opt := 0x98
+	binary.LittleEndian.PutUint16(b[opt:], 0x20b)           // PE32+
+	binary.LittleEndian.PutUint32(b[opt+108:], 16)          // NumberOfRvaAndSizes
+	binary.LittleEndian.PutUint32(b[opt+112+4*8:], 0x200)   // security dir VirtualAddress
+	binary.LittleEndian.PutUint32(b[opt+112+4*8+4:], 1<<30) // and Size
+	path := filepath.Join(t.TempDir(), "big.exe")
+	if err := os.WriteFile(path, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadPESigner(path); err == nil || !strings.Contains(err.Error(), "does not fit") {
+		t.Fatalf("want a size refusal, got %v", err)
+	}
 }
 
 func slicesContains(xs []string, x string) bool {
@@ -379,18 +418,6 @@ func TestCosignKeyPinAndKeylessArgs(t *testing.T) {
 	}
 }
 
-func TestAttestationsAreUnavailable(t *testing.T) {
-	b, err := For(Host{}, profile.Profile{Platforms: profile.Platforms{Attestations: &profile.AttestationSpec{Kind: "in-toto", Signer: "checksums"}}}, profile.Attestations)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if b.Capability(Host{}).Sign {
-		t.Fatal("in-toto claims it can sign")
-	}
-	_, err = b.Sign(context.Background(), Artifact{}, profile.Profile{})
-	wantCode(t, err, contract.Unavailable)
-}
-
 // ---- real tools that may be absent: each skips with the reason ----------------
 
 func realTool(t *testing.T, name string) {
@@ -450,4 +477,288 @@ func TestMinisignReal(t *testing.T) {
 func TestCosignReal(t *testing.T) {
 	realTool(t, "cosign")
 	t.Skip("real cosign: a key-mode run uploads to the public transparency log; not run from unit tests")
+}
+
+// Audit N-B5: two files with the same base name in different directories
+// are both staged for notarisation, not one over the other.
+func TestNotarizeStagesSameNamedFilesApart(t *testing.T) {
+	root := t.TempDir()
+	var arts []Artifact
+	for _, d := range []string{"amd64", "arm64"} {
+		p := filepath.Join(root, d, "tool")
+		if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte{0xcf, 0xfa, 0xed, 0xfe, d[0], d[1]}, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		arts = append(arts, Artifact{Path: p, Rel: d + "/tool"})
+	}
+	staged := 0
+	f := execx.NewFake("ditto", "xcrun")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Tool == "ditto" {
+			_ = filepath.WalkDir(c.Args[3], func(_ string, de os.DirEntry, _ error) error {
+				if de != nil && de.Type().IsRegular() {
+					staged++
+				}
+				return nil
+			})
+		}
+		if c.Tool == "xcrun" {
+			return execx.Result{Stdout: []byte(`{"id":"sub-1","status":"Accepted"}`)}
+		}
+		return execx.Result{}
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: []byte(randHex(t, 16))})
+	a := &Apple{H: fakeHost("darwin", f, map[string]string{"IMPR_NOTARY_KEY": string(keyPEM), "IMPR_NOTARY_KEY_ID": randHex(t, 5), "IMPR_NOTARY_ISSUER": randHex(t, 8)}), Spec: macSpec()}
+	if _, err := a.Notarize(context.Background(), arts); err != nil {
+		t.Fatal(err)
+	}
+	if staged != 2 {
+		t.Fatalf("staged %d files, want 2", staged)
+	}
+}
+
+// Audit N-B4: Gatekeeper is asked the question that fits each format.
+func TestSpctlArgsPerFormat(t *testing.T) {
+	for path, want := range map[string]string{
+		"/x/tool": "-a -t exec -vv /x/tool", "/x/App.dmg": "-a -t open --context context:primary-signature -vv /x/App.dmg",
+		"/x/Setup.PKG": "-a -t install -vv /x/Setup.PKG",
+	} {
+		if got := strings.Join(spctlArgs(path), " "); got != want {
+			t.Errorf("%s: %s", path, got)
+		}
+	}
+}
+
+// Audit N-B16: a relative cosign public key resolves against the signing root.
+func TestCosignPublicKeyIsRootRelative(t *testing.T) {
+	c := &Cosign{H: Host{Root: "/builds/tool"}, Spec: profile.ContainerSpec{PublicKey: "keys/cosign.pub"}}
+	if got := c.publicKey(); got != filepath.Join("/builds/tool", "keys", "cosign.pub") {
+		t.Fatalf("publicKey %s", got)
+	}
+	abs := filepath.Join(t.TempDir(), "cosign.pub")
+	c.Spec.PublicKey = abs
+	if c.publicKey() != abs {
+		t.Fatal("an absolute path changed")
+	}
+}
+
+// Audit N-B10: an SSH key's fingerprint for `cert list` is read from the
+// OpenSSH header in Go and equals ssh-keygen's, so the key need not be
+// written anywhere to report it present.
+func TestOpenSSHPublicFingerprintMatchesSSHKeygen(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("real ssh-keygen: not installed")
+	}
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	out, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	want := strings.Fields(string(out))[1]
+	text, _ := os.ReadFile(key)
+	got, err := OpenSSHPublicFingerprint(string(text))
+	if err != nil || got != want {
+		t.Fatalf("fingerprint %s %v, ssh-keygen %s", got, err, want)
+	}
+	if _, err := OpenSSHPublicFingerprint("-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----\n"); err == nil {
+		t.Fatal("a truncated key was read")
+	}
+}
+
+// Audit N-B13: a test certificate may fail verification only on an
+// untrusted root, never on a digest mismatch, expiry or revocation.
+func TestUntrustedRootOnly(t *testing.T) {
+	for out, want := range map[string]bool{
+		"SignTool Error: A certificate chain processed, but terminated in a root certificate which is not trusted by the trust provider.": true,
+		"Signature verification: failed\nself-signed certificate in certificate chain":                                                    true,
+		"Message digest MISMATCH; self-signed certificate in certificate chain":                                                           false,
+		"the certificate has expired; unable to get local issuer certificate":                                                             false,
+		"SignTool Error: The signature is invalid.":                                                                                       false,
+		"untrusted": false,
+	} {
+		if got := untrustedRootOnly(out); got != want {
+			t.Errorf("%q: %v, want %v", out, got, want)
+		}
+	}
+}
+
+// A gpg key held in a secret is imported into a throwaway gpg home for the
+// run: every gpg call names that home, the key goes in on stdin, the
+// passphrase through a file, and the home is gone afterwards.
+func TestGPGKeyFromASecretUsesAThrowawayHome(t *testing.T) {
+	fpr := strings.ToUpper(randHex(t, 20))
+	var homes []string
+	var importedKey string
+	f := execx.NewFake("gpg")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if len(c.Args) > 1 && c.Args[0] == "--homedir" {
+			homes = append(homes, c.Args[1])
+		}
+		switch {
+		case slicesContains(c.Args, "--import"):
+			importedKey = string(c.Stdin)
+		case slicesContains(c.Args, "--verify"):
+			return execx.Result{Stdout: []byte("[GNUPG:] VALIDSIG " + fpr + " x\n")}
+		}
+		return execx.Result{}
+	}
+	key := "-----BEGIN PGP PRIVATE KEY BLOCK-----\n" + randHex(t, 16) + "\n-----END PGP PRIVATE KEY BLOCK-----\n"
+	g := &GPG{H: fakeHost("linux", f, map[string]string{"IMPR_GPG": key, "IMPR_GPG_PW": randHex(t, 8)}),
+		Spec: profile.ChecksumSpec{Kind: "gpg", KeyRef: "env://IMPR_GPG", PasswordRef: "env://IMPR_GPG_PW", Fingerprint: fpr}}
+	if _, err := g.Sign(context.Background(), Artifact{Path: "/x/SHA256SUMS", Rel: "SHA256SUMS"}, profile.Profile{Name: "g"}); err != nil {
+		t.Fatal(err)
+	}
+	if importedKey != key {
+		t.Fatal("the key did not reach gpg on stdin")
+	}
+	if len(homes) < 3 {
+		t.Fatalf("gpg calls outside the throwaway home: %v", f.Calls)
+	}
+	for _, h := range homes {
+		if h != homes[0] {
+			t.Fatalf("more than one home: %v", homes)
+		}
+	}
+	if _, err := os.Stat(homes[0]); err == nil {
+		t.Fatal("the throwaway gpg home was left behind")
+	}
+	if !f.Called("gpg", "--pinentry-mode loopback --passphrase-file") {
+		t.Fatalf("the passphrase was not given through a file: %+v", f.Calls)
+	}
+	for _, c := range f.Calls {
+		if strings.Contains(strings.Join(c.Args, " "), "PRIVATE KEY") {
+			t.Fatal("the key reached a command line")
+		}
+	}
+}
+
+// A .p12 in certRef is signed from a temporary keychain that is deleted
+// afterwards, also when a step fails.
+func TestAppleTemporaryKeychain(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "tool")
+	if err := os.WriteFile(file, []byte{0xcf, 0xfa, 0xed, 0xfe}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p12 := filepath.Join(t.TempDir(), "id.p12")
+	if err := os.WriteFile(p12, []byte(randHex(t, 32)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failImport := false
+	f := execx.NewFake("codesign", "security", "spctl", "xcrun", "ditto")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Tool == "security" && c.Args[0] == "import" && failImport {
+			return execx.Result{ExitCode: 1, Stderr: []byte("bad password")}
+		}
+		if c.Tool == "codesign" && c.Args[0] == "-d" {
+			return execx.Result{Stderr: []byte("Authority=Developer ID Application: Acme Ltd (ABCDE12345)\nTeamIdentifier=ABCDE12345\n")}
+		}
+		return execx.Result{}
+	}
+	spec := macSpec()
+	spec.CertRef, spec.PasswordRef = "env://IMPR_P12", "env://IMPR_P12_PW"
+	a := &Apple{H: fakeHost("darwin", f, map[string]string{"IMPR_P12": p12, "IMPR_P12_PW": randHex(t, 6)}), Spec: spec}
+	if _, err := a.Sign(context.Background(), Artifact{Path: file, Rel: "tool"}, profile.Profile{Name: "mac"}); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("security", "create-keychain") || !f.Called("security", "import "+p12) || !f.Called("codesign", "--keychain") ||
+		!f.Called("security", "delete-keychain") {
+		t.Fatalf("calls: %+v", f.Calls)
+	}
+	f.Calls = nil
+	failImport = true
+	_, err := a.Sign(context.Background(), Artifact{Path: file, Rel: "tool"}, profile.Profile{Name: "mac"})
+	wantCode(t, err, contract.SignFailed)
+	if !f.Called("security", "delete-keychain") || f.Called("codesign", "--sign") {
+		t.Fatalf("a failed import must delete the keychain and sign nothing: %+v", f.Calls)
+	}
+}
+
+func selfSigned(t *testing.T) (der []byte, notAfter time.Time) {
+	t.Helper()
+	k, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	na := time.Now().Add(400 * 24 * time.Hour).UTC().Truncate(time.Second)
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(7), Subject: pkix.Name{CommonName: "store test"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: na}
+	der, err = x509.CreateCertificate(rand.Reader, tpl, tpl, &k.PublicKey, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return der, na
+}
+
+// The Windows store certificate's real expiry is read from the file
+// certutil exports, not from locale-dependent text.
+func TestStoreNotAfterIsReadFromTheExportedCertificate(t *testing.T) {
+	der, na := selfSigned(t)
+	f := execx.NewFake("certutil", "signtool")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Args[1] == "-store" {
+			_ = os.WriteFile(c.Args[len(c.Args)-1], der, 0o600)
+		}
+		return execx.Result{}
+	}
+	a := &Authenticode{H: fakeHost("windows", f, nil), Spec: profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendCertStore, Thumbprint: strings.ToUpper(sha1Hex(der))}}
+	e := a.Certificate(context.Background(), profile.Profile{Name: "w"})
+	if !e.Present || e.NotAfter == nil || !e.NotAfter.Equal(na) {
+		t.Fatalf("entry %+v, want notAfter %s", e, na)
+	}
+	a.Spec.Thumbprint = strings.Repeat("A", 40) // the exported certificate is not the pinned one
+	if e := a.Certificate(context.Background(), profile.Profile{Name: "w"}); e.NotAfter != nil {
+		t.Fatalf("a different certificate's expiry was reported: %v", e.NotAfter)
+	}
+}
+
+// Artifact Signing checks the Azure CLI is signed in when it is the
+// credential, and skips the check for a service principal.
+func TestAzureSignInCheck(t *testing.T) {
+	dir := t.TempDir()
+	dlib := filepath.Join(dir, "Azure.CodeSigning.Dlib.dll")
+	meta := filepath.Join(dir, "metadata.json")
+	_ = os.WriteFile(dlib, []byte("x"), 0o600)
+	_ = os.WriteFile(meta, []byte(`{"Endpoint":"https://eus.codesigning.azure.net","CodeSigningAccountName":"a","CertificateProfileName":"p"}`), 0o600)
+	exit := 1
+	f := execx.NewFake("signtool", "az")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Tool == "az" {
+			return execx.Result{ExitCode: exit}
+		}
+		return execx.Result{}
+	}
+	spec := profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendAzure, Subject: "CN=Acme", DlibPath: dlib, MetadataPath: meta}
+	a := &Authenticode{H: fakeHost("windows", f, nil), Spec: spec}
+	wantCode(t, a.Preflight(context.Background(), profile.Profile{}), contract.Unavailable)
+	exit = 0
+	if err := a.Preflight(context.Background(), profile.Profile{}); err != nil {
+		t.Fatal(err)
+	}
+	f.Calls, exit = nil, 1
+	a = &Authenticode{H: fakeHost("windows", f, map[string]string{"AZURE_CLIENT_ID": "x"}), Spec: spec}
+	if err := a.Preflight(context.Background(), profile.Profile{}); err != nil || f.Called("az", "account") {
+		t.Fatalf("with a service principal: %v, calls %+v", err, f.Calls)
+	}
+}
+
+func TestOsslKeyArgsSplitsAPEMBundle(t *testing.T) {
+	der, _ := selfSigned(t)
+	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	kd, _ := x509.MarshalPKCS8PrivateKey(k)
+	bundle := string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})) + string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: kd}))
+	args, done, err := osslKeyArgs(bundle)
+	if err != nil || len(args) != 4 || args[0] != "-certs" || args[2] != "-key" {
+		t.Fatalf("%v %v", args, err)
+	}
+	c, _ := os.ReadFile(args[1])
+	kf, _ := os.ReadFile(args[3])
+	if !strings.Contains(string(c), "CERTIFICATE") || strings.Contains(string(c), "PRIVATE") || !strings.Contains(string(kf), "PRIVATE KEY") {
+		t.Fatal("the bundle was not split into certificate and key")
+	}
+	done()
+	if _, err := os.Stat(args[3]); err == nil {
+		t.Fatal("the key file was left behind")
+	}
 }

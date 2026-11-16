@@ -37,25 +37,26 @@ Parity is measured against this list. Each line is a PowerShell feature the Go
 
 | PowerShell feature | Status in the Go impr |
 | --- | --- |
-| `impr release`, `impr build` (GoReleaser builds, go-winres version info, the GoReleaser signing hook) | not ported: when sange drives a release its build stage is the only builder (SD-075), and impr signs that stage's manifest |
+| `impr release`, `impr build` (GoReleaser builds, go-winres version info, the GoReleaser signing hook) | **ported** for standalone use as [`impr build`](../tools/build.md) and [`impr release`](../tools/release.md): `go build` into `build/{os}/`, a commit-bound build manifest, then sign and verify. It never runs a repository's GoReleaser config or hooks, and never tags, pushes or publishes. Windows version resources (go-winres) are not ported. When sange drives a release, its build stage stays the only builder (SD-075) |
 | `impr init` (project template, `.gitignore` edits, `.goreleaser.yaml`) | not ported: project setup moves to sange (companion design §2) |
-| `impr sign FILE` (one loose file) and `--signer` | not ported on purpose: impr signs build-manifest entries only, so it is not a signing oracle |
-| `impr config list/get/set/unset/path` (the settings file) | replaced by profiles; the settings are imported once |
-| `impr cert show` and `impr cert create` (the Windows self-signed test certificate) | not ported: creating a store certificate needs the Windows certificate APIs. `impr cert list` is ported |
-| `impr rules` reading signed `.exe` files on Windows, with `--scope publisher/product/file/version`, `--include-default-rules`, base WDAC policies, compiling `.cip` with ConvertFrom-CIPolicy, `Test-AppLockerPolicy`, `DEPLOY.md` | not ported: `impr rules --request` renders from facts sange supplies, supplemental WDAC only, and compiles nothing |
+| `impr sign FILE` (one loose file) and `--signer` | **ported** as `impr sign FILE...`. impr writes a manifest for the files bound to HEAD's commit and tree and signs that, so loose signing is still manifest-bound; a release needs a clean git work tree ([sign](../tools/sign.md#loose-files)). `--signer` stays replaced by profiles |
+| `impr config list/get/set/unset/path` (the settings file) | **ported** as [`impr config`](../tools/config.md) for the application config (layers, configuration profiles, locked keys); the signing settings became signing profiles and are imported once |
+| `impr cert show` and `impr cert create` (the Windows self-signed test certificate) | **ported** as [`impr cert create`](../tools/cert.md#create-a-test-certificate): a self-signed code-signing certificate in an owner-only file and a `test` profile that signs with it through osslsigncode on any host; `impr cert list` replaces `cert show` |
+| `impr rules` reading signed `.exe` files on Windows, with `--scope publisher/product/file/version`, `--include-default-rules`, base WDAC policies, compiling `.cip` with ConvertFrom-CIPolicy, `Test-AppLockerPolicy`, `DEPLOY.md` | **partly ported**: [`impr rules FILE...`](../tools/rules.md#from-signed-files) reads the publisher, leaf and issuing CA from the files' own signatures on any host, with scopes `publisher`, `product` and `version` (the `file` hash scope is refused). Still not ported: base WDAC policies, default rules, `.cip` compiling, `Test-AppLockerPolicy` and `DEPLOY.md` |
 | Signing with a Certum or test certificate chosen by subject alone (exactly one match) | not ported on purpose: `cert-store` and `certum` need a pinned thumbprint |
-| Windows store certificate expiry in `cert list` | partly: presence is checked with `certutil`; expiry comes from a declared `notAfter` |
-| macOS signing from `MACOS_SIGN_P12` and `MACOS_SIGN_PASSWORD` (a temporary keychain) | not ported: the identity must already be in a keychain |
-| Azure login check (`az account show`) before Artifact Signing | not ported: `az` is not on the exec allow-list; signtool fails instead |
-| GPG keys other than the agent's | not ported: `keyRef` must be `gpg-agent://<fingerprint>` |
-| The interactive menu, `impr install`/`uninstall`, `impr path`, `impr completion`, `impr help <command>` | not ported: impr prints one usage text |
-| `make/impr.mk` Make integration | not ported |
+| Windows store certificate expiry in `cert list` | **ported**: `certutil` exports the pinned certificate and impr reads its expiry from the DER |
+| macOS signing from `MACOS_SIGN_P12` and `MACOS_SIGN_PASSWORD` (a temporary keychain) | **ported**: `platforms.macos.certRef` and `passwordRef` put the `.p12` in a keychain that exists for one run and is deleted after it; the import maps both variables |
+| Azure login check (`az account show`) before Artifact Signing | **ported**: run before Artifact Signing when the Azure CLI is the credential (`az` allowed in that one form only) |
+| GPG keys other than the agent's | **ported**: a `keyRef` of `secret://` or `env://` holding the armored key (with an optional `passwordRef`) is imported into a throwaway gpg home for the run; `publicKey` names the armored public key to verify against |
+| `impr install`/`uninstall`, `impr path`, `impr completion`, `impr help <command>` | **ported**: [`impr install`](../tools/install.md) copies the binary to `~/.local/bin` (it never edits PATH), [`impr completion`](../tools/completion.md) for bash, zsh, fish and PowerShell, `impr help <command>` and `--help` on every command, and the aliases `s`, `v`, `d`, `h` |
+| The interactive menu | **ported** as [`impr menu`](../tools/menu.md), also opened by `impr` alone at a terminal; build, release and init entries wait for those commands |
+| `make/impr.mk` Make integration | **ported**: [`make/impr.mk`](../tools/make.md), targets `impr-sign`, `impr-verify`, `impr-doctor` and more |
 | `impr doctor` checks for go, goreleaser, go-winres and git | not ported: they concern building, which impr no longer does |
 | Moving pre-1.4 files from the toolkit root into `config/` | not ported: run the PowerShell line once first, or `--from` the file |
 
-Not in the PowerShell line either, and not here yet: in-toto attestations, and
-signed company or team profile bundles (impr honours `managed` but cannot
-install a bundle).
+Not in the PowerShell line, and added here: in-toto attestations
+([backends](../tools/backends.md#in-toto-attestations)) and signed company or team
+profile bundles ([profile](../tools/profile.md#signed-profile-bundles)).
 
 ---
 

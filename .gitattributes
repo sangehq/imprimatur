@@ -1,0 +1,5 @@
+# LF everywhere, on every OS: the guard tests read these files byte for byte,
+# and a CRLF checkout on Windows would make them see different text.
+* text=auto eol=lf
+*.png binary
+*.ico binary
