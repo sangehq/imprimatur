@@ -196,6 +196,7 @@ func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	a.expiryEvents(ctx, svc.Events, list.Certificates)
 	if p.on("json") {
 		a.json(list)
 		return 0, nil

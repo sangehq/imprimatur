@@ -27,7 +27,9 @@ verification step it takes.
 | `signing.artifact.signed` | one per signed binary, with its input and output sha256 |
 | `signing.run.completed` / `.skipped` / `.failed` | the run's end, with the `impr-manifest.json` digest and exit code |
 | `verification.run.completed` / `.failed` | the end of `impr verify` |
-| `cert.expiring`, `cert.expired`, `profile.*`, `config.changed`, `hook.*` | catalogued for the coming config, hooks and notification work |
+| `cert.expiring` / `cert.expired` | `impr cert list` or `impr serve` found a certificate past a warning threshold, or expired; once per threshold ([notify](notify.md)) |
+| `approval.created` | `impr approve` wrote an approval |
+| `profile.*`, `config.changed`, `hook.*` | profile and configuration changes, and hook failures and vetoes |
 
 `impr events types --json` prints the full catalogue, with each type's class and schema URL.
 

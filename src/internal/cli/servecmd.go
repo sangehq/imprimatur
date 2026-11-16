@@ -109,6 +109,23 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	a.say("server    listening on %s (Ctrl-C to stop)", where)
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
+	// The long-running mode: answer impr notify ping, and check certificate
+	// expiry every six hours.
+	if n := a.notifier(); n != nil {
+		go func() { _ = n.Listen(ctx) }()
+	}
+	go func() {
+		t := time.NewTicker(6 * time.Hour)
+		defer t.Stop()
+		for {
+			a.runCaptured(ctx, []string{"cert", "list", "--json"})
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
 	select {
 	case <-ctx.Done():
 	case err := <-errc:

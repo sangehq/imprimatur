@@ -18,10 +18,17 @@ src/internal/artifact/ the build manifest, safe path resolution, digests, file k
 src/internal/secrets/  credential references to values, temporary files for tools
 src/internal/execx/    the allow-listed exec adapter (the only importer of os/exec)
 src/internal/paths/    XDG and Windows config and state directories
-src/internal/guardtest/ repository guards: exec, workflows, build layout, docs, community files
+src/internal/guardtest/ repository guards: exec, workflows, build layout, docs, community files, notifications
+src/internal/notify/   desktop notifications through go-notifykit, and certificate expiry thresholds
+src/internal/approval/ signed approvals for profiles that require them
+src/internal/bundle/   signed profile bundles
 ```
 
-The module has no dependency outside the Go standard library.
+The module has one dependency outside the Go standard library:
+`github.com/simtabi/go-notifykit`, which every Go program in the estate uses for desktop
+notifications. It runs the platform notifier itself (a helper app on macOS, `notify-send`, a
+PowerShell toast), outside `execx`, and is silent under `go test` and in CI. A guard fails if any
+impr source calls a notifier directly.
 
 ## The backend port
 

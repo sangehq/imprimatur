@@ -155,7 +155,21 @@ type Config struct {
 	// requiresApproval. Lock it in the system config, or a signer could add
 	// their own key.
 	Approvals approval.Policy `json:"approvals,omitempty"`
+	// Notify is desktop notifications: failures, vetoes and certificate expiry.
+	Notify Notify `json:"notify,omitempty"`
 }
+
+// Notify is the notify section.
+type Notify struct {
+	// Desktop shows notifications on this machine; on unless set false.
+	// Tests and CI never show them, whatever this says.
+	Desktop *bool `json:"desktop,omitempty"`
+	// CertExpiryDays are the warning thresholds; default 30, 14 and 7.
+	CertExpiryDays []int `json:"certExpiryDays,omitempty"`
+}
+
+// DesktopOn reports whether desktop notifications are on.
+func (n Notify) DesktopOn() bool { return n.Desktop == nil || *n.Desktop }
 
 // Bundles is the bundles section.
 type Bundles struct {
@@ -297,8 +311,8 @@ func (c Config) Validate() []string {
 	}
 	for _, k := range c.Locked {
 		top, _, _ := strings.Cut(k, ".")
-		if !slices.Contains([]string{"hooks", "webhooks", "server", "activeProfile", "tools", "policy", "bundles", "approvals"}, top) {
-			ps = append(ps, "locked key "+k+" is not under hooks, webhooks, server, tools, policy, bundles, approvals or activeProfile")
+		if !slices.Contains([]string{"hooks", "webhooks", "server", "activeProfile", "tools", "policy", "bundles", "approvals", "notify"}, top) {
+			ps = append(ps, "locked key "+k+" is not under hooks, webhooks, server, tools, policy, bundles, approvals, notify or activeProfile")
 		}
 	}
 	subs := map[string]bool{}
@@ -330,6 +344,11 @@ func (c Config) Validate() []string {
 		}
 	}
 	ps = append(ps, c.Approvals.Problems()...)
+	for i, d := range c.Notify.CertExpiryDays {
+		if d < 1 || d > 365 {
+			ps = append(ps, fmt.Sprintf("notify.certExpiryDays[%d]: %d is not 1 to 365 days", i, d))
+		}
+	}
 	for name, pin := range c.Tools {
 		if _, ok := execx.Allowed[name]; !ok {
 			ps = append(ps, "tools."+name+": not a tool impr runs ("+strings.Join(execx.Names(), ", ")+")")

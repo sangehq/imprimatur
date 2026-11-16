@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Desktop notifications through go-notifykit, impr's first dependency outside
+  the standard library. Failed runs, hook vetoes and certificates near expiry
+  appear under impr's own name and icon. Nothing is shown in tests or CI.
+  - **Commands.** `impr notify send|ping|doctor`, and `impr serve` answers
+    `ping`.
+  - **Certificate expiry.** `impr cert list`, and `impr serve` every six hours,
+    raise `cert.expiring` once per threshold (`notify.certExpiryDays`, default
+    30, 14 and 7) and `cert.expired` once.
+
 - Approvals. `impr approve` signs an `imprimatur.approval/v1` document with the
   approver's SSH key. It binds one profile, purpose, commit, tree and build
   manifest digest, and it expires. `impr sign --approval FILE` (and `approvals`

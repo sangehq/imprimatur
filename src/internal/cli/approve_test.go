@@ -158,3 +158,23 @@ func TestApprovalProfileValidation(t *testing.T) {
 	approvers(t, h, "alice")
 	h.exits(1, "config", "set", "approvals.required", "3") // more than are listed
 }
+
+func TestCertListRaisesExpiryOnce(t *testing.T) {
+	h := newHarness(t)
+	soon := h.now.Add(10 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	sshProfile(t, h, "acme-release", "platforms.checksums.notAfter="+soon)
+	h.ok("cert", "list", "--json")
+	h.ok("cert", "list", "--json")
+	var tail struct {
+		Events []struct {
+			Type string          `json:"type"`
+			Data json.RawMessage `json:"data"`
+		} `json:"events"`
+	}
+	if err := json.Unmarshal([]byte(h.ok("events", "tail", "--json", "--type", "cert.*")), &tail); err != nil {
+		t.Fatal(err)
+	}
+	if len(tail.Events) != 1 || !strings.HasSuffix(tail.Events[0].Type, "cert.expiring") || !strings.Contains(string(tail.Events[0].Data), `"threshold":14`) {
+		t.Fatalf("want one cert.expiring at the 14-day threshold: %+v", tail.Events)
+	}
+}

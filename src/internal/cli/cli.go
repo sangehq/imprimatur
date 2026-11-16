@@ -4,6 +4,8 @@
 package cli
 
 import (
+	notifykit "github.com/simtabi/go-notifykit/src"
+
 	"context"
 	"encoding/json"
 	"fmt"
@@ -23,6 +25,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/hooks"
+	"github.com/sangehq/imprimatur/src/internal/notify"
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 	"github.com/sangehq/imprimatur/src/internal/secrets"
@@ -54,6 +57,8 @@ type App struct {
 	// its usage, as scripts and sange expect.
 	Stdin       io.Reader
 	Interactive func() bool
+	// Notifier replaces the desktop notifier; tests give it a recorder.
+	Notifier *notifykit.Notifier
 }
 
 // Main runs impr with the real host and returns the exit code.
@@ -328,8 +333,33 @@ func (a *App) bus() *events.Bus {
 		a.say("events    not recorded: %v", err)
 		return nil
 	}
-	return &events.Bus{Env: events.Env{Now: a.Now, NewID: events.NewID, InstallID: id},
-		Sinks: []events.Sink{events.Log{Dir: filepath.Join(d.State, "events")}}, Warn: a.say}
+	sinks := []events.Sink{events.Log{Dir: filepath.Join(d.State, "events")}}
+	if n := a.notifier(); n != nil {
+		sinks = append(sinks, notify.Sink{N: n})
+	}
+	return &events.Bus{Env: events.Env{Now: a.Now, NewID: events.NewID, InstallID: id}, Sinks: sinks, Warn: a.say}
+}
+
+// notifier is the desktop notifier, or nil when the config turns it off or it
+// cannot be built. go-notifykit itself stays silent under go test and in CI.
+func (a *App) notifier() *notifykit.Notifier {
+	d, err := a.dirs()
+	if err != nil {
+		return nil
+	}
+	cfg := config.Config{}
+	if eff, err := a.effective(d); err == nil {
+		cfg = eff.Config
+	}
+	if a.Notifier != nil {
+		return a.Notifier
+	}
+	n, err := notifykit.New(notify.Config(filepath.Join(d.State, "notify"), !cfg.Notify.DesktopOn(), a.Stderr, a.Getenv))
+	if err != nil {
+		a.say("notify    off: %v", err)
+		return nil
+	}
+	return n
 }
 
 // ---- dispatch ------------------------------------------------------------------
@@ -401,6 +431,7 @@ func init() {
 		"release":    cmdRelease,
 		"tools":      cmdTools,
 		"audit":      cmdAudit,
+		"notify":     cmdNotify,
 	}
 }
 
@@ -422,6 +453,7 @@ Usage:
             [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
             [--approval FILE]...
   impr approve --manifest FILE --profile NAME --purpose P --approver NAME --key SSH-KEY [--expires 24h] [--out FILE] [--json]
+  impr notify send|ping|doctor ...
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules (--request FILE | FILE... [--scope publisher|product|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]
