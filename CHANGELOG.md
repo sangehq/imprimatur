@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr serve` streams events. `GET /v1/events/stream` sends the event log as
+  Server-Sent Events, with type filters and `Last-Event-ID` resume.
+  - **Limits.** At most 8 streams, a keepalive every 15 seconds, and a reconnect
+    every hour so the token is re-checked.
+- `GET /v1/openapi.json` describes the API as OpenAPI 3.1. Tests hold it to the
+  routes the server registers and the request structs' fields.
+
 - Signed profile bundles. `impr profile bundle install|list|verify` installs an
   organisation's managed profiles from an `imprimatur.profile-bundle/v1` file
   signed with `ssh-keygen -Y sign -n imprimatur-bundle`.

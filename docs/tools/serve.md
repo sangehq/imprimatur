@@ -74,11 +74,13 @@ HTTP status:
 | Endpoint | Scope | Runs |
 | --- | --- | --- |
 | `GET /v1/health` | none | — |
+| `GET /v1/openapi.json` | none | — (the OpenAPI 3.1 description of this API) |
 | `GET /v1/companion` | read | `companion info` |
 | `GET /v1/doctor` | read | `doctor` |
 | `GET /v1/profiles`, `GET /v1/profiles/{name}` | read | `profile list`, `profile show` |
 | `GET /v1/certs` | read | `cert list` |
 | `GET /v1/events?type=GLOB&limit=N` | events | `events tail` |
+| `GET /v1/events/stream?type=GLOB` | events | — (Server-Sent Events, below) |
 | `POST /v1/verify` | verify | `verify` |
 | `POST /v1/sign` | sign, and `allowSign` | `sign` |
 
@@ -92,10 +94,35 @@ HTTP status:
 Instead of `signed`, it can take `"files": ["build/windows/tool.exe"]`. `POST /v1/sign` takes `root`,
 `manifest`, `commit`, `tree`, `profile`, `purpose`, and optionally `platforms`, `repo` and `strict`.
 
+## Event stream
+
+`GET /v1/events/stream` sends events as they are written, as Server-Sent Events. It reads the event log,
+which every impr process writes, so it carries CLI runs as well as API ones.
+
+```bash
+curl -N --unix-socket ~/.local/state/imprimatur/server/impr.sock \
+  -H "Authorization: Bearer $IMPR_TOKEN" "http://impr/v1/events/stream?type=signing.*"
+```
+
+```text
+id: 6f0c…
+event: sh.sange.imprimatur.signing.run.completed
+data: {"specversion":"1.0","id":"6f0c…","type":"sh.sange.imprimatur.signing.run.completed",…}
+```
+
+- **Messages.** `id` is the CloudEvent id, `event` its type, and `data` the CloudEvent as one JSON line.
+- **Where it starts.** At the end of the log. A client that reconnects with `Last-Event-ID` resumes just
+  after that event; an id that is not in the log gets 409.
+- **Filters.** `type` takes event type globs and may repeat; a glob that matches no known type is a 400.
+- **Limits.** A comment line every 15 seconds keeps proxies from closing the connection. A stream closes
+  after an hour, so the client reconnects and its token is checked again. At most 8 streams are open at
+  once; the next gets 503 with `Retry-After`.
+
 ## Safety
 
 - **Tokens.**
-  - Every endpoint but `/v1/health` needs a bearer token with the endpoint's scope.
+  - Every endpoint but `/v1/health` and `/v1/openapi.json` needs a bearer token with the endpoint's
+    scope. Inbound webhooks use their signature instead.
   - impr keeps only the token's sha256 and compares tokens in constant time.
   - Every refusal is the same 401 body.
   - Each token may make 120 requests a minute.

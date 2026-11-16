@@ -43,6 +43,8 @@ impr events types --json
 - `impr events verify` exits 4 when the chain is broken. The `--json` document is
   `{contract, ok, checked, problem}`.
 - `companion info` reports the `events` capability.
+- To follow events as they happen from another program, use `impr serve`'s
+  [event stream](serve.md#event-stream).
 
 ---
 

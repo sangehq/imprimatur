@@ -32,6 +32,7 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
+	"github.com/sangehq/imprimatur/src/internal/events"
 )
 
 // MaxBody bounds every request body. Requests carry manifests and names,
@@ -49,6 +50,10 @@ type Options struct {
 	StateDir string
 	Now      func() time.Time
 	Log      func(format string, args ...any)
+	// Events is the event log GET /v1/events/stream tails; Poll is how often
+	// (default a second).
+	Events events.Log
+	Poll   time.Duration
 }
 
 type server struct {
@@ -59,6 +64,9 @@ type server struct {
 	replay  *ledger
 	nameRe  *regexp.Regexp
 	tokenRe *regexp.Regexp
+
+	streamMu sync.Mutex
+	streams  int
 }
 
 type bucket struct {
@@ -80,7 +88,9 @@ func Handler(o Options) http.Handler {
 	mux.HandleFunc("GET /v1/profiles", s.auth("read", s.cmd("profile", "list")))
 	mux.HandleFunc("GET /v1/profiles/{name}", s.auth("read", s.profileShow))
 	mux.HandleFunc("GET /v1/certs", s.auth("read", s.cmd("cert", "list")))
+	mux.HandleFunc("GET /v1/openapi.json", s.openapi)
 	mux.HandleFunc("GET /v1/events", s.auth("events", s.events))
+	mux.HandleFunc("GET /v1/events/stream", s.auth("events", s.stream))
 	mux.HandleFunc("POST /v1/verify", s.auth("verify", s.verify))
 	mux.HandleFunc("POST /v1/sign", s.auth("sign", s.sign))
 	mux.HandleFunc("POST /v1/hooks/{name}", s.inbound)
@@ -227,7 +237,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--limit="+v)
 	}
 	for _, t := range r.URL.Query()["type"] {
-		if !regexp.MustCompile(`^[a-z0-9.*-]{1,120}$`).MatchString(t) {
+		if !typeGlobRe.MatchString(t) {
 			writeErr(w, http.StatusBadRequest, contract.Usage, "type is an event type glob")
 			return
 		}
