@@ -94,7 +94,7 @@ func Verify(ctx context.Context, r execx.Runner, data, sig []byte, trusted []Tru
 	if err := os.WriteFile(allowed, []byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
 		return Bundle{}, err
 	}
-	if err := os.WriteFile(sigPath, sig, 0o600); err != nil {
+	if err := os.WriteFile(sigPath, sig, 0o600); err != nil { //nolint:gosec // G703: a fixed name in a fresh temporary directory
 		return Bundle{}, err
 	}
 	res, err := r.Run(ctx, execx.Cmd{Tool: "ssh-keygen", Args: []string{"-Y", "verify", "-f", allowed, "-I", b.Owner, "-n", Namespace, "-s", sigPath}, Stdin: data})
@@ -142,7 +142,7 @@ func Install(ctx context.Context, r execx.Runner, s profile.Store, configDir str
 		return Bundle{}, nil, err
 	}
 	for _, p := range ps {
-		if old, ok, _ := s.Get(p.Name); ok && !(old.Managed && strings.EqualFold(old.Owner, b.Owner)) {
+		if old, ok, _ := s.Get(p.Name); ok && (!old.Managed || !strings.EqualFold(old.Owner, b.Owner)) {
 			return Bundle{}, nil, contract.New(contract.Usage, "a profile named %s exists and is not %s's managed profile; nothing was installed", p.Name, b.Owner)
 		}
 	}

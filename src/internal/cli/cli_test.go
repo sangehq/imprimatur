@@ -998,7 +998,13 @@ func TestBuildWritesTheEstateLayoutAndABoundManifest(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &r); err != nil {
 		t.Fatal(err)
 	}
-	if r.Manifest.Schema != "sange.build-manifest/v1" || len(r.Manifest.Commit) != 40 || len(r.Manifest.Artifacts) != 3 || r.Manifest.Dirty {
+	// The host is one of the listed targets on a linux/amd64 or windows/arm64
+	// machine; a repeated target is built once.
+	want := 3
+	if host == "linux/amd64" || host == "windows/arm64" {
+		want = 2
+	}
+	if r.Manifest.Schema != "sange.build-manifest/v1" || len(r.Manifest.Commit) != 40 || len(r.Manifest.Artifacts) != want || r.Manifest.Dirty {
 		t.Fatalf("manifest: %+v", r.Manifest)
 	}
 	paths := []string{}
@@ -1009,6 +1015,9 @@ func TestBuildWritesTheEstateLayoutAndABoundManifest(t *testing.T) {
 		if err != nil || hex.EncodeToString(s[:]) != a.SHA256 {
 			t.Errorf("%s: digest does not match", a.Path)
 		}
+	}
+	if len(slices.Compact(slices.Sorted(slices.Values(paths)))) != len(paths) {
+		t.Errorf("a target was built twice: %v", paths)
 	}
 	for _, want := range []string{"build/linux/hello_linux_amd64", "build/windows/hello_windows_arm64.exe"} {
 		if !slices.Contains(paths, want) {

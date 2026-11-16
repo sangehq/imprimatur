@@ -276,3 +276,25 @@ func TestOpenAPIServedWithoutAToken(t *testing.T) {
 		t.Fatalf("got %d %.80s", w.Code, w.Body)
 	}
 }
+
+func TestStreamSkipsALineThatWouldBreakFraming(t *testing.T) {
+	h, log, env, tok, _ := streamFixture(t)
+	w, wait, _ := open(t, h, tok, "", "")
+	if !wait("contract 1") {
+		t.Fatal("no preamble")
+	}
+	// A hand-edited line whose id decodes to a line break and a forged field.
+	f, err := os.OpenFile(filepath.Join(log.Dir, time.Now().UTC().Format("2006-01")+".jsonl"), os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = f.WriteString(`{"specversion":"1.0","id":"x\nevent: forged","source":"s","type":"` + events.TypePrefix + `server.started","time":"2026-11-16T00:00:00Z","datacontenttype":"application/json","imprclass":"local","data":{}}` + "\n")
+	_ = f.Close()
+	good := emit(t, log, env, "server.stopped")
+	if !wait("id: " + good.ID) {
+		t.Fatalf("the good event never arrived: %q", w.body())
+	}
+	if strings.Contains(w.body(), "forged") {
+		t.Fatalf("a forged SSE field was sent: %q", w.body())
+	}
+}

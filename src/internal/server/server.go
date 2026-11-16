@@ -298,7 +298,10 @@ func (s *server) inRoot(root, rel string) (string, string, error) {
 	if rel == "" {
 		return clean, "", nil
 	}
-	if filepath.IsAbs(rel) || strings.HasPrefix(filepath.Clean(rel), "..") {
+	// A rooted path ("/etc/x" on Windows is rooted but not absolute) or one
+	// naming a volume is refused as firmly as an absolute one.
+	if filepath.IsAbs(rel) || filepath.VolumeName(rel) != "" || strings.HasPrefix(filepath.ToSlash(rel), "/") ||
+		strings.HasPrefix(filepath.ToSlash(filepath.Clean(rel)), "..") {
 		return "", "", fmt.Errorf("%q must be relative to the root and inside it", rel)
 	}
 	return clean, filepath.Join(clean, filepath.Clean(rel)), nil

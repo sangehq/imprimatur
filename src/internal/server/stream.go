@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
@@ -70,7 +71,9 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request) {
 		if err := rc.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 			return false
 		}
-		if _, err := fmt.Fprintf(w, format, args...); err != nil {
+		// G705: the body is text/event-stream, never HTML, and every field
+		// written is checked for line breaks first (sseSafe).
+		if _, err := fmt.Fprintf(w, format, args...); err != nil { //nolint:gosec // G705: text/event-stream, fields checked by sseSafe
 			return false
 		}
 		return rc.Flush() == nil
@@ -109,12 +112,28 @@ func (s *server) stream(w http.ResponseWriter, r *http.Request) {
 				if !matchAny(globs, ev.Type) {
 					continue
 				}
+				if !sseSafe(ev.ID, ev.Type, string(raws[i])) {
+					// A hand-edited log line could break the SSE framing
+					// and forge fields; it is reported, not sent.
+					s.logf("server    event stream: skipped a log line that would break SSE framing")
+					continue
+				}
 				if !send("id: %s\nevent: %s\ndata: %s\n\n", ev.ID, ev.Type, raws[i]) {
 					return
 				}
 			}
 		}
 	}
+}
+
+// sseSafe reports whether every value can sit on one SSE line.
+func sseSafe(vals ...string) bool {
+	for _, v := range vals {
+		if strings.ContainsAny(v, "\r\n") {
+			return false
+		}
+	}
+	return true
 }
 
 func matchAny(globs []string, typ string) bool {
