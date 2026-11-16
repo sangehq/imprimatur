@@ -92,7 +92,7 @@ HTTP status:
 ```
 
 Instead of `signed`, it can take `"files": ["build/windows/tool.exe"]`. `POST /v1/sign` takes `root`,
-`manifest`, `commit`, `tree`, `profile`, `purpose`, and optionally `platforms`, `repo` and `strict`.
+`manifest`, `commit`, `tree`, `profile`, `purpose`, and optionally `platforms`, `repo` and `strict`. With `approvals` (paths under `root`, each with its `.sig`), it passes [approvals](approve.md) on; a profile whose `approval` is `confirm` is refused over the API, since nobody can type it.
 
 ## Event stream
 

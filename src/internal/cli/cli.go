@@ -297,7 +297,22 @@ func (a *App) service() (*signing.Service, error) {
 		return bundle.Check(context.Background(), host.Runner, d.Config, p, trusted)
 	}
 	return &signing.Service{Host: host, Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk,
-		RequireFullGPG: cfg.Policy.RequireFullGPG(), ManagedCheck: check}, nil
+		RequireFullGPG: cfg.Policy.RequireFullGPG(), ManagedCheck: check, Approvals: cfg.Approvals, Confirm: a.confirm()}, nil
+}
+
+// confirm asks the person at the terminal to type a value, or is nil when no
+// person is there (a pipe, CI, the REST server), so confirm-mode approval is
+// refused rather than answered by a script.
+func (a *App) confirm() func(prompt, want string) bool {
+	if a.Interactive == nil || !a.Interactive() || a.Stdin == nil {
+		return nil
+	}
+	return func(prompt, want string) bool {
+		_, _ = fmt.Fprintf(a.Stderr, "%s: ", prompt)
+		var got string
+		_, _ = fmt.Fscanln(a.Stdin, &got)
+		return got == want
+	}
 }
 
 // bus is the event bus for this run: the hash-chained log in the state dir.
@@ -368,6 +383,7 @@ func init() {
 		"profile":    cmdProfile,
 		"cert":       cmdCert,
 		"sign":       cmdSign,
+		"approve":    cmdApprove,
 		"verify":     cmdVerify,
 		"rules":      cmdRules,
 		"events":     cmdEvents,
@@ -404,6 +420,8 @@ Usage:
   impr cert create [--name NAME] [--subject CN] [--days N] [--json]
   impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
             [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
+            [--approval FILE]...
+  impr approve --manifest FILE --profile NAME --purpose P --approver NAME --key SSH-KEY [--expires 24h] [--out FILE] [--json]
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules (--request FILE | FILE... [--scope publisher|product|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]

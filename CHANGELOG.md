@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Approvals. `impr approve` signs an `imprimatur.approval/v1` document with the
+  approver's SSH key. It binds one profile, purpose, commit, tree and build
+  manifest digest, and it expires. `impr sign --approval FILE` (and `approvals`
+  in `POST /v1/sign`) passes approvals in, and `impr-manifest.json` records
+  them.
+  - **Opt-in.** impr enforces a profile's `requiresApproval` only when
+    `approvals.enforce` is on, because sange enforces it (APR-11) before calling
+    impr. A repository's `.imprimatur/project.json` can set `requireApproval`.
+  - **Modes.** A profile's `approval` is `signed` (the default; `approvals.required`
+    distinct approvers from `approvals.approvers`) or `confirm` (typed at a
+    terminal; refused in CI, pipes and the REST API).
+
 - in-toto attestations. With `--platforms attestations`, `impr sign` writes
   `SHA256SUMS.intoto.jsonl`: a DSSE envelope holding an in-toto Statement v1
   over every checksum entry, with SLSA provenance v1 naming the commit, tree

@@ -54,6 +54,10 @@ The system config can lock dotted keys:
   64-hex fingerprint. This is on by default. Re-pin an older profile that carries a 16-hex id with
   `gpg --fingerprint <id>` and `impr profile edit NAME --set platforms.checksums.fingerprint=<full>`.
   Setting `policy.gpgFullFingerprint: false` allows short pins again.
+- **Approvals.** `approvals.enforce`, `approvals.required` and `approvals.approvers` decide whether impr
+  itself requires approval for profiles with `requiresApproval`, and whose SSH keys may give it. Lock
+  `approvals` in the system config, or a signer could add their own key. See
+  [`impr approve`](approve.md).
 
 ## Commands
 

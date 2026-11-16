@@ -21,6 +21,7 @@ can never loosen anything.
 | `platforms` | `sign` signs only these platforms; requesting another is refused |
 | `strict` | every `sign` and `verify` must run with `--strict` |
 | `requireRepo` | every `sign` must name the repository with `--repo`, whatever the purpose |
+| `requireApproval` | every release signed here needs approval, in the profile's mode, whatever `approvals.enforce` says ([`impr approve`](approve.md)) |
 
 ## Rules
 

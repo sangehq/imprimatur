@@ -215,7 +215,7 @@ func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
 }
 
 var signFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "manifest": stringFlag, "commit": stringFlag, "tree": stringFlag,
-	"profile": stringFlag, "purpose": stringFlag, "platforms": listFlag, "root": stringFlag, "repo": stringFlag}
+	"profile": stringFlag, "purpose": stringFlag, "platforms": listFlag, "root": stringFlag, "repo": stringFlag, "approval": listFlag}
 
 func cmdSign(ctx context.Context, a *App, args []string) (int, error) {
 	p, err := parse(args, signFlags)
@@ -245,7 +245,8 @@ func cmdSign(ctx context.Context, a *App, args []string) (int, error) {
 		return 0, err
 	}
 	res, err := svc.Sign(ctx, signing.SignOptions{Root: p.str("root"), Manifest: p.str("manifest"), Commit: p.str("commit"), Tree: p.str("tree"),
-		Profile: p.str("profile"), Purpose: p.str("purpose"), Platforms: p.list("platforms"), Repo: p.str("repo"), Strict: p.on("strict")})
+		Profile: p.str("profile"), Purpose: p.str("purpose"), Platforms: p.list("platforms"), Repo: p.str("repo"), Strict: p.on("strict"),
+		Approvals: p.list("approval")})
 	if err != nil && contract.CodeOf(err) == contract.Skipped && res.Contract != 0 {
 		_, _ = a.Stderr.Write([]byte(contract.Text(err)))
 		if p.on("json") {

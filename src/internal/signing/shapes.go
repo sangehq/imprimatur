@@ -50,7 +50,17 @@ type Manifest struct {
 	Artifacts           []SignedArtifact       `json:"artifacts"`
 	Outputs             []SignedArtifact       `json:"outputs"`
 	Skipped             []string               `json:"skipped,omitempty"`
-	SignedAt            time.Time              `json:"signedAt"`
+	// Approvals records who approved the run, when the profile or the
+	// repository requires approval.
+	Approvals []RecordedApproval `json:"approvals,omitempty"`
+	SignedAt  time.Time          `json:"signedAt"`
+}
+
+// RecordedApproval is one approval a run was signed under.
+type RecordedApproval struct {
+	Mode     string `json:"mode"`               // signed | confirm
+	Approver string `json:"approver,omitempty"` // signed: the approver's name
+	SHA256   string `json:"sha256,omitempty"`   // signed: the approval document's digest
 }
 
 // Result is `impr sign --json`.

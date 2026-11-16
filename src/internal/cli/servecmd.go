@@ -37,6 +37,8 @@ func (a *App) runCaptured(ctx context.Context, args []string) (int, []byte) {
 	var out, errOut bytes.Buffer
 	b := *a
 	b.Stdout, b.Stderr = &out, &errOut
+	// Nobody is at a terminal for an API call: nothing it runs may prompt.
+	b.Stdin, b.Interactive = nil, nil
 	return b.Run(ctx, args), out.Bytes()
 }
 

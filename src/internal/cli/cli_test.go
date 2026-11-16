@@ -60,6 +60,35 @@ func (h *harness) impr(args ...string) (code int, stdout, stderr string) {
 	return code, o.String(), e.String()
 }
 
+// approvers makes an SSH key for each name, lists them as approvers in the
+// config, and remembers the key files for h.approve.
+func approvers(t *testing.T, h *harness, names ...string) {
+	t.Helper()
+	var list []map[string]string
+	for _, n := range names {
+		key := filepath.Join(t.TempDir(), n)
+		if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "", "-f", key).CombinedOutput(); err != nil {
+			t.Fatalf("%v %s", err, out)
+		}
+		pub, _ := os.ReadFile(key + ".pub")
+		f := strings.Fields(string(pub))
+		list = append(list, map[string]string{"name": n, "publicKey": f[0] + " " + f[1]})
+		h.env["IMPR_TEST_APPROVER_"+n] = key
+	}
+	b, _ := json.Marshal(list)
+	h.ok("config", "set", "approvals.approvers", string(b))
+	h.ok("config", "set", "approvals.enforce", "true")
+}
+
+// approve has an approver approve a run, and returns the approval's path.
+func (h *harness) approve(name, manifest, prof, purpose string, extra ...string) string {
+	h.t.Helper()
+	out := filepath.Join(h.t.TempDir(), "approval-"+name+".json")
+	h.ok(append([]string{"approve", "--manifest", manifest, "--profile", prof, "--purpose", purpose, "--approver", name,
+		"--key", h.env["IMPR_TEST_APPROVER_"+name], "--out", out}, extra...)...)
+	return out
+}
+
 func (h *harness) ok(args ...string) string {
 	h.t.Helper()
 	code, out, errOut := h.impr(args...)
@@ -287,6 +316,8 @@ func TestSignAndVerifyWithRealSSH(t *testing.T) {
 	root, manifest, commit, tree := build(t)
 	mb, _ := os.ReadFile(manifest)
 	ms := sha256.Sum256(mb)
+	// The profile requires approval, and sange enforces it (APR-11) before
+	// this call: with approvals.enforce off, impr signs without an approval.
 	out := h.ok("sign", "--json", "--strict", "--root", root, "--manifest", manifest, "--commit", commit, "--tree", tree,
 		"--profile", "acme-release", "--purpose", "release", "--platforms", "checksums", "--repo", "git@github.com:acme/tool.git")
 	var res sangeSignResult

@@ -6,7 +6,7 @@ identity, and writes `impr-manifest.json`, the chain-of-custody record.
 ```bash
 impr sign --manifest FILE --commit SHA --tree ID --profile NAME --purpose release|test|internal
           [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL]
-          [--json] [--strict]
+          [--json] [--strict] [--approval FILE]...
 ```
 
 | Option | Meaning |
@@ -19,6 +19,7 @@ impr sign --manifest FILE --commit SHA --tree ID --profile NAME --purpose releas
 | `--platforms` | which of the profile's platforms to sign; default all of them |
 | `--root` | the directory manifest paths are relative to; default the current directory |
 | `--strict` | a platform this host cannot sign is an error (exit 5), not a skip (exit 2) |
+| `--approval` | an approval from [`impr approve`](approve.md), with its `.sig` beside it; repeat for several approvers |
 
 impr refuses files named on the command line: it signs build-manifest entries
 only, so it is never a signing oracle.

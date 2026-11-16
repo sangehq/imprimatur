@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sangehq/imprimatur/src/internal/approval"
 	"github.com/sangehq/imprimatur/src/internal/bundle"
 	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/execx"
@@ -150,6 +151,10 @@ type Config struct {
 	Policy Policy `json:"policy,omitempty"`
 	// Bundles names the keys trusted to sign organisations' profile bundles.
 	Bundles Bundles `json:"bundles,omitempty"`
+	// Approvals lists who may approve runs of profiles with
+	// requiresApproval. Lock it in the system config, or a signer could add
+	// their own key.
+	Approvals approval.Policy `json:"approvals,omitempty"`
 }
 
 // Bundles is the bundles section.
@@ -292,8 +297,8 @@ func (c Config) Validate() []string {
 	}
 	for _, k := range c.Locked {
 		top, _, _ := strings.Cut(k, ".")
-		if !slices.Contains([]string{"hooks", "webhooks", "server", "activeProfile", "tools", "policy", "bundles"}, top) {
-			ps = append(ps, "locked key "+k+" is not under hooks, webhooks, server, tools, policy, bundles or activeProfile")
+		if !slices.Contains([]string{"hooks", "webhooks", "server", "activeProfile", "tools", "policy", "bundles", "approvals"}, top) {
+			ps = append(ps, "locked key "+k+" is not under hooks, webhooks, server, tools, policy, bundles, approvals or activeProfile")
 		}
 	}
 	subs := map[string]bool{}
@@ -324,6 +329,7 @@ func (c Config) Validate() []string {
 			ps = append(ps, fmt.Sprintf("bundles.trustedKeys[%d]: %s", i, why))
 		}
 	}
+	ps = append(ps, c.Approvals.Problems()...)
 	for name, pin := range c.Tools {
 		if _, ok := execx.Allowed[name]; !ok {
 			ps = append(ps, "tools."+name+": not a tool impr runs ("+strings.Join(execx.Names(), ", ")+")")
