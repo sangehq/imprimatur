@@ -98,7 +98,9 @@ func cmdEvents(_ context.Context, a *App, args []string) (int, error) {
 			a.say("events    %d event(s), chain intact", n)
 		}
 		if err != nil {
-			return 0, contract.Wrap(contract.VerifyFailed, err, "the event log does not verify")
+			// One JSON document on stdout, the error on stderr, the exit code 4.
+			_, _ = a.Stderr.Write([]byte(contract.Text(contract.Wrap(contract.VerifyFailed, err, "the event log does not verify"))))
+			return int(contract.VerifyFailed), nil
 		}
 		return 0, nil
 	case "types":

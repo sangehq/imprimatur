@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Audit anchoring. With `audit.anchor.enabled`, impr emits an `audit.head` event
+  holding the audit trail's and event log's chain heads. It is sent after each
+  audited command, and on a schedule under `impr serve`.
+  - **Delivery.** Any outbound webhook subscribed to `audit.head`, sange's
+    server included, carries it off the machine.
+  - **Checking.** `impr audit anchor` emits one on demand, and
+    `impr audit verify --against FILE` checks a kept anchor. It catches a
+    consistent rewrite of the whole trail, which the chain alone cannot.
+
 - Two more ways to run the expiry check. `impr cert install-check --print`
   prints a daily systemd timer, launchd job or Windows task, and installs
   nothing. `notify.checkOnCommand` makes other commands run the check at most
@@ -371,6 +380,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   govulncheck in CI.
 
 ### Fixed
+
+- `impr audit verify --json` and `impr events verify --json` printed two
+  documents when the chain was broken. Each now prints its result once and
+  exits 4.
 
 - `impr profile bundle verify --json` printed two documents when a profile
   failed. It now prints its result once and exits 4.

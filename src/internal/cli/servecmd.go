@@ -118,6 +118,20 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 		go func() { _ = n.Listen(ctx) }()
 	}
 	go func() {
+		t := time.NewTicker(anchorEvery(cfg))
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if _, err := a.anchor(ctx, false); err != nil {
+					a.say("audit     not anchored: %v", err)
+				}
+			}
+		}
+	}()
+	go func() {
 		t := time.NewTicker(6 * time.Hour)
 		defer t.Stop()
 		for {

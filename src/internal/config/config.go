@@ -157,6 +157,23 @@ type Config struct {
 	Approvals approval.Policy `json:"approvals,omitempty"`
 	// Notify is desktop notifications: failures, vetoes and certificate expiry.
 	Notify Notify `json:"notify,omitempty"`
+	// Audit is the audit trail's anchoring.
+	Audit Audit `json:"audit,omitempty"`
+}
+
+// Audit is the audit section.
+type Audit struct {
+	Anchor Anchor `json:"anchor,omitempty"`
+}
+
+// Anchor carries the audit trail's and event log's heads off the machine as
+// audit.head events, for an outbound webhook (sange's server, or any
+// receiver) to keep.
+type Anchor struct {
+	// Enabled emits audit.head after each audited command, and every
+	// EveryHours (default 6) while impr serve runs.
+	Enabled    bool `json:"enabled,omitempty"`
+	EveryHours int  `json:"everyHours,omitempty"`
 }
 
 // Notify is the notify section.
@@ -315,8 +332,8 @@ func (c Config) Validate() []string {
 	}
 	for _, k := range c.Locked {
 		top, _, _ := strings.Cut(k, ".")
-		if !slices.Contains([]string{"hooks", "webhooks", "server", "activeProfile", "tools", "policy", "bundles", "approvals", "notify"}, top) {
-			ps = append(ps, "locked key "+k+" is not under hooks, webhooks, server, tools, policy, bundles, approvals, notify or activeProfile")
+		if !slices.Contains([]string{"hooks", "webhooks", "server", "activeProfile", "tools", "policy", "bundles", "approvals", "notify", "audit"}, top) {
+			ps = append(ps, "locked key "+k+" is not under hooks, webhooks, server, tools, policy, bundles, approvals, notify, audit or activeProfile")
 		}
 	}
 	subs := map[string]bool{}
@@ -348,6 +365,9 @@ func (c Config) Validate() []string {
 		}
 	}
 	ps = append(ps, c.Approvals.Problems()...)
+	if h := c.Audit.Anchor.EveryHours; h < 0 || h > 168 {
+		ps = append(ps, fmt.Sprintf("audit.anchor.everyHours is %d; 1 to 168, or 0 for the default of 6", h))
+	}
 	for i, d := range c.Notify.CertExpiryDays {
 		if d < 1 || d > 365 {
 			ps = append(ps, fmt.Sprintf("notify.certExpiryDays[%d]: %d is not 1 to 365 days", i, d))
