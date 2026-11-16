@@ -104,6 +104,17 @@ type Options struct {
 	Targets    []Target
 	Clean      bool // remove this binary's earlier files from build/ first
 	AllowDirty bool // build a work tree with uncommitted changes (never for a release)
+	// WinRes is the Windows version information embedded in each Windows
+	// binary; nil embeds none.
+	WinRes *WinRes
+}
+
+// WinRes is what goes into a Windows binary's resources. Empty fields take
+// defaults from the build: the product name is the binary name, and the
+// versions come from Version.
+type WinRes struct {
+	Product, Company, Description, Copyright string
+	Icon                                     string // a .ico file
 }
 
 // Artifact is one entry of the build manifest.
@@ -244,12 +255,17 @@ func (b Builder) Build(ctx context.Context, o Options) (string, Manifest, error)
 			return "", Manifest{}, err
 		}
 		out := filepath.Join(dir, name)
+		remove, err := b.writeSyso(o, t)
+		if err != nil {
+			return "", Manifest{}, err
+		}
 		env := []string{"CGO_ENABLED=0", "GOOS=" + t.GOOS, "GOARCH=" + t.GOARCH, "GOFLAGS=-mod=readonly", "GOENV=off", "GOWORK=off", "GOTOOLCHAIN=local"}
 		if t.GOARM != "" {
 			env = append(env, "GOARM="+t.GOARM)
 		}
 		r, err := b.Runner.Run(ctx, execx.Cmd{Tool: "go", Dir: o.ModuleDir, Env: env,
 			Args: []string{"build", "-trimpath", "-ldflags", ldflags, "-o", out, o.Main}})
+		remove()
 		if err != nil {
 			return "", Manifest{}, contract.Wrap(contract.Unavailable, err, "go could not run")
 		}

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr build` embeds Windows version information, an application manifest and
+  an optional `.ico` icon in every Windows binary, written natively with no
+  go-winres. It reads `winres/winres.json` when present.
+  - **Flags.** `--product`, `--company`, `--description`, `--copyright`,
+    `--icon` and `--no-winres`.
+  - **Rules.** `impr rules FILE...` now reads the product name from the files
+    themselves when `--product` is not given.
+
 - Audit anchoring. With `audit.anchor.enabled`, impr emits an `audit.head` event
   holding the audit trail's and event log's chain heads. It is sent after each
   audited command, and on a schedule under `impr serve`.

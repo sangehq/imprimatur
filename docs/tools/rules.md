@@ -40,8 +40,9 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   - `file` (hash rules) is refused: a hash rule breaks with every build.
 - **WDAC needs a base policy.** A WDAC supplemental policy is rendered only with `--base-policy`, the base
   policy's `{GUID}`. Without one, the output is AppLocker only, and impr says so.
-- **Product name.** `--product` is the ProductName in the files' version information. impr does not read
-  version resources, so name it.
+- **Product name.** Without `--product`, impr reads the ProductName from the files' own version information
+  (which `impr build` embeds), and every file must name the same product. `--product` overrides it, and a
+  file with no ProductName needs it.
 - **Default rules.** `--include-default-rules` (or `"includeDefaultRules": true` in a request) adds
   AppLocker's standard default rules to each collection: Program Files and the Windows folder for
   everyone, and everything for Administrators. Without them, enforcing a collection also blocks Windows

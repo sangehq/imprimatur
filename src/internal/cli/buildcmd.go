@@ -12,7 +12,8 @@ import (
 
 var buildFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "repo-root": stringFlag, "module": stringFlag, "main": stringFlag,
 	"binary": stringFlag, "version": stringFlag, "version-var": stringFlag, "targets": listFlag, "clean": boolFlag,
-	"allow-dirty": boolFlag, "profile": stringFlag, "purpose": stringFlag, "repo": stringFlag, "platforms": listFlag}
+	"allow-dirty": boolFlag, "profile": stringFlag, "purpose": stringFlag, "repo": stringFlag, "platforms": listFlag,
+	"product": stringFlag, "company": stringFlag, "description": stringFlag, "copyright": stringFlag, "icon": stringFlag, "no-winres": boolFlag}
 
 // BuildResult is `impr build --json`.
 type BuildResult struct {
@@ -62,8 +63,13 @@ func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
 			targets = []gobuild.Target{{GOOS: runtime.GOOS, GOARCH: runtime.GOARCH}}
 		}
 	}
+	var wr *gobuild.WinRes
+	if !p.on("no-winres") {
+		wr = &gobuild.WinRes{Product: p.str("product"), Company: p.str("company"), Description: p.str("description"),
+			Copyright: p.str("copyright"), Icon: p.str("icon")}
+	}
 	return gobuild.Options{RepoRoot: root, ModuleDir: mod, Main: main, Binary: p.str("binary"), Version: p.str("version"),
-		VersionVar: p.str("version-var"), Targets: targets, Clean: p.on("clean"), AllowDirty: p.on("allow-dirty")}, nil
+		VersionVar: p.str("version-var"), Targets: targets, Clean: p.on("clean"), AllowDirty: p.on("allow-dirty"), WinRes: wr}, nil
 }
 
 func orDefault(v, d string) string {
