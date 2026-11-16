@@ -9,6 +9,12 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   --include-default-rules --out-dir policies
 ```
 
+Check the policy against the files before deploying it (on Windows):
+
+```powershell
+impr rules test --policy policies\applocker.xml build\windows\tool.exe build\windows\core.dll
+```
+
 On a test machine, in audit mode first (the default):
 
 ```powershell

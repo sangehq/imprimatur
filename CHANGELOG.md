@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr rules test --policy FILE FILE...` asks Windows (`Test-AppLockerPolicy`)
+  whether a policy would allow each file, and exits 4 on a denial. PowerShell
+  is allow-listed for that one embedded script only, checked byte for byte,
+  with paths passed as parameters.
+
 - `impr rules --include-default-rules` (and `includeDefaultRules` in a request)
   adds AppLocker's standard default rules to each collection, with a note that
   the Windows folder rule also allows user-writable folders under it.
@@ -361,6 +366,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   govulncheck in CI.
 
 ### Fixed
+
+- `impr profile bundle verify --json` printed two documents when a profile
+  failed. It now prints its result once and exits 4.
 
 - A failure to render the AppLocker policy is now an error. Before, the error
   was dropped and the policy came out empty.

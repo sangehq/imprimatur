@@ -455,6 +455,7 @@ Usage:
   impr approve --manifest FILE --profile NAME --purpose P --approver NAME --key SSH-KEY [--expires 24h] [--out FILE] [--json]
   impr notify send|ping|doctor ...
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
+  impr rules test --policy applocker.xml [--user Everyone] FILE... [--json]   (Windows)
   impr rules (--request FILE | FILE... [--scope publisher|product|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]
   impr build [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z --version-var PKG.VAR]

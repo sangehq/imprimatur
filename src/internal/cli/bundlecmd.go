@@ -112,7 +112,9 @@ func cmdBundle(ctx context.Context, a *App, args []string) (int, error) {
 			}
 		}
 		if !ok {
-			return 0, contract.New(contract.VerifyFailed, "a managed profile does not match its signed bundle")
+			// One JSON document on stdout, the error on stderr, the exit code 4.
+			_, _ = a.Stderr.Write([]byte(contract.Text(contract.New(contract.VerifyFailed, "a managed profile does not match its signed bundle"))))
+			return int(contract.VerifyFailed), nil
 		}
 		return 0, nil
 	}

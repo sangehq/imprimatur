@@ -178,3 +178,27 @@ func TestCertListRaisesExpiryOnce(t *testing.T) {
 		t.Fatalf("want one cert.expiring at the 14-day threshold: %+v", tail.Events)
 	}
 }
+
+// TestBundleVerifyPrintsOneDocumentOnFailure: a failed bundle verify with
+// --json prints its result once and exits 4 (contract v1).
+func TestBundleVerifyPrintsOneDocumentOnFailure(t *testing.T) {
+	h := newHarness(t)
+	sshProfile(t, h, "acme-release")
+	// A managed profile with no installed bundle cannot be verified.
+	dir := h.env["IMPR_CONFIG_DIR"]
+	raw, err := os.ReadFile(filepath.Join(dir, "profiles", "acme-release.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p map[string]any
+	_ = json.Unmarshal(raw, &p)
+	p["managed"] = true
+	b, _ := json.Marshal(p)
+	if err := os.WriteFile(filepath.Join(dir, "profiles", "acme-release.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := h.exits(4, "profile", "bundle", "verify", "--json")
+	if !strings.Contains(out, `"ok":false`) {
+		t.Fatalf("verify: %s", out)
+	}
+}

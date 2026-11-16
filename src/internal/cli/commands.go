@@ -303,7 +303,10 @@ func cmdVerify(ctx context.Context, a *App, args []string) (int, error) {
 	return 0, nil
 }
 
-func cmdRules(_ context.Context, a *App, args []string) (int, error) {
+func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
+	if len(args) > 0 && args[0] == "test" {
+		return cmdRulesTest(ctx, a, args[1:])
+	}
 	p, err := parse(args, rulesFlags)
 	if err != nil {
 		return 0, err
