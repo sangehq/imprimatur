@@ -43,10 +43,14 @@ verification step it takes.
 ```bash
 impr events tail                                  # the last 50 events
 impr events tail --type 'signing.*' --limit 10 --json
+impr events tail --follow --type 'signing.*'       # then print each new event until Ctrl-C
 impr events verify                                # walk the hash chain
 impr events types --json
 ```
 
+- `--follow` keeps printing events as they are written, until Ctrl-C. It cannot be combined with `--json`,
+  which prints one document; for a machine-readable stream, use `GET /v1/events/stream` on
+  [`impr serve`](serve.md).
 - `impr events verify` exits 4 when the chain is broken. The `--json` document is
   `{contract, ok, checked, problem}`.
 - `companion info` reports the `events` capability.
