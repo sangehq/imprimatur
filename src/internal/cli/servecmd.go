@@ -102,7 +102,10 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	}
 	res := a.host().Secrets
 	h := server.Handler(server.Options{Config: cfg, Run: a.runCaptured, Secret: res.Resolve, StateDir: d.State, Now: a.Now, Log: a.say,
-		Events: events.Log{Dir: filepath.Join(d.State, "events")}})
+		Events: events.Log{Dir: filepath.Join(d.State, "events")},
+		Emit: func(short, subject string, data map[string]any) {
+			a.bus().Emit(context.Background(), short, subject, data)
+		}})
 	srv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 60 * time.Second,
 		WriteTimeout: 35 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 64 << 10}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)

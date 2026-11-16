@@ -133,3 +133,14 @@ func TestWebhooksAddRotateRemove(t *testing.T) {
 	}
 	h.exits(1, "webhooks", "rm", "bus")
 }
+
+func TestRotationIsAnEvent(t *testing.T) {
+	h := newHarness(t)
+	h.ok("webhooks", "add", "bus", "--url", "https://bus.example.com/hooks/impr", "--secret-ref", "env://WH_A")
+	h.ok("webhooks", "rotate", "bus", "--secret-ref", "env://WH_B")
+	h.ok("webhooks", "rotate", "bus", "--finish")
+	out := h.ok("events", "tail", "--json", "--type", "webhook.*")
+	if strings.Count(out, `"type":"sh.sange.imprimatur.webhook.secret.rotated"`) != 2 || !strings.Contains(out, `"step":"started"`) || !strings.Contains(out, `"step":"finished"`) {
+		t.Fatalf("rotation events: %s", out)
+	}
+}

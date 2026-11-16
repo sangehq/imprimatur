@@ -14,7 +14,11 @@ import (
 func ctxBackground() context.Context { return context.Background() }
 
 func (a *App) outbox(d paths.Dirs) webhook.Outbox {
-	return webhook.Outbox{Dir: filepath.Join(d.State, "outbox"), Now: a.Now, Client: webhook.Client, Warn: a.say}
+	return webhook.Outbox{Dir: filepath.Join(d.State, "outbox"), Now: a.Now, Client: webhook.Client, Warn: a.say,
+		Dead: func(x webhook.Delivery) {
+			a.logOnly("webhook.delivery.dead", x.Subscription, map[string]any{"subscription": x.Subscription,
+				"eventId": x.EventID, "eventType": x.EventType, "attempts": x.Attempts, "lastStatus": x.LastStatus, "lastError": x.LastError})
+		}}
 }
 
 // subscriptions resolves each outbound subscription's secrets. A secret that

@@ -137,6 +137,10 @@ type Outbox struct {
 	Now    func() time.Time
 	Client func(allowPrivate bool) *http.Client
 	Warn   func(format string, args ...any)
+	// Dead is told when a delivery moves to the dead letter; nil tells
+	// nobody. It must not publish through the event bus (the outbox runs
+	// inside it): impr writes webhook.delivery.dead to the event log only.
+	Dead func(d Delivery)
 }
 
 func (o Outbox) path(state string, d Delivery) string {
@@ -215,6 +219,9 @@ func (o Outbox) attempt(ctx context.Context, s Subscription, d Delivery) error {
 	d.LastError = err.Error()
 	if d.LastStatus == http.StatusGone || d.Attempts >= len(Backoff) {
 		o.warn("webhooks  %s: %s is dead after %d attempt(s): %v", s.Name, d.EventID, d.Attempts, err)
+		if o.Dead != nil {
+			o.Dead(d)
+		}
 		return o.save("dead", d)
 	}
 	d.NextTry = o.Now().Add(Backoff[d.Attempts])
