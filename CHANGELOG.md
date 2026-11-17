@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The menu builds (`b`), releases (`r`, after a typed `yes`) and installs
+  (`n`), as the PowerShell menu did, through the same commands.
 - `impr completion install` and `uninstall` take several shells or `all`,
   and default to the shell in `$SHELL`; the scripts complete option values
   the usage lists (`--purpose`, `--platforms`, `rules --scope`, …).

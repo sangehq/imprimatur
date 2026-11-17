@@ -47,6 +47,9 @@ Each old spelling still works as an alias of the Go name (design ID-13):
 
 ## Dropped by decision
 
+- From the menu: the project dashboard, project picker and `config/state.json`, `o`, the init and rules
+  entries, and the number keys (ID-18). `b` build, `r` release and `n` install are ported.
+
 - Completion of profile names and config keys, and `completion install --profile FILE` (ID-17): impr
   never edits a shell profile; option values, several shells, `all` and `$SHELL` are ported.
 
@@ -80,7 +83,7 @@ Parity is measured against this list. Each line is a PowerShell feature the Go
 | Azure login check (`az account show`) before Artifact Signing | **ported**: run before Artifact Signing when the Azure CLI is the credential (`az` allowed in that one form only) |
 | GPG keys other than the agent's | **ported**: a `keyRef` of `secret://` or `env://` holding the armored key (with an optional `passwordRef`) is imported into a throwaway gpg home for the run; `publicKey` names the armored public key to verify against |
 | `impr install`/`uninstall`, `impr path`, `impr completion`, `impr help <command>` | **ported**: [`impr install`](../tools/install.md) copies the binary to `~/.local/bin` (it never edits PATH), [`impr completion`](../tools/completion.md) for bash, zsh, fish and PowerShell, `impr help <command>` and `--help` on every command, and the aliases `s`, `v`, `d`, `h` |
-| The interactive menu | **ported** as [`impr menu`](../tools/menu.md), also opened by `impr` alone at a terminal; build, release and init entries wait for those commands |
+| The interactive menu | **ported** as [`impr menu`](../tools/menu.md), also opened by `impr` alone at a terminal, with build (`b`), release (`r`) and install (`n`); the rest is dropped (ID-18) |
 | `make/impr.mk` Make integration | **ported**: [`make/impr.mk`](../tools/make.md), targets `impr-sign`, `impr-verify`, `impr-doctor` and more |
 | `impr doctor` checks for go, goreleaser, go-winres and git | doctor lists `go` and `git` (with path and digest) among its tools, since `impr build` runs them; goreleaser and go-winres are not needed (impr runs `go build` and writes Windows resources itself). A warning when go or git is missing waits on decision D-08 |
 | Moving pre-1.4 files from the toolkit root into `config/` | not ported: run the PowerShell line once first, or `--from` the file |
