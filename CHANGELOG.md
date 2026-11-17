@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The PowerShell toolkit's option spellings work as aliases:
+  `impr profile add --file` (`--from-file`), `impr profile export --out`
+  (`--out-file`), `impr install --yes` (accepted, changes nothing) and
+  `impr install --no-completion` (leaves out the completion hint).
+
 ### Fixed
 
 - `impr build VERSION` and `impr release VERSION` stamp VERSION; the positional

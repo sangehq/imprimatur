@@ -16,6 +16,8 @@ impr path --json               # config, state, system config and install folder
 
 - **Atomic copy.** The binary is copied in with an atomic rename. Installing the same impr again changes
   nothing.
+- **PowerShell options.** `--yes` is accepted and changes nothing, since impr install never asks;
+  `--no-completion` leaves out the shell-completion hint.
 - **Other programs are left alone.** impr never replaces a program that is not impr. It checks the module
   path Go embeds in every binary it builds. `--force` replaces the program anyway.
 - **PATH is never edited, and neither are shell profiles.** When the folder is not on PATH, impr prints the

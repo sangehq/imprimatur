@@ -15,7 +15,10 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/contract"
 )
 
-var installFlags = flagSpec{"json": boolFlag, "dir": stringFlag, "force": boolFlag}
+var installFlags = flagSpec{"json": boolFlag, "dir": stringFlag, "force": boolFlag,
+	// The PowerShell toolkit's options (ID-13): impr install never asks, so
+	// --yes changes nothing; --no-completion leaves out the completion hint.
+	"yes": boolFlag, "no-completion": boolFlag}
 
 // binName is impr's file name on this OS.
 func (a *App) binName() string {
@@ -138,7 +141,9 @@ func cmdInstall(_ context.Context, a *App, args []string) (int, error) {
 			a.say("install   %s is not on PATH; add to your shell profile: export PATH=\"%s:$PATH\"", dir, dir)
 		}
 	}
-	a.say("install   shell completion: impr completion install bash|zsh|fish")
+	if !p.on("no-completion") {
+		a.say("install   shell completion: impr completion install bash|zsh|fish")
+	}
 	return 0, nil
 }
 

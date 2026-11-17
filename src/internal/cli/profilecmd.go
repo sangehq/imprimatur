@@ -13,7 +13,9 @@ import (
 
 var profileFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "force": boolFlag, "scope": stringFlag, "owner": stringFlag, "purpose": listFlag,
 	"allowed-repo": listFlag, "requires-approval": boolFlag, "notes": stringFlag, "set": repeatFlag, "unset": repeatFlag,
-	"from-file": stringFlag, "out-file": stringFlag, "from": stringFlag}
+	"from-file": stringFlag, "out-file": stringFlag, "from": stringFlag,
+	// The PowerShell toolkit's spellings (ID-13).
+	"file": stringFlag, "out": stringFlag}
 
 var profileSubs = []string{"list", "show", "add", "edit", "rm", "import", "export", "validate", "default", "capabilities", "import-legacy"}
 
@@ -119,7 +121,11 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 			return 0, contract.New(contract.Usage, "name the new profile").WithFix("impr profile add NAME --scope personal --owner <you> --purpose test ...")
 		}
 		x := profile.Profile{}
-		if f := p.str("from-file"); f != "" {
+		f, err := sameValue(p, "from-file", "file")
+		if err != nil {
+			return 0, err
+		}
+		if f != "" {
 			b, err := os.ReadFile(f) //nolint:gosec // G304: the profile file the user named
 			if err != nil {
 				return 0, contract.Wrap(contract.Usage, err, "read %s", f)
@@ -228,7 +234,11 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 		}
 		b, _ := json.MarshalIndent(x, "", "  ")
 		b = append(b, '\n')
-		if out := p.str("out-file"); out != "" {
+		out, err := sameValue(p, "out-file", "out")
+		if err != nil {
+			return 0, err
+		}
+		if out != "" {
 			if err := os.WriteFile(out, b, 0o600); err != nil {
 				return 0, err
 			}
@@ -483,4 +493,14 @@ func (a *App) profileEvent(ctx context.Context, x profile.Profile, existed bool)
 	}
 	a.bus().Emit(ctx, short, x.Name, map[string]any{"profile": x.Name, "scope": x.Scope, "owner": x.Owner,
 		"purpose": x.Purpose, "identityDigest": x.Pinned().Digest(), "managed": x.Managed})
+}
+
+// sameValue reads an option given under its name or its PowerShell
+// spelling (ID-13); both together must agree.
+func sameValue(p parsed, name, old string) (string, error) {
+	v, o := p.str(name), p.str(old)
+	if v != "" && o != "" && v != o {
+		return "", contract.New(contract.Usage, "--%s and --%s name the same thing and disagree", name, old)
+	}
+	return orDefault(v, o), nil
 }

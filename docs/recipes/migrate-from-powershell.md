@@ -30,6 +30,25 @@ The source is only read. A profile that already exists is kept, never
 replaced. Imported profiles may have things to finish; `impr profile validate`
 lists them, and impr will not sign with an invalid profile.
 
+## Renamed options
+
+Each old spelling still works as an alias of the Go name (design ID-13):
+
+| PowerShell | Go impr |
+| --- | --- |
+| `impr profile add NAME --file FILE` | `--from-file FILE` (`--file` still works) |
+| `impr profile export NAME --out FILE` | `--out-file FILE` (`--out` still works) |
+| `impr install --yes` | accepted; impr install never asks |
+| `impr install --no-completion` | leaves out the completion hint |
+| `impr build VERSION` stamping `main.version` | the same; `--version-var` names another variable |
+| `impr build` signing with `--profile`, `--signer`, `--thumbprint` … | moved to `impr release --profile NAME --purpose P` |
+| `impr rules --scope file` (product + binary) | the same meaning (ID-11); `--scope product` is product only |
+
+## Dropped by decision
+
+- `install.ps1`, `install.sh` and the `imprimatur` command name (ID-14). Install by downloading the
+  release asset, checking it against `checksums.txt`, and running `impr install`.
+
 ## Not ported yet
 
 Parity is measured against this list. Each line is a PowerShell feature the Go
