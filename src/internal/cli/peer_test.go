@@ -9,18 +9,31 @@ import (
 	"time"
 )
 
-// TestPeerListenerRefusesAnotherUser: on Linux a connection whose peer uid
+// TestPeerListenerRefusesAnotherUser: on Linux and macOS a connection whose peer uid
 // is not the server's is closed and reported; one from the same user goes
 // through. The other user is simulated by telling the listener it runs as
 // someone else.
 func TestPeerListenerRefusesAnotherUser(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("peer credentials are read on Linux only")
+	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
+		t.Skip("peer credentials are read on Linux and macOS only")
 	}
+	// macOS caps a socket path at 104 bytes, and its per-user temp folder
+	// alone is about 50, so a long test directory moves to /tmp.
 	sock := filepath.Join(t.TempDir(), "s.sock")
+	if len(sock) > 100 {
+		dir, err := os.MkdirTemp("/tmp", "impr-peer-")
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		sock = filepath.Join(dir, "s.sock")
+	}
 	raw, err := net.Listen("unix", sock)
 	if err != nil {
-		t.Skipf("cannot listen on a Unix socket here: %v", err)
+		if os.Getenv("CI") != "" {
+			t.Fatalf("cannot listen on a Unix socket: %v", err) // CI must run this, never skip it
+		}
+		t.Skipf("cannot listen on a Unix socket here (a sandbox): %v", err)
 	}
 	defer func() { _ = raw.Close() }()
 	refusedUID := make(chan int, 4)

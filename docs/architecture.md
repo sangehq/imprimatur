@@ -24,11 +24,16 @@ src/internal/approval/ signed approvals for profiles that require them
 src/internal/bundle/   signed profile bundles
 ```
 
-The module has one dependency outside the Go standard library:
-`github.com/simtabi/go-notifykit`, which every Go program in the estate uses for desktop
-notifications. It runs the platform notifier itself (a helper app on macOS, `notify-send`, a
-PowerShell toast), outside `execx`, and is silent under `go test` and in CI. A guard fails if any
-impr source calls a notifier directly.
+The module has two dependencies outside the Go standard library, and a guard
+(`internal/guardtest/deps_test.go`) fails if `go.mod` names any other:
+
+- `github.com/simtabi/go-notifykit`, which every Go program in the estate uses for desktop
+  notifications. It runs the platform notifier itself (a helper app on macOS, `notify-send`, a
+  PowerShell toast), outside `execx`, and is silent under `go test` and in CI. A guard fails if any
+  impr source calls a notifier directly.
+- `golang.org/x/sys`, the Go project's own system-call package, for what the standard library cannot
+  do: the macOS socket peer check (`LOCAL_PEERCRED`) and the Windows named pipe with an owner-only
+  DACL (owner decision, 2026-11-17).
 
 ## The backend port
 

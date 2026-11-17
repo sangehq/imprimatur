@@ -167,38 +167,48 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	return 0, nil
 }
 
-// listen opens the Unix socket in a private directory, or a loopback TCP port.
+// listen opens the platform's default transport (listenDefault: a named pipe
+// on Windows, the Unix socket elsewhere), the Unix socket when spec is
+// "unix", or a TCP port.
 func listen(state, spec string) (net.Listener, string, error) {
-	if spec == "" || spec == "unix" {
-		dir := filepath.Join(state, "server")
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return nil, "", err
-		}
-		if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a directory needs its execute bit; 0700 is owner-only
-			return nil, "", err
-		}
-		sock := filepath.Join(dir, "impr.sock")
-		if st, err := os.Lstat(sock); err == nil {
-			if st.Mode().Type() != fs.ModeSocket {
-				return nil, "", fmt.Errorf("%s exists and is not a socket", sock)
-			}
-			_ = os.Remove(sock) // a stale socket from an earlier run
-		}
-		ln, err := net.Listen("unix", sock)
-		if err != nil {
-			return nil, "", err
-		}
-		if err := os.Chmod(sock, 0o600); err != nil {
-			_ = ln.Close()
-			return nil, "", err
-		}
-		return ln, "unix:" + sock, nil
+	switch spec {
+	case "":
+		return listenDefault(state)
+	case "unix":
+		return listenUnix(state)
 	}
 	ln, err := net.Listen("tcp", spec)
 	if err != nil {
 		return nil, "", err
 	}
 	return ln, "tcp:" + ln.Addr().String(), nil
+}
+
+// listenUnix opens the Unix socket in a private directory.
+func listenUnix(state string) (net.Listener, string, error) {
+	dir := filepath.Join(state, "server")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, "", err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a directory needs its execute bit; 0700 is owner-only
+		return nil, "", err
+	}
+	sock := filepath.Join(dir, "impr.sock")
+	if st, err := os.Lstat(sock); err == nil {
+		if st.Mode().Type() != fs.ModeSocket {
+			return nil, "", fmt.Errorf("%s exists and is not a socket", sock)
+		}
+		_ = os.Remove(sock) // a stale socket from an earlier run
+	}
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := os.Chmod(sock, 0o600); err != nil {
+		_ = ln.Close()
+		return nil, "", err
+	}
+	return ln, "unix:" + sock, nil
 }
 
 var serverFlags = flagSpec{"json": boolFlag, "scopes": listFlag}
