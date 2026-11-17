@@ -85,7 +85,8 @@ func cmdCertInstallCheck(_ context.Context, a *App, args []string) (int, error) 
 		a.say("unit      systemctl --user daemon-reload && systemctl --user enable --now impr-cert-check.timer")
 	case "launchd":
 		_, _ = fmt.Fprint(a.Stdout, LaunchdCheck(u))
-		a.say("unit      save it as ~/Library/LaunchAgents/%s.plist, then: launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/%s.plist", checkLabel, checkLabel)
+		how := a.launchdHow(checkLabel, legacyCheckLabel)
+		a.say("unit      save it as ~/Library/LaunchAgents/%s.plist, then: %s", checkLabel, how)
 	case "task":
 		_, _ = fmt.Fprint(a.Stdout, TaskCheckXML(u))
 		a.say(`unit      save it as impr-cert-check.xml, then: schtasks /Create /TN "imprimatur\impr cert check" /XML impr-cert-check.xml`)
@@ -96,7 +97,9 @@ func cmdCertInstallCheck(_ context.Context, a *App, args []string) (int, error) 
 	return 0, nil
 }
 
-const checkLabel = "sh.sange.imprimatur.cert-check"
+// checkLabel names the daily expiry check's launch agent (legacyCheckLabel
+// before 2026-11-17).
+const checkLabel = "com.simtabi.sange.imprimatur.cert-check"
 
 // SystemdCheck is a oneshot service and a daily timer, sandboxed to write
 // only impr's state directory.

@@ -160,6 +160,7 @@ func cmdDoctor(ctx context.Context, a *App, args []string) (int, error) {
 		}
 	}
 	rep.Problems = append(rep.Problems, a.permissionProblems(d)...)
+	rep.Problems = append(rep.Problems, a.legacyAgentProblems()...)
 	rep.OK = len(rep.Problems) == 0
 	if p.on("json") {
 		a.json(rep)

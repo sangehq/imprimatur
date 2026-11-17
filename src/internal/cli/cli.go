@@ -333,6 +333,7 @@ func (a *App) service() (*signing.Service, error) {
 		}
 	}
 	host := a.host()
+	host.EventsSource = cfg.Events.Source
 	trusted := cfg.Bundles.TrustedKeys
 	check := func(p profile.Profile) error {
 		return bundle.Check(context.Background(), host.Runner, d.Config, p, trusted)
@@ -373,7 +374,29 @@ func (a *App) bus() *events.Bus {
 	if n := a.notifier(); n != nil {
 		sinks = append(sinks, notify.Sink{N: n})
 	}
-	return &events.Bus{Env: events.Env{Now: a.Now, NewID: events.NewID, InstallID: id}, Sinks: sinks, Warn: a.say}
+	return &events.Bus{Env: a.eventEnv(id), Sinks: sinks, Warn: a.say}
+}
+
+// eventEnv is the environment events are built in: this install's id, and
+// the events.source the configuration chooses. A configuration that does not
+// load leaves the default (sange.sh); every command that acts loads it itself
+// and fails on it first.
+func (a *App) eventEnv(installID string) events.Env {
+	return events.Env{Now: a.Now, NewID: events.NewID, InstallID: installID, Domain: a.eventsSource()}
+}
+
+// eventsSource is the configured events.source, or "" (sange.sh) when the
+// configuration cannot be read.
+func (a *App) eventsSource() string {
+	d, err := a.dirs()
+	if err != nil {
+		return ""
+	}
+	eff, err := a.effective(d)
+	if err != nil {
+		return ""
+	}
+	return eff.Config.Events.Source
 }
 
 // notifier is the desktop notifier, or nil when the config turns it off or it

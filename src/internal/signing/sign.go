@@ -546,7 +546,7 @@ func repoLabel(u string) string {
 // event builds an event with the bus's environment, or a local one when no
 // bus is configured, so pre-hooks always see the same shape.
 func (s *Service) event(short, subject string, data any) (events.Event, error) {
-	env := events.Env{Now: s.Host.Now, NewID: events.NewID, InstallID: "0000000000000000"}
+	env := events.Env{Now: s.Host.Now, NewID: events.NewID, InstallID: "0000000000000000", Domain: s.Host.EventsSource}
 	if s.Events != nil {
 		env = s.Events.Env
 	}

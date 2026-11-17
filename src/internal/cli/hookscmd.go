@@ -6,7 +6,6 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
-	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/hooks"
 )
@@ -100,7 +99,7 @@ func cmdHooks(ctx context.Context, a *App, args []string) (int, error) {
 			if h.Name != p.pos[1] {
 				continue
 			}
-			env := events.Env{Now: a.Now, NewID: events.NewID, InstallID: "0000000000000000"}
+			env := a.eventEnv("0000000000000000")
 			ev, err := env.New("verification.run.started", "hooks-test", map[string]any{"test": true})
 			if err != nil {
 				return 0, err

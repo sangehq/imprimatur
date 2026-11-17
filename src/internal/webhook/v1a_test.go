@@ -24,7 +24,7 @@ func TestV1aRoundTripAndRefusals(t *testing.T) {
 		t.Fatalf("public key %q (%v), derived %q", pk, err, PublicKeyOf(priv))
 	}
 	now := time.Unix(1700000000, 0)
-	body := []byte(`{"type":"sh.sange.imprimatur.signing.run.completed"}`)
+	body := []byte(`{"type":"com.simtabi.sange.imprimatur.signing.run.completed"}`)
 	h := http.Header{}
 	SetHeadersWith(h, nil, []ed25519.PrivateKey{priv}, "id-1", now, body)
 	if !strings.HasPrefix(h.Get(HeaderSignature), "v1a,") {

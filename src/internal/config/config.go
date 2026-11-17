@@ -199,6 +199,11 @@ type Events struct {
 	// Required makes sign and verify fail closed when the event log cannot
 	// be written, instead of warning and carrying on.
 	Required bool `json:"required,omitempty"`
+	// Source chooses the domain of this install's CloudEvents source and of
+	// the provenance build type and builder id it writes: "sange.sh" (the default, also when
+	// empty) gives https://sange.sh/imprimatur/..., "simtabi.com" gives
+	// https://simtabi.com/sange/imprimatur/... (events.SourceSettings).
+	Source string `json:"source,omitempty"`
 }
 
 // Audit is the audit section.
@@ -409,6 +414,9 @@ func (c Config) Validate() []string {
 		}
 	}
 	ps = append(ps, c.Approvals.Problems()...)
+	if _, ok := events.Base(c.Events.Source); !ok {
+		ps = append(ps, fmt.Sprintf("events.source is %q; it is sange.sh or simtabi.com", c.Events.Source))
+	}
 	if h := c.Audit.Anchor.EveryHours; h < 0 || h > 168 {
 		ps = append(ps, fmt.Sprintf("audit.anchor.everyHours is %d; 1 to 168, or 0 for the default of 6", h))
 	}

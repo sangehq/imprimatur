@@ -129,7 +129,7 @@ func (a *App) webhooksManage(ctx context.Context, d paths.Dirs, p parsed, cfg co
 		if err != nil {
 			return 0, err
 		}
-		ev, err := events.Env{Now: a.Now, NewID: events.NewID, InstallID: id}.New("webhook.test", name, map[string]any{"subscription": name})
+		ev, err := a.eventEnv(id).New("webhook.test", name, map[string]any{"subscription": name})
 		if err != nil {
 			return 0, err
 		}

@@ -1,6 +1,8 @@
 // Package events is imprimatur's event model (design ID-01, ID-02): one
 // CloudEvents 1.0 envelope in structured JSON, the estate shape of sange's
-// webhooks-and-events.md §3.1, typed sh.sange.imprimatur.<context>.<noun>.<verb>.
+// webhooks-and-events.md §3.1, typed
+// com.simtabi.sange.imprimatur.<context>.<noun>.<verb> (sh.sange.imprimatur.*
+// before 2026-11-17; see LegacyTypePrefix).
 //
 // Events never go to stdout: --json keeps printing exactly one document. They
 // go to sinks: the append-only log in the state directory (log.go), and later
@@ -27,8 +29,44 @@ import (
 // SpecVersion is the CloudEvents version.
 const SpecVersion = "1.0"
 
-// TypePrefix starts every imprimatur event type.
-const TypePrefix = "sh.sange.imprimatur."
+// TypePrefix starts every imprimatur event type: Simtabi LLC's reverse-DNS
+// namespace for sange and its family (owner decision, 2026-11-17).
+const TypePrefix = "com.simtabi.sange.imprimatur."
+
+// LegacyTypePrefix started every type before 2026-11-17. Events an older impr
+// logged still carry it, and a hook, webhook or --type filter written with it
+// still selects the same events: Matches and Short read both.
+//
+// Deprecated: write filters with TypePrefix, or as short names ("signing.*").
+// Recognising this prefix may be removed no earlier than v0.2.0.
+const LegacyTypePrefix = "sh.sange.imprimatur."
+
+// The events.source setting's values: which domain an install's CloudEvents
+// source is on. The same names, and the same choice, as sange's own
+// events.source.
+const (
+	SourceSangeSh = "sange.sh"    // https://sange.sh/imprimatur, the default
+	SourceSimtabi = "simtabi.com" // https://simtabi.com/sange/imprimatur
+)
+
+// SourceSettings are events.source's values, in the order the docs list them.
+var SourceSettings = []string{SourceSangeSh, SourceSimtabi}
+
+// Base is the URL base events.source names, under which impr's source
+// (<base>/install/<id>) and provenance build type
+// (<base>/buildtypes/manifest/v1) sit: https://sange.sh/imprimatur for "" or
+// "sange.sh", https://simtabi.com/sange/imprimatur for "simtabi.com", and
+// false for anything else.
+func Base(setting string) (string, bool) {
+	switch setting {
+	case "", SourceSangeSh:
+		return "https://sange.sh/imprimatur", true
+	case SourceSimtabi:
+		return "https://simtabi.com/sange/imprimatur", true
+	default:
+		return "", false
+	}
+}
 
 // Data classes (the imprclass extension): who may store the event.
 const (
@@ -86,10 +124,23 @@ var Catalogue = map[string]string{
 
 var typeRe = regexp.MustCompile(`^[a-z0-9-]+(\.[a-z0-9-]+){1,2}$`)
 
-// Source is the CloudEvents source for an install id.
+// Source is the CloudEvents source for an install id under the default
+// events.source (sange.sh).
 func Source(installID string) string { return "https://sange.sh/imprimatur/install/" + installID }
 
-// SchemaURL is the published JSON Schema for a type at major version 1.
+// SourceFor is the CloudEvents source for an install id under an
+// events.source setting, and false when the setting is not one of
+// SourceSettings.
+func SourceFor(setting, installID string) (string, bool) {
+	base, ok := Base(setting)
+	if !ok {
+		return "", false
+	}
+	return base + "/install/" + installID, true
+}
+
+// SchemaURL is the published JSON Schema for a type at major version 1. It
+// names where the schema is published, so it does not follow events.source.
 func SchemaURL(short string) string {
 	return "https://sange.sh/schemas/imprimatur/events/" + short + "/v1.json"
 }
@@ -99,6 +150,9 @@ type Env struct {
 	Now       func() time.Time
 	NewID     func() string
 	InstallID string
+	// Domain is the events.source setting: "" or "sange.sh" (the default),
+	// or "simtabi.com". It chooses the source's base; New refuses any other.
+	Domain string
 }
 
 // NewID is a random 128-bit hex id.
@@ -117,6 +171,10 @@ func (e Env) New(short, subject string, data any) (Event, error) {
 	if !ok || !typeRe.MatchString(short) {
 		return Event{}, fmt.Errorf("event type %q is not in the catalogue", short)
 	}
+	source, ok := SourceFor(e.Domain, e.InstallID)
+	if !ok {
+		return Event{}, fmt.Errorf("events.source %q is not sange.sh or simtabi.com", e.Domain)
+	}
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return Event{}, err
@@ -128,13 +186,22 @@ func (e Env) New(short, subject string, data any) (Event, error) {
 	if len(raw) == 0 || raw[0] != '{' {
 		return Event{}, fmt.Errorf("event %s: data must be a JSON object", short)
 	}
-	return Event{SpecVersion: SpecVersion, ID: e.NewID(), Source: Source(e.InstallID), Type: TypePrefix + short,
+	return Event{SpecVersion: SpecVersion, ID: e.NewID(), Source: source, Type: TypePrefix + short,
 		Subject: subject, Time: e.Now().UTC(), DataContentType: "application/json", DataSchema: SchemaURL(short),
 		Class: class, Data: raw}, nil
 }
 
-// Short is the type without the prefix.
-func (ev Event) Short() string { return strings.TrimPrefix(ev.Type, TypePrefix) }
+// Short is the type without the prefix: TypePrefix, or LegacyTypePrefix for
+// an event an older impr logged.
+func (ev Event) Short() string { return ShortType(ev.Type) }
+
+// ShortType is a type without TypePrefix or LegacyTypePrefix.
+func ShortType(typ string) string {
+	if s, ok := strings.CutPrefix(typ, TypePrefix); ok {
+		return s
+	}
+	return strings.TrimPrefix(typ, LegacyTypePrefix)
+}
 
 // Sink receives events.
 type Sink interface {

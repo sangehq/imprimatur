@@ -13,6 +13,7 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/artifact"
 	"github.com/sangehq/imprimatur/src/internal/contract"
+	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 )
 
@@ -27,15 +28,51 @@ import (
 // begins "DSSEv1", so the signature cannot pass for one over a checksum
 // file. An ssh key signs it in its own namespace, "in-toto".
 const (
-	StatementType   = "https://in-toto.io/Statement/v1"
-	ProvenanceType  = "https://slsa.dev/provenance/v1"
-	PayloadType     = "application/vnd.in-toto+json"
-	BuildType       = "https://sange.sh/imprimatur/buildtypes/manifest/v1"
-	BuilderID       = "https://sange.sh/imprimatur"
-	AttestationExt  = ".intoto.jsonl"
-	sshNamespace    = "in-toto"
-	statementPrefix = "DSSEv1"
+	StatementType  = "https://in-toto.io/Statement/v1"
+	ProvenanceType = "https://slsa.dev/provenance/v1"
+	PayloadType    = "application/vnd.in-toto+json"
+	// BuildType is the provenance build type under events.source sange.sh,
+	// the default, and the only one written before 2026-11-17.
+	BuildType = "https://sange.sh/imprimatur/buildtypes/manifest/v1"
+	// SimtabiBuildType is the same build type under events.source
+	// simtabi.com (owner, 2026-11-17: "support from simtabi as well").
+	SimtabiBuildType = "https://simtabi.com/sange/imprimatur/buildtypes/manifest/v1"
+	// BuilderID is the provenance builder id under events.source sange.sh,
+	// the default, and the only one written before 2026-11-17.
+	BuilderID = "https://sange.sh/imprimatur"
+	// SimtabiBuilderID is the builder id under events.source simtabi.com
+	// (owner, 2026-11-17).
+	SimtabiBuilderID = "https://simtabi.com/sange/imprimatur"
+	AttestationExt   = ".intoto.jsonl"
+	sshNamespace     = "in-toto"
+	statementPrefix  = "DSSEv1"
 )
+
+// BuildTypes are the build types Verify accepts: an attestation made under
+// either events.source setting, or before the setting existed, verifies.
+var BuildTypes = []string{BuildType, SimtabiBuildType}
+
+// BuilderIDs are the builder ids Verify accepts, for the same reason as
+// BuildTypes.
+var BuilderIDs = []string{BuilderID, SimtabiBuilderID}
+
+// BuilderIDFor is the builder id an attestation is written with under an
+// events.source setting: the setting's base itself (events.Base), and false
+// for an unknown setting.
+func BuilderIDFor(setting string) (string, bool) {
+	return events.Base(setting)
+}
+
+// BuildTypeFor is the build type an attestation is written with under an
+// events.source setting: BuildType for "" or "sange.sh", SimtabiBuildType
+// for "simtabi.com", and false for anything else.
+func BuildTypeFor(setting string) (string, bool) {
+	base, ok := events.Base(setting)
+	if !ok {
+		return "", false
+	}
+	return base + "/buildtypes/manifest/v1", true
+}
 
 // Attestation signs and verifies in-toto attestations through an inner
 // backend.
@@ -194,11 +231,19 @@ func (a *Attestation) Sign(ctx context.Context, art Artifact, p profile.Profile)
 	if art.Build == nil || art.Build.Commit == "" {
 		return Signature{}, contract.New(contract.SignFailed, "an in-toto attestation needs the build's commit; nothing was attested")
 	}
+	buildType, ok := BuildTypeFor(a.H.EventsSource)
+	builderID, _ := BuilderIDFor(a.H.EventsSource)
+	if !ok {
+		return Signature{}, contract.New(contract.Usage, "events.source %q is not sange.sh or simtabi.com; nothing was attested", a.H.EventsSource)
+	}
 	lines, err := readSums(art.Path)
 	if err != nil {
 		return Signature{}, contract.Wrap(contract.SignFailed, err, "read %s", art.Rel)
 	}
-	payload, err := json.Marshal(NewStatement(lines, *art.Build))
+	st := NewStatement(lines, *art.Build)
+	st.Predicate.BuildDefinition.BuildType = buildType
+	st.Predicate.RunDetails.Builder.ID = builderID
+	payload, err := json.Marshal(st)
 	if err != nil {
 		return Signature{}, err
 	}
@@ -287,8 +332,11 @@ func (a *Attestation) Verify(ctx context.Context, art Artifact, p profile.Profil
 	if err := sd.Decode(&st); err != nil {
 		return contract.New(contract.VerifyFailed, "%s: the statement is not one imprimatur writes: %v", name, err)
 	}
-	if st.Type != StatementType || st.PredicateType != ProvenanceType || st.Predicate.BuildDefinition.BuildType != BuildType {
+	if st.Type != StatementType || st.PredicateType != ProvenanceType || !slices.Contains(BuildTypes, st.Predicate.BuildDefinition.BuildType) {
 		return contract.New(contract.VerifyFailed, "%s: not an in-toto v1 statement with SLSA provenance v1", name)
+	}
+	if !slices.Contains(BuilderIDs, st.Predicate.RunDetails.Builder.ID) {
+		return contract.New(contract.VerifyFailed, "%s: builder %q is not imprimatur's", name, st.Predicate.RunDetails.Builder.ID)
 	}
 	lines, err := readSums(art.Path)
 	if err != nil {

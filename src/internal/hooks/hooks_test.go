@@ -87,7 +87,7 @@ func TestPreHookVetoAndSecretFreeEnvironment(t *testing.T) {
 	}
 	_ = v
 	env, _ := os.ReadFile(out + ".env")
-	if strings.Contains(string(env), "very-secret") || !strings.Contains(string(env), "IMPR_EVENT_TYPE=sh.sange.imprimatur.signing.run.started") {
+	if strings.Contains(string(env), "very-secret") || !strings.Contains(string(env), "IMPR_EVENT_TYPE=com.simtabi.sange.imprimatur.signing.run.started") {
 		t.Fatalf("hook environment:\n%s", env)
 	}
 	var got events.Event
