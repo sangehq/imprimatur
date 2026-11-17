@@ -13,7 +13,7 @@ does not know are ignored, since shapes only gain fields:
 ```json
 {
   "contract": 1,
-  "manifestDigest": "sha256:<hex>", "commit": "<sha>", "version": "v0.1.0", "fileVersion": "0.1.0.0",
+  "manifestDigest": "sha256:<hex>", "commit": "<sha>", "version": "v0.1.0", "fileVersion": "0.1.0.0", "scope": "version",
   "publisher": {"subject": "O=ACME LTD, L=LONDON, C=GB", "leafCn": "Acme Ltd", "issuerName": "Acme Issuing CA",
                 "issuerTbs": "<hex TBS hash of the CA below the root>", "eku": "1.3.6.1.4.1.311.97.1.0", "product": "tool"},
   "files": [{"path": "build/windows/tool.exe", "sha256": "<hex>", "collection": "Exe", "binaryName": "tool.exe"}],
@@ -21,6 +21,10 @@ does not know are ignored, since shapes only gain fields:
               "userOrGroupSid": "S-1-1-0", "binaryNames": {}}
 }
 ```
+
+`scope` is optional: `publisher`, `product`, `file` or `version`, as under [From signed files](#from-signed-files).
+Without it, a request with no `product` gets publisher rules and one with a `product` gets `version` rules
+(`file` when `fileVersion` is empty), which is what every request before `scope` existed meant.
 
 ## From signed files
 
@@ -33,11 +37,15 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   signature. It takes the publisher's subject and the leaf's common name. It also takes the issuing CA,
   pinned by its TBS hash, computed with the same hash as the CA certificate's own signature.
 - **One publisher.** Every file must share one publisher and issuing CA, which is one set of rules.
-- **Scopes.**
+- **Scopes.** The same four as the PowerShell toolkit; none is a hash rule.
   - `publisher` allows anything that publisher signs.
-  - `product` (the default) allows the named product's binaries.
-  - `version` allows the named product at `--file-version` or newer.
-  - `file` (hash rules) is refused: a hash rule breaks with every build.
+  - `product` (the default) allows any file of the named product, any version (AppLocker
+    `ProductName=PRODUCT BinaryName=*`; WDAC `ProductName`).
+  - `file` allows the named product's listed binaries, any version (`BinaryName=TOOL.EXE`, low `0.0.0.0`;
+    WDAC `FileName`).
+  - `version` is `file` at `--file-version` or newer.
+
+  Before 2026-11-17 `product` wrote what `file` writes now, and `file` was refused.
 - **WDAC needs a base policy.** A WDAC supplemental policy is rendered only with `--base-policy`, the base
   policy's `{GUID}`. Without one, the output is AppLocker only, and impr says so.
 - **Product name.** Without `--product`, impr reads the ProductName from the files' own version information

@@ -29,8 +29,8 @@ CiTool --update-policy policies\wdac.cip
   leave it out only when the machine's existing policy already has them.
 - **Supplemental only.** impr writes a WDAC supplemental policy for your existing base policy
   (`--base-policy`), never a base policy of its own.
-- **Scope.** `version` allows this product from this version on; `product` allows any version; `publisher`
-  allows anything the publisher signs.
+- **Scope.** `version` allows these binaries from this version on; `file` allows them at any version;
+  `product` allows any file of the product; `publisher` allows anything the publisher signs.
 
 Details: [`impr rules`](../tools/rules.md).
 

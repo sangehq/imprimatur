@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `impr rules --scope` takes the PowerShell toolkit's four scopes with their
+  meanings: `product` (the default) now allows any file of the product,
+  `file` allows the product's listed binaries at any version, and `version`
+  adds `--file-version`. In 0.1.0 `product` wrote what `file` writes now and
+  `file` was refused, so rules made with `--scope product` in 0.1.0 match
+  `--scope file` now. A `--request` gains an optional `scope`; without it a
+  request renders as before.
 - `impr doctor` exits 5 (unavailable) when it finds problems; it exited 1,
   the usage code, so a caller could not tell a host that is not ready from a
   mistyped command.

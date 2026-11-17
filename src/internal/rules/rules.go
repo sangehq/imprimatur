@@ -74,15 +74,20 @@ type Options struct {
 
 // Request is what sange asks for (`impr rules --request <file>`).
 type Request struct {
-	Contract       int       `json:"contract"`
-	ManifestDigest string    `json:"manifestDigest"`
-	Commit         string    `json:"commit"`
-	Version        string    `json:"version"`
-	FileVersion    string    `json:"fileVersion"`
-	Publisher      Publisher `json:"publisher"`
-	Files          []File    `json:"files"`
-	Options        Options   `json:"options"`
-	PolicyID       string    `json:"policyId,omitempty"`
+	Contract       int    `json:"contract"`
+	ManifestDigest string `json:"manifestDigest"`
+	Commit         string `json:"commit"`
+	Version        string `json:"version"`
+	FileVersion    string `json:"fileVersion"`
+	// Scope is how wide the rules are (ID-11, the PowerShell scopes):
+	// publisher, product (any file of it), file (this product and file name)
+	// or version (and this version or newer). Empty is the contract's first
+	// form: publisher without a product, file or version with one.
+	Scope     string    `json:"scope,omitempty"`
+	Publisher Publisher `json:"publisher"`
+	Files     []File    `json:"files"`
+	Options   Options   `json:"options"`
+	PolicyID  string    `json:"policyId,omitempty"`
 }
 
 // Result is the answer.
@@ -129,10 +134,14 @@ func Render(req Request, renderer string) (Result, error) {
 	}
 	res := Result{Contract: contract.Version, Renderer: renderer, ManifestDigest: req.ManifestDigest, Files: files}
 	level := "publisher"
-	if req.Publisher.Product != "" {
+	switch {
+	case req.Scope == "product":
+		level = "product"
+		res.Notes = append(res.Notes, "rules allow any file of product "+req.Publisher.Product+", any version")
+	case req.Publisher.Product != "":
 		level = "file-publisher"
 		res.Notes = append(res.Notes, "rules allow the listed binary names of product "+req.Publisher.Product+" at file version "+fv+" or newer")
-	} else {
+	default:
 		res.Notes = append(res.Notes, "no product name: the rules allow anything this publisher signs")
 	}
 	res.Notes = append(res.Notes, "no file-hash rules; no base WDAC policy")
@@ -191,6 +200,25 @@ func check(req Request, opt Options) error {
 			p = append(p, f.Path+" is listed twice")
 		}
 		seen[f.Path] = true
+	}
+	switch req.Scope {
+	case "":
+	case "publisher":
+		if req.Publisher.Product != "" {
+			p = append(p, "scope publisher allows anything the publisher signs, so it takes no product")
+		}
+	case "product", "file", "version":
+		if req.Publisher.Product == "" {
+			p = append(p, "scope "+req.Scope+" needs the product name")
+		}
+		if req.Scope == "version" && req.FileVersion == "" {
+			p = append(p, "scope version needs fileVersion")
+		}
+		if req.Scope != "version" && req.FileVersion != "" {
+			p = append(p, "scope "+req.Scope+" allows any version, so it takes no fileVersion; use scope version")
+		}
+	default:
+		p = append(p, "scope "+req.Scope+" is not publisher, product, file or version")
 	}
 	if req.FileVersion != "" && !verRe.MatchString(req.FileVersion) {
 		p = append(p, "fileVersion "+req.FileVersion+" is not four numbers")
@@ -376,11 +404,16 @@ func renderAppLocker(req Request, opt Options, files []File, level, fv string) (
 		if opt.IncludeDefaultRules {
 			coll.PathRules = defaultRules(c)
 		}
-		if level == "publisher" {
+		switch level {
+		case "product":
+			coll.Rules = append(coll.Rules, alRule{ID: guid("applocker", string(c), pub.Subject, pub.Product, "*"),
+				Name: fmt.Sprintf("imprimatur: any file of %s", pub.Product), Description: desc, SID: opt.UserOrGroupSID, Action: "Allow",
+				Condition: alCond{PublisherName: pub.Subject, ProductName: strings.ToUpper(pub.Product), BinaryName: "*", Range: alRange{Low: "*", High: "*"}}})
+		case "publisher":
 			coll.Rules = append(coll.Rules, alRule{ID: guid("applocker", string(c), pub.Subject, "*"),
 				Name: "imprimatur: everything signed by " + pub.Subject, Description: desc, SID: opt.UserOrGroupSID, Action: "Allow",
 				Condition: alCond{PublisherName: pub.Subject, ProductName: "*", BinaryName: "*", Range: alRange{Low: "*", High: "*"}}})
-		} else {
+		default:
 			seen := map[string]bool{}
 			for _, f := range fs {
 				bin := strings.ToUpper(binaryName(opt, f))
@@ -441,7 +474,8 @@ type siEKU struct {
 type siFileAttr struct {
 	ID                 string `xml:"ID,attr"`
 	FriendlyName       string `xml:"FriendlyName,attr"`
-	FileName           string `xml:"FileName,attr"`
+	FileName           string `xml:"FileName,attr,omitempty"`
+	ProductName        string `xml:"ProductName,attr,omitempty"`
 	MinimumFileVersion string `xml:"MinimumFileVersion,attr"`
 }
 
@@ -511,6 +545,11 @@ func renderWDAC(req Request, opt Options, files []File, level, fv string) ([]byt
 		}
 		pol.EKUs = []siEKU{{ID: "ID_EKU_IMPR_0", FriendlyName: "signer EKU " + pub.EKU, Value: v}}
 		signer.CertEKU = &siRef{ID: "ID_EKU_IMPR_0"}
+	}
+	if level == "product" {
+		pol.FileRules = append(pol.FileRules, siFileAttr{ID: "ID_FILEATTRIB_IMPR_0", FriendlyName: pub.Product + " (any file)",
+			ProductName: pub.Product, MinimumFileVersion: "0.0.0.0"})
+		signer.FileAttribs = append(signer.FileAttribs, siRuleID{RuleID: "ID_FILEATTRIB_IMPR_0"})
 	}
 	if level == "file-publisher" {
 		seen := map[string]bool{}

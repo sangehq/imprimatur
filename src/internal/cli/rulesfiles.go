@@ -23,10 +23,10 @@ var rulesFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "request": strin
 // rulesFromFiles builds an allow-rules request from signed Windows files, the
 // way the PowerShell toolkit read them: the publisher, leaf and issuing CA
 // come from each file's own Authenticode signature, and every file must be
-// signed by the same certificate. --scope picks how wide the rules are:
-// publisher (anything that certificate signs), product (this product name),
-// or version (this product at --file-version or newer). Hash rules (the old
-// "file" scope) are not rendered.
+// signed by the same certificate. --scope picks how wide the rules are, with
+// the PowerShell meanings (ID-11): publisher (anything that certificate
+// signs), product (any file of this product), file (this product and file
+// name, any version) or version (and --file-version or newer).
 func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 	scope := orDefault(p.str("scope"), "product")
 	switch scope {
@@ -34,14 +34,15 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		if p.str("product") != "" {
 			return rules.Request{}, contract.New(contract.Usage, "--scope publisher allows anything the publisher signs; drop --product, or use --scope product")
 		}
-	case "product", "version":
+	case "product", "file", "version":
 		if scope == "version" && p.str("file-version") == "" {
 			return rules.Request{}, contract.New(contract.Usage, "--scope version needs --file-version a.b.c.d")
 		}
-	case "file":
-		return rules.Request{}, contract.New(contract.Usage, "--scope file (hash rules) is not rendered: a hash rule breaks with every build; use product or version")
+		if scope != "version" && p.str("file-version") != "" {
+			return rules.Request{}, contract.New(contract.Usage, "--scope %s allows any version; use --scope version with --file-version", scope)
+		}
 	default:
-		return rules.Request{}, contract.New(contract.Usage, "--scope is publisher, product or version")
+		return rules.Request{}, contract.New(contract.Usage, "--scope is publisher, product, file or version")
 	}
 	var files []rules.File
 	var lines []string
@@ -130,6 +131,6 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 	if scope == "version" {
 		fv = p.str("file-version")
 	}
-	return rules.Request{Contract: contract.Version, ManifestDigest: "sha256:" + hex.EncodeToString(d[:]), FileVersion: fv,
+	return rules.Request{Contract: contract.Version, ManifestDigest: "sha256:" + hex.EncodeToString(d[:]), FileVersion: fv, Scope: scope,
 		Publisher: pub, Files: files, Options: opt}, nil
 }

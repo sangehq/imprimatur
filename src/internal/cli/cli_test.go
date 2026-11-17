@@ -1306,6 +1306,26 @@ func TestRulesFromSignedFiles(t *testing.T) {
 	other := testpe.NewCA(t, "Other CA")
 	stranger, _ := testpe.Signed(t, t.TempDir(), "x.exe", pkix.Name{CommonName: "Someone Else"}, other)
 	h.exits(1, "rules", exe, stranger, "--scope", "publisher")
-	h.exits(1, "rules", exe, "--scope", "file")
+	h.exits(1, "rules", exe, "--scope", "file")    // no --product
 	h.exits(1, "rules", exe, "--scope", "product") // no --product
+	h.exits(1, "rules", exe, "--scope", "hash", "--product", "Acme Tool")
+
+	// ID-11: the PowerShell scopes. product is any file of the product; file
+	// is this product and file name, any version.
+	byScope := func(scope string) string {
+		var r struct {
+			AppLocker string `json:"appLocker"`
+		}
+		if err := json.Unmarshal([]byte(h.ok("rules", exe, "--scope", scope, "--product", "Acme Tool", "--json")), &r); err != nil {
+			t.Fatal(err)
+		}
+		return r.AppLocker
+	}
+	if al := byScope("product"); !strings.Contains(al, `ProductName="ACME TOOL" BinaryName="*"`) {
+		t.Errorf("scope product: %s", al)
+	}
+	if al := byScope("file"); !strings.Contains(al, `ProductName="ACME TOOL" BinaryName="TOOL.EXE"`) || !strings.Contains(al, `LowSection="0.0.0.0"`) {
+		t.Errorf("scope file: %s", al)
+	}
+	h.exits(1, "rules", exe, "--scope", "file", "--product", "Acme Tool", "--file-version", "1.0.0.0")
 }
