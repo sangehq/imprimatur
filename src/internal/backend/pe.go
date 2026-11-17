@@ -17,6 +17,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -27,9 +28,19 @@ type PESigner struct {
 	SubjectRFC string // the leaf's subject, RFC 2253
 	Leaf       *x509.Certificate
 	// Issuer is the certificate that issued the leaf, when the signature
-	// carries it (WDAC rules pin it by its TBS hash).
-	Issuer      *x509.Certificate
-	Timestamped bool
+	// carries it.
+	Issuer *x509.Certificate
+	// Chain is the leaf and the certificates above it that the signature
+	// carries, each verified to have signed the one below.
+	Chain []*x509.Certificate
+	// PCA is the certificate a WDAC Publisher rule pins by its TBS hash: the
+	// highest one below the root.
+	PCA *x509.Certificate
+	// ProfileEKU is an Artifact Signing certificate profile's own EKU, and
+	// ArtifactSigning whether the leaf is an Artifact Signing certificate.
+	ProfileEKU      string
+	ArtifactSigning bool
+	Timestamped     bool
 }
 
 var (
@@ -162,12 +173,12 @@ func parsePKCS7(der []byte) (PESigner, error) {
 	sum := sha1.Sum(leaf.Raw) //nolint:gosec // G401: thumbprint, see the import
 	out := PESigner{Thumbprint: strings.ToUpper(hex.EncodeToString(sum[:])), Leaf: leaf,
 		Subject: WindowsName(leaf.RawSubject), SubjectRFC: leaf.Subject.String()}
-	for _, c := range certs {
-		if c != leaf && bytes.Equal(c.RawSubject, leaf.RawIssuer) && leaf.CheckSignatureFrom(c) == nil {
-			out.Issuer = c
-			break
-		}
+	out.Chain = chainOf(leaf, certs)
+	if len(out.Chain) > 1 {
+		out.Issuer = out.Chain[1]
 	}
+	out.PCA = pcaOf(out.Chain)
+	out.ProfileEKU, out.ArtifactSigning = artifactEKU(leaf)
 	rest := si.UnauthAttrs.Bytes
 	for len(rest) > 0 {
 		var a attribute
@@ -208,6 +219,62 @@ func WindowsName(rawSubject []byte) string {
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// chainOf walks from the leaf up through the certificates the signature
+// carries, each checked to have signed the one below; it stops at a
+// self-signed certificate or one whose issuer is not carried.
+func chainOf(leaf *x509.Certificate, certs []*x509.Certificate) []*x509.Certificate {
+	chain := []*x509.Certificate{leaf}
+	for cur := leaf; len(chain) <= len(certs) && !isSelfSigned(cur); {
+		var next *x509.Certificate
+		for _, c := range certs {
+			if !slices.Contains(chain, c) && bytes.Equal(c.RawSubject, cur.RawIssuer) && cur.CheckSignatureFrom(c) == nil {
+				next = c
+				break
+			}
+		}
+		if next == nil {
+			break
+		}
+		chain = append(chain, next)
+		cur = next
+	}
+	return chain
+}
+
+func isSelfSigned(c *x509.Certificate) bool {
+	return bytes.Equal(c.RawSubject, c.RawIssuer) && c.CheckSignatureFrom(c) == nil
+}
+
+// pcaOf is the certificate a WDAC Publisher rule pins: the highest one below
+// the root (O-180, the PowerShell Get-PcaCertificate). A chain whose top is
+// not a root pins its top; a lone certificate pins itself.
+func pcaOf(chain []*x509.Certificate) *x509.Certificate {
+	top := chain[len(chain)-1]
+	if len(chain) > 1 && isSelfSigned(top) {
+		return chain[len(chain)-2]
+	}
+	return top
+}
+
+// ArtifactSigningEKU is the EKU every Artifact Signing certificate carries.
+// A rule pinned to it matches every Artifact Signing customer under the CA.
+const ArtifactSigningEKU = "1.3.6.1.4.1.311.97.1.0"
+
+// artifactEKU finds the Artifact Signing certificate profile's own EKU: the
+// longest one under 1.3.6.1.4.1.311.97 other than the generic one (O-181).
+func artifactEKU(leaf *x509.Certificate) (profile string, artifact bool) {
+	for _, oid := range leaf.UnknownExtKeyUsage {
+		s := oid.String()
+		switch {
+		case s == ArtifactSigningEKU:
+			artifact = true
+		case strings.HasPrefix(s, "1.3.6.1.4.1.311.97.") && len(s) > len(profile):
+			profile, artifact = s, true
+		}
+	}
+	return profile, artifact
 }
 
 // AppLockerPublisher is the publisher name AppLocker gives a signer: the

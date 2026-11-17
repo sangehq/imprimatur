@@ -15,7 +15,7 @@ does not know are ignored, since shapes only gain fields:
   "contract": 1,
   "manifestDigest": "sha256:<hex>", "commit": "<sha>", "version": "v0.1.0", "fileVersion": "0.1.0.0", "scope": "version",
   "publisher": {"subject": "O=ACME LTD, L=LONDON, C=GB", "leafCn": "Acme Ltd", "issuerName": "Acme Issuing CA",
-                "issuerTbs": "<hex TBS hash of the CA below the root>", "eku": "1.3.6.1.4.1.311.97.1.0", "product": "tool"},
+                "issuerTbs": "<hex TBS hash of the CA below the root>", "eku": "1.3.6.1.4.1.311.97.990309390.766961637.919164696.192717234", "product": "tool"},
   "files": [{"path": "build/windows/tool.exe", "sha256": "<hex>", "collection": "Exe", "binaryName": "tool.exe"}],
   "options": {"name": "tool", "enforce": false, "basePolicyId": "{GUID}", "appLocker": true, "wdac": true,
               "userOrGroupSid": "S-1-1-0", "binaryNames": {}}
@@ -35,9 +35,17 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
 
 - **What it reads.** Instead of a `--request`, impr reads each named `.exe` or `.dll`'s Authenticode
   signature. It takes the publisher name in AppLocker's form (the subject's `O`, `L`, `S` and `C`,
-  upper-cased, without the `CN`: `O=ACME LTD, L=LONDON, C=GB`) and the leaf's common name. It also takes the issuing CA,
-  pinned by its TBS hash, computed with the same hash as the CA certificate's own signature.
-- **One publisher.** Every file must share one publisher and issuing CA, which is one set of rules.
+  upper-cased, without the `CN`: `O=ACME LTD, L=LONDON, C=GB`) and the leaf's common name. It also takes the certificate WDAC
+  pins: the highest one below the root that the signature carries, as WDAC's Publisher level does (for a
+  chain root → PCA → issuing CA → leaf, the PCA, which outlives the issuing CAs Artifact Signing rotates).
+  It is pinned by its TBS hash, computed with the same hash as that certificate's own signature.
+- **Artifact Signing EKU.** For an Artifact Signing certificate, impr reads the certificate profile's own
+  EKU (under `1.3.6.1.4.1.311.97`) from the file and pins it, so the rule matches your profile and no
+  other customer of the service. `--eku` overrides it, but the generic Artifact Signing EKU
+  `1.3.6.1.4.1.311.97.1.0` is refused, and so is an EKU the certificate does not carry. A `--request`
+  carrying the generic EKU still renders, with a note saying how wide it is.
+- **One publisher.** Every file must share one publisher, issuing CA and certificate profile EKU, which is
+  one set of rules.
 - **Scopes.** The same four as the PowerShell toolkit; none is a hash rule.
   - `publisher` allows anything that publisher signs.
   - `product` (the default) allows any file of the named product, any version (AppLocker
@@ -95,7 +103,8 @@ XML is printed on stdout; `--out-dir` also writes `applocker.xml` and
   version. Without it: anything the publisher signs.
 - AppLocker collections are `AuditOnly` unless `options.enforce`.
 - WDAC is always a supplemental policy of `basePolicyId`, its signer pinned by
-  the issuing CA's TBS hash, the leaf's common name and, when given, the EKU.
+  the TBS hash of the certificate below the root (`issuerTbs`), the leaf's common name and, when given,
+  the EKU.
 - No file-hash rules, no base policy, and no randomness: rule and policy ids
   are derived from the inputs, so the same request renders the same bytes.
 

@@ -145,6 +145,9 @@ func Render(req Request, renderer string) (Result, error) {
 		res.Notes = append(res.Notes, "no product name: the rules allow anything this publisher signs")
 	}
 	res.Notes = append(res.Notes, "no file-hash rules; no base WDAC policy")
+	if req.Publisher.EKU == "1.3.6.1.4.1.311.97.1.0" {
+		res.Notes = append(res.Notes, "eku 1.3.6.1.4.1.311.97.1.0 is the generic Artifact Signing EKU: the WDAC rule allows every Artifact Signing customer under the same CA whose certificate names the same publisher; pin the certificate profile's own EKU instead")
+	}
 	if opt.AppLocker {
 		al, err := renderAppLocker(req, opt, files, level, fv)
 		if err != nil {

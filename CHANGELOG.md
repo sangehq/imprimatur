@@ -28,6 +28,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`O=ACME LTD, L=LONDON, C=GB`), as the PowerShell toolkit did. It wrote the
   whole subject, CN included and not upper-cased, so publisher rules could
   fail to match on Windows.
+- WDAC rules from `impr rules FILE...` pin the highest certificate below the
+  root, as WDAC's Publisher level does and the PowerShell toolkit did; they
+  pinned the CA right above the leaf, which Artifact Signing rotates. A leaf
+  issued straight by a root pins itself.
+- `impr rules FILE...` reads an Artifact Signing certificate profile's own EKU
+  from the files and pins it, refuses the generic Artifact Signing EKU
+  `1.3.6.1.4.1.311.97.1.0` (it matches every customer under the CA) and an
+  EKU the certificate lacks. A `--request` with the generic EKU still renders,
+  with a note.
 
 ### Changed
 

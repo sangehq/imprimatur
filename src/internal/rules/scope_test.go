@@ -57,3 +57,20 @@ func TestRuleScopesMatchPowerShell(t *testing.T) {
 		}
 	}
 }
+
+// A request pinned to the generic Artifact Signing EKU still renders (sange
+// passes the EKU its user set), but the result says how wide that is.
+func TestRenderNotesTheGenericArtifactSigningEKU(t *testing.T) {
+	res, err := Render(request(t), "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(res.Notes, "\n"), "every Artifact Signing customer") {
+		t.Fatalf("no note about the generic EKU: %v", res.Notes)
+	}
+	req := request(t)
+	req.Publisher.EKU = "1.3.6.1.4.1.311.97.990309390.766961637"
+	if res, _ := Render(req, "test"); strings.Contains(strings.Join(res.Notes, "\n"), "every Artifact Signing customer") {
+		t.Fatalf("a profile EKU drew the generic note: %v", res.Notes)
+	}
+}

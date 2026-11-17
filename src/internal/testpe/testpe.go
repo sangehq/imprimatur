@@ -24,6 +24,36 @@ import (
 type CA struct {
 	Cert *x509.Certificate
 	key  *ecdsa.PrivateKey
+	// above are the certificates above Cert, nearest first; a signature
+	// carries them after Cert.
+	above []*x509.Certificate
+}
+
+// NewIntermediate makes a CA issued by parent.
+func NewIntermediate(t *testing.T, cn string, parent CA) CA {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
+	tpl := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: cn}, NotBefore: time.Now().Add(-time.Hour),
+		NotAfter: time.Now().Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, parent.Cert, &key.PublicKey, parent.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := x509.ParseCertificate(der)
+	return CA{Cert: c, key: key, above: append([]*x509.Certificate{parent.Cert}, parent.above...)}
+}
+
+// WithoutRoot is ca whose signatures leave out the self-signed root, as
+// real Authenticode signatures usually do.
+func (ca CA) WithoutRoot() CA {
+	if n := len(ca.above); n > 0 && bytes.Equal(ca.above[n-1].RawSubject, ca.above[n-1].RawIssuer) {
+		ca.above = ca.above[:n-1]
+	}
+	return ca
 }
 
 // NewCA makes a self-signed CA.
@@ -67,7 +97,7 @@ type signedData struct {
 
 // signature is a PKCS#7 SignedData naming a leaf with the given subject,
 // issued by ca, with both certificates, as a PE certificate table carries.
-func signature(t *testing.T, subject pkix.Name, ca CA) ([]byte, *x509.Certificate) {
+func signature(t *testing.T, subject pkix.Name, ca CA, ekus []asn1.ObjectIdentifier) ([]byte, *x509.Certificate) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -75,7 +105,7 @@ func signature(t *testing.T, subject pkix.Name, ca CA) ([]byte, *x509.Certificat
 	}
 	serial, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
 	tpl := &x509.Certificate{SerialNumber: serial, Subject: subject, NotBefore: time.Now().Add(-time.Hour),
-		NotAfter: time.Now().Add(24 * time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}}
+		NotAfter: time.Now().Add(24 * time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, UnknownExtKeyUsage: ekus}
 	der, err := x509.CreateCertificate(rand.Reader, tpl, ca.Cert, &key.PublicKey, ca.key)
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +123,7 @@ func signature(t *testing.T, subject pkix.Name, ca CA) ([]byte, *x509.Certificat
 		DigestAlgorithm: asn1.RawValue{FullBytes: alg}, DigestEncAlg: asn1.RawValue{FullBytes: alg}, EncryptedDigest: []byte{1, 2, 3}}
 	sd := signedData{Version: 1, DigestAlgorithms: asn1.RawValue{Tag: asn1.TagSet, IsCompound: true, Bytes: alg},
 		ContentInfo:  asn1.RawValue{FullBytes: must(struct{ T asn1.ObjectIdentifier }{asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 1, 4}})},
-		Certificates: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: append(append([]byte{}, leaf.Raw...), ca.Cert.Raw...)},
+		Certificates: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: chainBytes(leaf, ca)},
 		SignerInfos:  []signerInfo{si}}
 	pkcs7 := must(struct {
 		T asn1.ObjectIdentifier
@@ -102,11 +132,19 @@ func signature(t *testing.T, subject pkix.Name, ca CA) ([]byte, *x509.Certificat
 	return pkcs7, leaf
 }
 
+func chainBytes(leaf *x509.Certificate, ca CA) []byte {
+	b := append(append([]byte{}, leaf.Raw...), ca.Cert.Raw...)
+	for _, c := range ca.above {
+		b = append(b, c.Raw...)
+	}
+	return b
+}
+
 // SignFile attaches such a signature to an existing PE32+ file (a real Go
 // build, say), so tests can read signer and version information together.
 func SignFile(t *testing.T, path string, subject pkix.Name, ca CA) *x509.Certificate {
 	t.Helper()
-	pkcs7, leaf := signature(t, subject, ca)
+	pkcs7, leaf := signature(t, subject, ca, nil)
 	b, err := os.ReadFile(path) //nolint:gosec // G304: a test file the caller made
 	if err != nil {
 		t.Fatal(err)
@@ -138,7 +176,14 @@ func SignFile(t *testing.T, path string, subject pkix.Name, ca CA) *x509.Certifi
 // the path and the leaf.
 func Signed(t *testing.T, dir, name string, subject pkix.Name, ca CA) (string, *x509.Certificate) {
 	t.Helper()
-	pkcs7, leaf := signature(t, subject, ca)
+	return SignedWithEKUs(t, dir, name, subject, ca)
+}
+
+// SignedWithEKUs is Signed with extra extended key usages on the leaf, beside
+// code signing (an Artifact Signing certificate carries its profile's).
+func SignedWithEKUs(t *testing.T, dir, name string, subject pkix.Name, ca CA, ekus ...asn1.ObjectIdentifier) (string, *x509.Certificate) {
+	t.Helper()
+	pkcs7, leaf := signature(t, subject, ca, ekus)
 	var buf bytes.Buffer
 	dos := make([]byte, 64)
 	copy(dos, "MZ")

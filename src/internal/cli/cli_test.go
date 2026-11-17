@@ -1280,7 +1280,8 @@ func TestCertCreateMakesATestOnlyProfile(t *testing.T) {
 func TestRulesFromSignedFiles(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()
-	ca := testpe.NewCA(t, "Acme Code Signing CA")
+	// A code signing CA under a root, as real chains are: WDAC pins the CA.
+	ca := testpe.NewIntermediate(t, "Acme Code Signing CA", testpe.NewCA(t, "Acme Root"))
 	sub := pkix.Name{CommonName: "Acme Ltd", Organization: []string{"Acme Ltd"}, Country: []string{"GB"}}
 	exe, _ := testpe.Signed(t, dir, "tool.exe", sub, ca)
 	dll, _ := testpe.Signed(t, filepath.Join(dir), "core.dll", sub, ca)

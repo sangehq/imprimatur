@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/asn1"
 	"encoding/hex"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -19,6 +21,29 @@ var rulesFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "request": strin
 	"scope": stringFlag, "product": stringFlag, "file-version": stringFlag, "eku": stringFlag, "base-policy": stringFlag,
 	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag,
 	"include-default-rules": boolFlag}
+
+// ruleEKU is the EKU a WDAC rule pins (O-181). For an Artifact Signing
+// certificate it is the certificate profile's own EKU, read from the file
+// when --eku is not given; the generic Artifact Signing EKU matches every
+// customer under the CA, so it is refused, as is an EKU the file lacks.
+func ruleEKU(a *App, given string, s *backend.PESigner) (string, error) {
+	if given == backend.ArtifactSigningEKU {
+		return "", contract.New(contract.Usage, "--eku %s is the generic Artifact Signing EKU: a rule pinned to it allows every Artifact Signing customer under the same CA", given).
+			WithFix(orDefault(s.ProfileEKU, "the certificate profile's own EKU (1.3.6.1.4.1.311.97.…)"))
+	}
+	if given != "" {
+		if !slices.ContainsFunc(s.Leaf.UnknownExtKeyUsage, func(o asn1.ObjectIdentifier) bool { return o.String() == given }) {
+			return "", contract.New(contract.Usage, "the signing certificate does not carry EKU %s, so no file would match", given)
+		}
+		return given, nil
+	}
+	if s.ProfileEKU != "" {
+		a.say("rules     EKU %s, the Artifact Signing certificate profile's, read from the signature", s.ProfileEKU)
+	} else if s.ArtifactSigning {
+		a.say("rules     an Artifact Signing certificate with no profile EKU; the rules pin the CA and the publisher only")
+	}
+	return s.ProfileEKU, nil
+}
 
 // rulesFromFiles builds an allow-rules request from signed Windows files, the
 // way the PowerShell toolkit read them: the publisher, leaf and issuing CA
@@ -70,6 +95,10 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		} else if s.Subject != signer.Subject || !bytes.Equal(s.Leaf.RawIssuer, signer.Leaf.RawIssuer) {
 			return rules.Request{}, contract.New(contract.Usage, "%s is signed by %s, not %s like the other files; make one set of rules per publisher", f, s.Subject, signer.Subject)
 		}
+		if s.ProfileEKU != signer.ProfileEKU {
+			return rules.Request{}, contract.New(contract.Usage, "%s is signed under Artifact Signing certificate profile EKU %q, not %q like the other files; make one set of rules per certificate profile",
+				f, s.ProfileEKU, signer.ProfileEKU)
+		}
 		sum, err := artifact.SHA256(abs)
 		if err != nil {
 			return rules.Request{}, err
@@ -105,16 +134,23 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 	}
 	sort.Strings(lines)
 	d := sha256.Sum256([]byte(strings.Join(lines, "\n") + "\n"))
-	pub := rules.Publisher{Subject: backend.AppLockerPublisher(signer.Leaf.RawSubject), LeafCN: signer.Leaf.Subject.CommonName, EKU: p.str("eku")}
+	eku, err := ruleEKU(a, p.str("eku"), signer)
+	if err != nil {
+		return rules.Request{}, err
+	}
+	pub := rules.Publisher{Subject: backend.AppLockerPublisher(signer.Leaf.RawSubject), LeafCN: signer.Leaf.Subject.CommonName, EKU: eku}
 	if scope != "publisher" {
 		pub.Product = product
 	}
-	if signer.Issuer != nil {
-		tbs, err := backend.TBSHash(signer.Issuer)
+	// WDAC pins the certificate below the root (O-180). A leaf that is not
+	// self-signed and carries no issuer gives nothing to pin.
+	pinnable := len(signer.Chain) > 1 || bytes.Equal(signer.Leaf.RawSubject, signer.Leaf.RawIssuer)
+	if pinnable {
+		tbs, err := backend.TBSHash(signer.PCA)
 		if err != nil {
-			return rules.Request{}, contract.Wrap(contract.Usage, err, "the issuing CA cannot be pinned")
+			return rules.Request{}, contract.Wrap(contract.Usage, err, "the certificate below the root cannot be pinned")
 		}
-		pub.IssuerName, pub.IssuerTBS = signer.Issuer.Subject.CommonName, tbs
+		pub.IssuerName, pub.IssuerTBS = signer.PCA.Subject.CommonName, tbs
 	}
 	opt := rules.Options{Name: p.str("name"), Enforce: p.on("enforce"), BasePolicyID: p.str("base-policy"),
 		UserOrGroupSID: p.str("sid"), AppLocker: p.on("applocker"), WDAC: p.on("wdac"), IncludeDefaultRules: p.on("include-default-rules")}
@@ -124,7 +160,7 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 			a.say("rules     no --base-policy: AppLocker rules only (a WDAC supplemental policy needs its base policy's {GUID})")
 		}
 	}
-	if opt.WDAC && signer.Issuer == nil {
+	if opt.WDAC && !pinnable {
 		return rules.Request{}, contract.New(contract.Usage, "the signature does not carry the issuing CA certificate, so WDAC rules cannot pin it; use --applocker")
 	}
 	fv := ""
