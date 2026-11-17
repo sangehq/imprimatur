@@ -68,6 +68,10 @@ func ParseTarget(s string) (Target, error) {
 	if !tokenRe.MatchString(t.GOOS) || !tokenRe.MatchString(t.GOARCH) || (t.GOARM != "" && (t.GOARCH != "arm" || !armRe.MatchString(t.GOARM))) {
 		return Target{}, fmt.Errorf("%q is not GOOS/GOARCH[/GOARM]", s)
 	}
+	if t.GOOS == "windows" && t.GOARCH == "arm" {
+		// Refused before anything builds, as the PowerShell build did (O-41).
+		return Target{}, fmt.Errorf("windows/arm was removed in Go 1.26; build windows/arm64 instead")
+	}
 	return t, nil
 }
 

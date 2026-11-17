@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr build` and `impr release` work from any folder inside the
+  repository: the root is the nearest folder with `.git`, the module the
+  nearest `go.mod`. With several commands and no `--main`, the error lists
+  each one; `windows/arm` is refused before anything builds.
 - `-?` and `/?` are help, like `-h` and `--help`, and a command after any of
   them narrows the help to it; an option before the command is refused with
   "put the command first" and the line to run.

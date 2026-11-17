@@ -205,3 +205,48 @@ func TestReleaseJSONIsOneDocument(t *testing.T) {
 		t.Fatalf("failed release result: %v %s", err, out)
 	}
 }
+
+// O-19: impr build run from any folder inside the repository finds the
+// repository root (git) and the module (the nearest go.mod above).
+func TestBuildFromAFolderInside(t *testing.T) {
+	repo := goRepo(t)
+	h := newHarness(t)
+	t.Chdir(filepath.Join(repo, "src", "cmd", "hello"))
+	var r BuildResult
+	if err := json.Unmarshal([]byte(h.ok("build", "--targets", runtime.GOOS+"/"+runtime.GOARCH, "--json")), &r); err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(repo, "build", "build-manifest.json"); r.ManifestPath != want {
+		// macOS temp paths may resolve through /private
+		if ev, _ := filepath.EvalSymlinks(want); ev != r.ManifestPath {
+			t.Fatalf("manifest %s, want %s", r.ManifestPath, want)
+		}
+	}
+}
+
+// O-41: windows/arm (removed in Go 1.26) is refused before anything builds.
+func TestBuildRefusesWindowsArm(t *testing.T) {
+	repo := goRepo(t)
+	h := newHarness(t)
+	code, _, e := h.impr("build", "--repo-root", repo, "--targets", "windows/arm")
+	if code != 1 || !strings.Contains(e, "Go 1.26") {
+		t.Fatalf("windows/arm: exit %d\n%s", code, e)
+	}
+}
+
+// O-44: with several commands and no --main, the error names each one.
+func TestBuildListsTheCommandsToChooseFrom(t *testing.T) {
+	repo := goRepo(t)
+	other := filepath.Join(repo, "src", "cmd", "other", "main.go")
+	if err := os.MkdirAll(filepath.Dir(other), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, []byte("package main\n\nfunc main() {}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(t)
+	code, _, e := h.impr("build", "--repo-root", repo, "--allow-dirty")
+	if code != 1 || !strings.Contains(e, "./cmd/hello") || !strings.Contains(e, "./cmd/other") || !strings.Contains(e, "--main") {
+		t.Fatalf("exit %d\n%s", code, e)
+	}
+}

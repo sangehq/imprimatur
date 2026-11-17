@@ -15,11 +15,11 @@ impr build --main ./cmd/tool --module src --clean --json
 
 | Option | Default |
 | --- | --- |
-| `--repo-root` | the current folder; `build/` is written here |
-| `--module` | `src` when it holds a `go.mod`, else the repository root |
-| `--main` | the only package under `cmd/` |
+| `--repo-root` | the nearest folder at or above the current one that holds `.git`; `build/` is written here |
+| `--module` | without `--repo-root`, the nearest `go.mod` at or above the current folder; else `src` when it holds a `go.mod`, else the repository root |
+| `--main` | the only package under `cmd/`; with several, the error lists each `--main ./cmd/NAME` |
 | `--binary` | the main package's folder name |
-| `--targets` | `build/targets.txt` (`GOOS GOARCH [GOARM]` per line), else this host |
+| `--targets` | `build/targets.txt` (`GOOS GOARCH [GOARM]` per line), else this host; `windows/arm` is refused (removed in Go 1.26) |
 | `VERSION` or `--version` | the latest `v*` tag plus `-snapshot` (`v1.4.0-snapshot`), else `v0.0.0-snapshot` with a warning |
 | `--version-var` | `main.version` |
 | `--archives` | off; see [Archives](#archives) |

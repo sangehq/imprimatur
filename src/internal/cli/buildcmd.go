@@ -40,11 +40,23 @@ type ReleaseResult struct {
 // the module in src/ when it has a go.mod, the only command under cmd/,
 // targets from build/targets.txt, else this host.
 func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
-	root, err := filepath.Abs(orDefault(p.str("repo-root"), "."))
+	cwd, err := os.Getwd()
 	if err != nil {
 		return gobuild.Options{}, err
 	}
+	// From any folder inside the repository (O-19): the root is the nearest
+	// folder above holding .git, and the module the nearest go.mod below it.
+	root := p.str("repo-root")
+	if root == "" {
+		root = orDefault(findUp(cwd, ".git", ""), cwd)
+	}
+	if root, err = filepath.Abs(root); err != nil {
+		return gobuild.Options{}, err
+	}
 	mod := p.str("module")
+	if mod == "" && !p.has("repo-root") {
+		mod = findUp(cwd, "go.mod", root)
+	}
 	if mod == "" {
 		mod = "."
 		if _, err := os.Stat(filepath.Join(root, "src", "go.mod")); err == nil {
@@ -58,7 +70,12 @@ func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
 	if main == "" {
 		cmds, _ := filepath.Glob(filepath.Join(mod, "cmd", "*", "main.go"))
 		if len(cmds) != 1 {
-			return gobuild.Options{}, contract.New(contract.Usage, "--main is required: found %d commands under %s/cmd", len(cmds), mod)
+			var names []string
+			for _, c := range cmds {
+				names = append(names, "--main ./cmd/"+filepath.Base(filepath.Dir(c)))
+			}
+			return gobuild.Options{}, contract.New(contract.Usage, "--main is required: found %d commands under %s/cmd", len(cmds), mod).
+				WithFix(names...)
 		}
 		main = "./cmd/" + filepath.Base(filepath.Dir(cmds[0]))
 	}
@@ -119,6 +136,21 @@ func versionArg(p parsed) (string, error) {
 // releaseOnly are options impr release reads and impr build refuses: build
 // only builds, and signing is release's job.
 var releaseOnly = []string{"profile", "purpose", "repo", "platforms"}
+
+// findUp is the nearest folder from dir upward that holds name, stopping
+// at stop (inclusive) when it is set; "" when there is none.
+func findUp(dir, name, stop string) string {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir || (stop != "" && dir == stop) {
+			return ""
+		}
+		dir = parent
+	}
+}
 
 func orDefault(v, d string) string {
 	if v == "" {
