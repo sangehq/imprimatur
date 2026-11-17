@@ -143,7 +143,7 @@ func ImportLegacy(s Store, source string, e LegacyEnv) (LegacyReport, error) {
 		if err != nil {
 			return rep, err
 		}
-		if p := settingsProfile(settings, e); p != nil {
+		if p := settingsProfile(settings, dir, e); p != nil {
 			if err := s.importOne(*p, p.Validate(), &rep); err != nil {
 				return rep, err
 			}
@@ -234,7 +234,7 @@ func ownerOf(e LegacyEnv) string {
 // personal test profile that can never sign a release; Certum and Artifact
 // Signing become internal profiles to finish (pin, allowedRepos, then
 // release); a GPG key becomes the checksum key.
-func settingsProfile(st map[string]string, e LegacyEnv) *Profile {
+func settingsProfile(st map[string]string, dir string, e LegacyEnv) *Profile {
 	signer := strings.ToLower(st["WINDOWS_SIGNER"])
 	if signer == "" && e.GOOS == "windows" && len(st) > 0 {
 		signer = "selfsigned"
@@ -259,6 +259,12 @@ func settingsProfile(st map[string]string, e LegacyEnv) *Profile {
 			Notes: "Migrated from imprimatur.settings.json. Pin the thumbprint and add allowedRepos, then add release to purpose."}
 	case "artifact":
 		w := &WindowsSpec{Kind: "authenticode", Backend: BackendAzure, DlibPath: st["ARTIFACT_DLIB"], MetadataPath: st["ARTIFACT_METADATA"]}
+		if w.MetadataPath == "" {
+			// The PowerShell line's default: metadata.json in its config folder.
+			if def := filepath.Join(dir, "metadata.json"); fileExists(def) {
+				w.MetadataPath = def
+			}
+		}
 		p = &Profile{Name: "default", Scope: ScopePersonal, Owner: owner, Purpose: []Purpose{PurposeInternal}, Platforms: Platforms{Windows: w},
 			Notes: "Migrated from imprimatur.settings.json. Pin the certificate subject and add allowedRepos, then add release to purpose."}
 	}
@@ -303,4 +309,9 @@ func macOSProfile(e LegacyEnv) *Profile {
 	return &Profile{Name: "default-macos", Scope: ScopePersonal, Owner: ownerOf(e), Purpose: []Purpose{PurposeInternal},
 		Platforms: Platforms{MacOS: m},
 		Notes:     notes}
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.Mode().IsRegular()
 }

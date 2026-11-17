@@ -393,6 +393,7 @@ func (p Profile) Validate() Problems {
 		}
 		ref("platforms.windows.certRef", w.CertRef, w.Backend == BackendPFX)
 		ref("platforms.windows.passwordRef", w.PasswordRef, false)
+		ps = append(ps, azurePaths("platforms.windows", w.Backend, w.DlibPath, w.MetadataPath)...)
 		if w.Thumbprint == "" && w.Subject == "" {
 			ps.add("platforms.windows.pin", "pin the certificate by thumbprint or exact subject")
 		}
@@ -563,4 +564,21 @@ func (id PinnedIdentity) Digest() string {
 	b, _ := json.Marshal(id)
 	h := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(h[:])
+}
+
+// azurePaths: an Artifact Signing certificate is reached through signtool's
+// dlib and a metadata.json naming the account, so a profile names both
+// (O-109) instead of failing only when it signs.
+func azurePaths(at, backend, dlib, metadata string) Problems {
+	var ps Problems
+	if backend != BackendAzure {
+		return ps
+	}
+	if dlib == "" {
+		ps.add(at+".dlibPath", "Artifact Signing needs the path of Azure.CodeSigning.Dlib.dll (winget install -e --id Microsoft.Azure.ArtifactSigningClientTools)")
+	}
+	if metadata == "" {
+		ps.add(at+".metadataPath", "Artifact Signing needs the path of metadata.json, which names the endpoint, account and certificate profile")
+	}
+	return ps
 }

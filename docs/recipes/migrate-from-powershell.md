@@ -22,7 +22,7 @@ impr profile import-legacy --from ~/tools/imprimatur/config --json
 | `config/profiles/*.json` and `config/profiles.json` (the 1.8.x profiles) | the same profiles, and the same default |
 | `WINDOWS_SIGNER=SelfSigned` (+ thumbprint, subject) | profile `default`: personal, `test`, cert-store. It can never sign a release |
 | `WINDOWS_SIGNER=Certum` + `CERTUM_SUBJECT` | profile `default`: personal, `internal`, certum. Pin the thumbprint, add `allowedRepos`, then add `release` |
-| `WINDOWS_SIGNER=Artifact` + `ARTIFACT_DLIB`, `ARTIFACT_METADATA` | profile `default`: personal, `internal`, azure-artifact-signing. Pin the subject, add `allowedRepos`, then `release` |
+| `WINDOWS_SIGNER=Artifact` + `ARTIFACT_DLIB`, `ARTIFACT_METADATA` | profile `default`: personal, `internal`, azure-artifact-signing. With no `ARTIFACT_METADATA`, the old default `<toolkit>/config/metadata.json` is used when it exists. Pin the subject, add `allowedRepos`, then `release` |
 | `GPG_FINGERPRINT` | `platforms.checksums` of `default`: gpg, `gpg-agent://<fingerprint>` |
 | `MACOS_SIGN_P12`, `MACOS_NOTARY_KEY`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID` set in the environment | profile `default-macos`: `env://` references only, never the values. Set `teamId` and `identity` |
 
