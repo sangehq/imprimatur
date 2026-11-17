@@ -90,7 +90,7 @@ Parity is measured against this list. Each line is a PowerShell feature the Go
 | `impr install`/`uninstall`, `impr path`, `impr completion`, `impr help <command>` | **ported**: [`impr install`](../tools/install.md) copies the binary to `~/.local/bin` (it never edits PATH), [`impr completion`](../tools/completion.md) for bash, zsh, fish and PowerShell, `impr help <command>` and `--help` on every command, and the aliases `s`, `v`, `d`, `h` |
 | The interactive menu | **ported** as [`impr menu`](../tools/menu.md), also opened by `impr` alone at a terminal, with build (`b`), release (`r`) and install (`n`); the rest is dropped (ID-18) |
 | `make/impr.mk` Make integration | **ported**: [`make/impr.mk`](../tools/make.md), targets `impr-sign`, `impr-verify`, `impr-doctor` and more |
-| `impr doctor` checks for go, goreleaser, go-winres and git | doctor lists `go` and `git` (with path and digest) among its tools, since `impr build` runs them; goreleaser and go-winres are not needed (impr runs `go build` and writes Windows resources itself). A warning when go or git is missing waits on decision D-08 |
+| `impr doctor` checks for go, goreleaser, go-winres and git | doctor lists `go` and `git` (with path and digest) among its tools, since `impr build` runs them; goreleaser and go-winres are not needed (impr runs `go build` and writes Windows resources itself). Doctor notes a missing go or git, impr off PATH, missing completion, expiring certificates, Azure sign-in and gpg secret keys (ID-19); colour markers and `~` paths are dropped |
 | Moving pre-1.4 files from the toolkit root into `config/` | not ported: run the PowerShell line once first, or `--from` the file |
 
 Not in the PowerShell line, and added here: in-toto attestations

@@ -19,6 +19,19 @@ It exits 0 when there are no problems and 5 (unavailable) when there are: an inv
 profile, or no default profile. Exit 1 is kept for usage mistakes, such as a stray word. The `profiles` entries are the ones
 [`impr profile capabilities`](profile.md) prints.
 
+## Notes
+
+Doctor also notes what the PowerShell doctor checked. A note never makes it fail:
+
+- impr's install folder is not on `PATH`;
+- no shell completion is installed for the shell in `$SHELL`;
+- `go` or `git` is missing (`impr build` and `impr release` need them);
+- a certificate a profile uses has expired or expires within 30 days;
+- Azure is not signed in (`az account show`) while a profile uses Artifact Signing;
+- `gpg` has no secret key for a gpg checksum profile's `gpg-agent://` fingerprint.
+
+`--json` lists them in `notes`; without it each is a `note` line.
+
 ## Permissions and tools
 
 - **Folders others could change.** impr's config and state folders are a problem when group or others can

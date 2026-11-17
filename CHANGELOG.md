@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr doctor` notes (in `notes`, never as problems) impr off PATH, missing
+  shell completion, a missing go or git, certificates expiring within 30
+  days, Azure not signed in for Artifact Signing, and a gpg profile's missing
+  secret key, as the PowerShell doctor checked.
 - A profile's Windows `timestamp` may list several servers, separated by
   commas; they are tried in order, like the PowerShell `--timestamp` list.
 - The menu builds (`b`), releases (`r`, after a typed `yes`) and installs
