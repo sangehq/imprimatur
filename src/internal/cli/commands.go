@@ -199,7 +199,9 @@ func cmdDoctor(ctx context.Context, a *App, args []string) (int, error) {
 		}
 	}
 	if !rep.OK {
-		// Not ready is "unavailable", never the usage code (O-162).
+		// Not ready is "unavailable", never the usage code (O-162), and like
+		// every failure it says so on stderr.
+		_, _ = fmt.Fprintf(a.Stderr, "impr: doctor found %d problem(s)\n", len(rep.Problems))
 		return int(contract.Unavailable), nil
 	}
 	return 0, nil

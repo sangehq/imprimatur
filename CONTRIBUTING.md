@@ -27,13 +27,18 @@ The module has no third-party dependencies. Adding one needs a reason in the pul
 make build      # build/{host-os}/impr
 make test       # go test -race ./...
 make check      # gofmt check, vet, lint, tests (every local gate)
+make test-all   # scripts/test-all.sh: every gate plus the counted end-to-end run of the built impr
 make lint       # golangci-lint (config in src/.golangci.yml)
 make fuzz       # every Fuzz function for 30s each (FUZZTIME=2m for longer)
 make vuln       # govulncheck: known vulnerabilities in the code paths impr uses
 make cross      # every target in build/targets.txt, plus build/checksums.txt
 ```
 
-`make check` is the gate a pull request has to pass locally before it is pushed.
+`make test-all` (or `scripts/test-all.sh`) is the gate a pull request has to pass locally before it is
+pushed. It stops at the first failure, and fails if fewer than `E2E_MIN` (9) end-to-end tests passed,
+since a skipped end-to-end test proves nothing. The end-to-end tests (`src/internal/e2e`) build `impr` and
+run it as a person or sange would; CI runs them on Linux for every pull request and on macOS and Windows
+weekly.
 
 Tests that need a real signing tool run only where it is installed and skip with a reason otherwise.
 `ssh-keygen` runs everywhere; `gpg`, `minisign`, `codesign` and the Windows tools run where present. The

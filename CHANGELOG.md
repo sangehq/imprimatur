@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- End-to-end tests (`src/internal/e2e`) build `impr` and run it as a person
+  or sange would: help, suggestions, companion info, doctor, a release from a
+  folder inside the repository with archives, verify and tamper, sign's exit
+  codes, completion, rules from a signed file, and import-legacy. They run in
+  CI on every OS the suite runs on. `scripts/test-all.sh` (`make test-all`)
+  runs every gate and fails if fewer than 9 end-to-end tests passed.
 - Windows signing explains a store certificate without its private key and
   a thumbprint that matches no certificate, instead of passing on signtool's
   first line, as the PowerShell toolkit did.
@@ -139,6 +145,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `impr doctor` prints `impr: doctor found N problem(s)` on stderr when it
+  exits 5, as every other failure says why on stderr.
 - Docs: the deploy recipe names the files impr writes
   (`wdac-supplemental.xml`, not `wdac.xml`) and carries the PowerShell
   `DEPLOY.md` steps (AppIDSvc, event IDs, CiTool and the older-Windows copy,

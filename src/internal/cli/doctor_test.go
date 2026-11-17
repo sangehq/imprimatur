@@ -13,8 +13,8 @@ import (
 // command, which still exits 1.
 func TestDoctorNotOKIsNotUsage(t *testing.T) {
 	h := newHarness(t)
-	code, out, _ := h.impr("doctor", "--json")
-	if code != 5 || !strings.Contains(out, `"ok":false`) {
+	code, out, e := h.impr("doctor", "--json")
+	if code != 5 || !strings.Contains(out, `"ok":false`) || !strings.Contains(e, "impr: doctor found 1 problem(s)") {
 		t.Fatalf("doctor with no default profile: exit %d, want 5\n%s", code, out)
 	}
 	if code, _, _ := h.impr("doctor", "extra"); code != 1 {
