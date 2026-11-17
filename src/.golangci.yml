@@ -1,0 +1,64 @@
+# golangci-lint v2 gate. Run: make lint (CI runs it through the pinned action).
+#
+# Test files are held to the same bar as the rest, with one exception below: an
+# unchecked error in a test is how a test comes to assert nothing and still pass.
+version: "2"
+
+# Report everything; a repeat cap is an exemption with extra steps.
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosec
+    - revive
+  settings:
+    revive:
+      # A deliberately small rule set: correctness and naming, not style taste.
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: errorf
+        - name: exported
+          disabled: true
+        - name: increment-decrement
+        - name: indent-error-flow
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unreachable-code
+        - name: var-declaration
+  exclusions:
+    generated: lax
+    rules:
+      # Tests read files whose paths they build themselves (fixtures, the
+      # repository tree); G304 reports every such read.
+      - path: _test\.go
+        linters: [gosec]
+        text: G304
+      # Real-tool tests start ssh-keygen, gpg and minisign themselves to make
+      # throwaway keys for the run; production code runs tools only through
+      # internal/execx, which internal/guardtest enforces.
+      - path: _test\.go
+        linters: [gosec]
+        text: G204
+      # Tests name environment variables such as IMPR_PFX_PW that hold values
+      # generated at run time; gosec reads the names as credentials.
+      - path: _test\.go
+        linters: [gosec]
+        text: G101
+      # Tests write and read files under t.TempDir() by path.
+      - path: _test\.go
+        linters: [gosec]
+        text: G703

@@ -1,0 +1,16 @@
+# Release targets: "GOOS GOARCH [GOARM]".
+#
+# The Go names are used here; artifact names map darwin -> macos and arm -> armvN,
+# and Windows binaries get .exe. Every target builds with CGO_ENABLED=0.
+# `make cross` builds this list, and src/.goreleaser.yaml builds the same list for a
+# release (src/internal/guardtest keeps the two equal).
+darwin amd64
+darwin arm64
+linux amd64
+linux arm64
+linux arm 7
+linux 386
+windows amd64
+windows arm64
+freebsd amd64
+freebsd arm64

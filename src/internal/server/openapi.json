@@ -1,0 +1,909 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "imprimatur",
+    "version": "1",
+    "summary": "impr serve: the REST API over the impr CLI.",
+    "description": "Every endpoint answers with exactly the --json document the matching impr command prints (contract v1). Errors are contract error documents. The server listens on a Unix socket or loopback, or on another address only with mutual TLS.",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    }
+  },
+  "security": [
+    {
+      "token": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "token": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "An impr_ API token from `impr server token add --scopes ...`. Each operation names the scope it needs."
+      }
+    },
+    "schemas": {
+      "Document": {
+        "type": "object",
+        "description": "A contract v1 document: the CLI's --json output. Shapes only gain fields.",
+        "required": [
+          "contract"
+        ],
+        "properties": {
+          "contract": {
+            "const": 1
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "contract",
+          "ok",
+          "exitCode",
+          "error"
+        ],
+        "properties": {
+          "contract": {
+            "const": 1
+          },
+          "ok": {
+            "const": false
+          },
+          "exitCode": {
+            "type": "integer",
+            "description": "1 usage, 2 skipped, 3 sign failed, 4 verify failed, 5 unavailable"
+          },
+          "error": {
+            "type": "object",
+            "required": [
+              "message",
+              "details",
+              "fix"
+            ],
+            "properties": {
+              "message": {
+                "type": "string"
+              },
+              "details": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "fix": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "VerifyRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "root",
+          "profile"
+        ],
+        "properties": {
+          "root": {
+            "type": "string",
+            "description": "An absolute path under a configured server.roots entry."
+          },
+          "profile": {
+            "type": "string"
+          },
+          "signed": {
+            "type": "string",
+            "description": "impr-manifest.json, relative to root."
+          },
+          "manifest": {
+            "type": "string",
+            "description": "A build manifest, relative to root."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Files relative to root."
+          },
+          "strict": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SignRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "root",
+          "manifest",
+          "commit",
+          "tree",
+          "profile",
+          "purpose"
+        ],
+        "properties": {
+          "root": {
+            "type": "string"
+          },
+          "manifest": {
+            "type": "string",
+            "description": "The build manifest, relative to root."
+          },
+          "commit": {
+            "type": "string",
+            "description": "The commit the manifest is bound to."
+          },
+          "tree": {
+            "type": "string",
+            "description": "The tree the manifest is bound to."
+          },
+          "profile": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "release",
+              "test",
+              "internal"
+            ]
+          },
+          "platforms": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "repo": {
+            "type": "string"
+          },
+          "strict": {
+            "type": "boolean"
+          },
+          "approvals": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Approval documents relative to root, each with its .sig beside it (impr approve), for a profile with requiresApproval. A profile whose approval is confirm cannot be signed over the API."
+          }
+        }
+      },
+      "InboundRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "verify",
+              "doctor",
+              "cert.list",
+              "profile.list"
+            ]
+          },
+          "verify": {
+            "$ref": "#/components/schemas/VerifyRequest"
+          }
+        }
+      },
+      "WebhookRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "url",
+          "secretRef"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "secretRef": {
+            "type": "string",
+            "description": "A secret:// or env:// reference; never the secret."
+          },
+          "allowPrivate": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "responses": {
+      "Doc": {
+        "description": "The command's document.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Document"
+            }
+          }
+        }
+      },
+      "Failed": {
+        "description": "Signing or verification failed (exit 3 or 4).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Document"
+            }
+          }
+        }
+      },
+      "Usage": {
+        "description": "The request is not valid (exit 1).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "No valid token. The body is the same whatever the reason.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "The token lacks the scope.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "TooMany": {
+        "description": "Rate limit: 120 requests a minute per token. Retry-After says when.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "A tool or file the command needs is not available (exit 5).",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "Whether the server is up.",
+        "security": [],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          }
+        }
+      }
+    },
+    "/v1/openapi.json": {
+      "get": {
+        "operationId": "openapi",
+        "summary": "This document.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The OpenAPI 3.1 document.",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/v1/companion": {
+      "get": {
+        "operationId": "companion",
+        "summary": "impr companion info. Scope: read.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/doctor": {
+      "get": {
+        "operationId": "doctor",
+        "summary": "impr doctor. Scope: read.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/profiles": {
+      "get": {
+        "operationId": "listProfiles",
+        "summary": "impr profile list. Scope: read.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/profiles/{name}": {
+      "get": {
+        "operationId": "showProfile",
+        "summary": "impr profile show NAME. Scope: read.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9._-]{0,62}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/certs": {
+      "get": {
+        "operationId": "listCerts",
+        "summary": "impr cert list. Scope: read.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "operationId": "listEvents",
+        "summary": "impr events tail. Scope: events.",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Event type globs, e.g. signing.*"
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/events/stream": {
+      "get": {
+        "operationId": "streamEvents",
+        "summary": "Server-Sent Events from the event log. Scope: events.",
+        "description": "Each message has id (the CloudEvent id), event (its type) and data (the CloudEvent, one JSON line). It starts at the end of the log, or just after Last-Event-ID. A comment line is sent every 15 seconds. The stream closes after an hour; reconnect with Last-Event-ID. At most 8 streams are open at once.",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "Event type globs; only matching events are sent."
+          },
+          {
+            "name": "Last-Event-ID",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The event stream.",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "Last-Event-ID is not in the log.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/verify": {
+      "post": {
+        "operationId": "verify",
+        "summary": "impr verify. Scope: verify.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Failed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/sign": {
+      "post": {
+        "operationId": "sign",
+        "summary": "impr sign. Scope: sign. Off unless server.allowSign is true.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "$ref": "#/components/responses/Failed"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/hooks/{name}": {
+      "post": {
+        "operationId": "inbound",
+        "summary": "An inbound webhook, signed with Standard Webhooks (webhook-id, webhook-timestamp, webhook-signature). No bearer token: the signature is the credential.",
+        "security": [],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhook-id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhook-timestamp",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "webhook-signature",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InboundRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "409": {
+            "description": "This webhook-id was already processed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "$ref": "#/components/responses/Failed"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          }
+        }
+      }
+    },
+    "/v1/profiles/{name}/capabilities": {
+      "get": {
+        "operationId": "profileCapabilities",
+        "summary": "impr profile capabilities NAME. Scope: read.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/rules": {
+      "post": {
+        "operationId": "rules",
+        "summary": "impr rules --request, with the request as the body. Scope: read.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "An allow-rules request, as impr rules --request reads (docs/tools/rules.md)."
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/webhooks": {
+      "get": {
+        "operationId": "listWebhooks",
+        "summary": "impr webhooks list. Scope: admin.",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      },
+      "post": {
+        "operationId": "addWebhook",
+        "summary": "impr webhooks add. Scope: admin, and server.allowAdmin.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebhookRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/webhooks/{name}": {
+      "delete": {
+        "operationId": "removeWebhook",
+        "summary": "impr webhooks rm NAME. Scope: admin, and server.allowAdmin.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    },
+    "/v1/webhooks/{name}/test": {
+      "post": {
+        "operationId": "testWebhook",
+        "summary": "impr webhooks test NAME: one signed test delivery. Scope: admin.",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Doc"
+          },
+          "400": {
+            "$ref": "#/components/responses/Usage"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooMany"
+          }
+        }
+      }
+    }
+  }
+}

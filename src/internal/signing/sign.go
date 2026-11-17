@@ -1,0 +1,572 @@
+package signing
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"slices"
+	"strings"
+
+	"github.com/sangehq/imprimatur/src/internal/approval"
+	"github.com/sangehq/imprimatur/src/internal/artifact"
+	"github.com/sangehq/imprimatur/src/internal/backend"
+	"github.com/sangehq/imprimatur/src/internal/config"
+	"github.com/sangehq/imprimatur/src/internal/contract"
+	"github.com/sangehq/imprimatur/src/internal/events"
+	"github.com/sangehq/imprimatur/src/internal/hooks"
+	"github.com/sangehq/imprimatur/src/internal/profile"
+	"github.com/sangehq/imprimatur/src/internal/project"
+)
+
+// Service signs and verifies.
+type Service struct {
+	Host    backend.Host
+	Store   profile.Store
+	Version string
+	Log     io.Writer // human lines (stderr)
+	// Events receives what each run did; nil emits nothing.
+	Events *events.Bus
+	// Hooks runs the user's pre- and post-sign and -verify hooks; nil runs none.
+	Hooks *hooks.Runner
+	// Strict runs every sign and verify as if --strict were given
+	// (config policy.strict).
+	Strict bool
+	// RequireFullGPG refuses a gpg pin shorter than a full fingerprint
+	// (config policy.gpgFullFingerprint, audit N-B12).
+	RequireFullGPG bool
+	// ManagedCheck confirms a managed profile matches its signed bundle
+	// (audit N-B17); nil checks nothing.
+	ManagedCheck func(p profile.Profile) error
+	// Approvals is the config's approvals section: who may approve runs of
+	// profiles with requiresApproval.
+	Approvals approval.Policy
+	// Confirm asks the person at the terminal to type want; nil means there
+	// is no person to ask (the REST server, CI, a pipe), so confirm-mode
+	// approval is refused.
+	Confirm func(prompt, want string) bool
+	// BackendFor builds a backend; nil uses backend.For. Tests replace it.
+	BackendFor func(h backend.Host, p profile.Profile, platform string) (backend.Backend, error)
+}
+
+func (s *Service) backendFor(p profile.Profile, platform string) (backend.Backend, error) {
+	if s.BackendFor != nil {
+		return s.BackendFor(s.Host, p, platform)
+	}
+	return backend.For(s.Host, p, platform)
+}
+
+func (s *Service) logf(format string, args ...any) {
+	if s.Log != nil {
+		_, _ = fmt.Fprintf(s.Log, format+"\n", args...)
+	}
+}
+
+// SignOptions is one signing run.
+type SignOptions struct {
+	Root      string
+	Manifest  string
+	Commit    string
+	Tree      string
+	Profile   string
+	Purpose   string
+	Platforms []string
+	Repo      string
+	Strict    bool
+	// Approvals are approval documents, each with its .sig beside it.
+	Approvals []string
+}
+
+// LoadProfile resolves a profile and refuses one that is not valid.
+func (s *Service) LoadProfile(name string, code contract.Code) (profile.Profile, error) {
+	p, err := s.Store.Resolve(name)
+	if err != nil {
+		return profile.Profile{}, err
+	}
+	raw, err := s.Store.Raw(p.Name)
+	if err != nil {
+		return profile.Profile{}, err
+	}
+	if _, ps, err := profile.Check(raw); err != nil {
+		return profile.Profile{}, err
+	} else if len(ps) > 0 {
+		return profile.Profile{}, contract.New(code, "signing profile %s is not valid", p.Name).WithDetails(ps.Strings()...).
+			WithFix("impr profile validate "+p.Name, "impr profile edit "+p.Name+" --set KEY=VALUE")
+	}
+	if s.ManagedCheck != nil && p.Managed {
+		if err := s.ManagedCheck(p); err != nil {
+			return profile.Profile{}, contract.Wrap(code, err, "managed profile %s cannot be trusted", p.Name)
+		}
+	}
+	if c := p.Platforms.Checksums; s.RequireFullGPG && c != nil && c.Kind == "gpg" {
+		if f := strings.TrimPrefix(strings.ToUpper(c.Fingerprint), "0X"); len(f) != 40 && len(f) != 64 {
+			return profile.Profile{}, contract.New(code, "signing profile %s pins gpg key %s, a short id; policy.gpgFullFingerprint requires the full fingerprint", p.Name, c.Fingerprint).
+				WithFix("gpg --fingerprint "+c.Fingerprint, "impr profile edit "+p.Name+" --set platforms.checksums.fingerprint=<40-hex fingerprint>")
+		}
+	}
+	return p, nil
+}
+
+type work struct {
+	platform string
+	be       backend.Backend
+	files    []backend.Artifact // windows and macos: the manifest files of that kind
+	prof     profile.Profile    // the profile the backend signs with: one certificate's variant for windows
+	signerID string             // the windows signer chosen for these files ("" elsewhere)
+}
+
+// unit is a set of files one certificate signs.
+type unit struct {
+	prof     profile.Profile
+	signerID string
+	files    []backend.Artifact
+}
+
+// windowsUnits assigns each Windows file to exactly one signer of the
+// profile (design ID-07) and groups the files by signer, in a stable order.
+// Any file with no signer, or an ambiguous one, fails the run before anything
+// is signed.
+func (s *Service) windowsUnits(p profile.Profile, files []backend.Artifact) ([]unit, error) {
+	vs := p.WindowsVariants()
+	byID := map[string]*unit{}
+	var order []string
+	for _, f := range files {
+		v, err := profile.Choose(vs, f.Rel, artifact.PEArch(f.Path), s.Host.Now())
+		if err != nil {
+			return nil, contract.Wrap(contract.SignFailed, err, "signing profile %s cannot sign %s; nothing was signed", p.Name, f.Rel).
+				WithFix("impr profile show " + p.Name)
+		}
+		u := byID[v.ID]
+		if u == nil {
+			u = &unit{prof: v.Profile}
+			if v.Dated { // a listed signer; a single-certificate record stays as it was
+				u.signerID = v.ID
+			}
+			byID[v.ID] = u
+			order = append(order, v.ID)
+		}
+		u.files = append(u.files, f)
+	}
+	out := make([]unit, 0, len(order))
+	for _, id := range order {
+		out = append(out, *byID[id])
+	}
+	return out, nil
+}
+
+// Sign signs the files a build manifest lists. Nothing is signed until every
+// check has passed: the manifest's commit and tree, the profile's validity,
+// purpose and allowed repositories, every file's digest, the host's
+// capability and every certificate's presence and expiry.
+func (s *Service) Sign(ctx context.Context, o SignOptions) (Result, error) {
+	o.Strict = o.Strict || s.Strict
+	runID := events.NewID()
+	if s.Events != nil && s.Events.Env.NewID != nil {
+		runID = s.Events.Env.NewID()
+	}
+	subject := o.Profile
+	if id := profile.RepoIdentity(o.Repo); id != "" {
+		subject = id
+	}
+	started := false
+	res, err := s.sign(ctx, o, func(bm artifact.Loaded, platforms []string) error {
+		ev, err := s.event("signing.run.started", subject, map[string]any{"runId": runID, "profile": o.Profile,
+			"purpose": o.Purpose, "platforms": platforms, "commit": bm.Commit, "tree": bm.Tree, "buildManifestDigest": bm.Digest})
+		if err != nil {
+			return err
+		}
+		if err := s.Hooks.Pre(ctx, config.PhasePreSign, ev); err != nil {
+			s.Events.Emit(ctx, "hook.vetoed", subject, map[string]any{"runId": runID, "phase": config.PhasePreSign, "reason": err.Error()})
+			return contract.Wrap(contract.SignFailed, err, "a pre-sign hook refused the run; nothing was signed")
+		}
+		s.Events.Publish(ctx, ev)
+		if err := s.Events.Err(); err != nil {
+			return requiredEvents(err, "nothing was signed")
+		}
+		started = true
+		return nil
+	})
+	if !started {
+		return res, err
+	}
+	for _, a := range res.Manifest.Artifacts {
+		s.Events.Emit(ctx, "signing.artifact.signed", subject, map[string]any{"runId": runID, "path": a.Path, "platform": a.Platform,
+			"kind": a.Kind, "signer": a.Signer, "inputSha256": a.InputSHA256, "outputSha256": a.OutputSHA256})
+	}
+	end := map[string]any{"runId": runID, "profile": o.Profile, "artifacts": len(res.Manifest.Artifacts),
+		"outputs": len(res.Manifest.Outputs), "manifestSha256": res.ManifestSHA256, "exitCode": int(contract.CodeOf(err))}
+	switch code := contract.CodeOf(err); {
+	case err == nil:
+		s.finish(ctx, config.PhasePostSign, "signing.run.completed", subject, end)
+	case code == contract.Skipped:
+		end["skipped"] = res.Skipped
+		s.finish(ctx, config.PhasePostSign, "signing.run.skipped", subject, end)
+	default:
+		end["reason"] = err.Error()
+		s.finish(ctx, config.PhasePostSign, "signing.run.failed", subject, end)
+	}
+	if lerr := s.Events.Err(); lerr != nil && err == nil {
+		return res, requiredEvents(lerr, "the run finished but its record is incomplete")
+	}
+	return res, err
+}
+
+// requiredEvents is the error for a run that could not be logged while
+// config events.required is on.
+func requiredEvents(err error, what string) error {
+	return contract.Wrap(contract.Unavailable, err, "events.required is on and the event log cannot be written; %s", what).
+		WithFix("impr doctor", "impr config set events.required false")
+}
+
+// finish publishes a run's last event, then runs the post hooks with it. A
+// post hook cannot change the result; each failure becomes hook.failed.
+func (s *Service) finish(ctx context.Context, phase, short, subject string, data map[string]any) {
+	ev, err := s.event(short, subject, data)
+	if err != nil {
+		s.Events.Emit(ctx, short, subject, data) // the bus reports why it cannot be built
+		return
+	}
+	s.Events.Publish(ctx, ev)
+	for _, f := range s.Hooks.Post(ctx, phase, ev) {
+		s.Events.Emit(ctx, "hook.failed", subject, map[string]any{"hook": f.Hook, "phase": phase, "reason": f.Reason, "eventId": ev.ID})
+	}
+}
+
+// sign is the run itself; onStart is called once every pre-check has passed,
+// just before the first signature.
+func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artifact.Loaded, platforms []string) error) (Result, error) {
+	root, err := absRoot(o.Root)
+	if err != nil {
+		return Result{}, err
+	}
+	s.Host.Root = root
+	bm, err := artifact.ReadManifest(o.Manifest)
+	if err != nil {
+		return Result{}, err
+	}
+	if o.Commit == "" || o.Tree == "" {
+		return Result{}, contract.New(contract.Usage, "--commit and --tree are required with --manifest").
+			WithDetails("A signing run is bound to the commit and tree the build manifest records.")
+	}
+	if o.Commit != bm.Commit || o.Tree != bm.Tree {
+		return Result{}, contract.New(contract.SignFailed, "--commit %s --tree %s is not the build manifest's (%s, %s); nothing was signed", o.Commit, o.Tree, bm.Commit, bm.Tree)
+	}
+	p, err := s.LoadProfile(o.Profile, contract.SignFailed)
+	if err != nil {
+		return Result{}, err
+	}
+	// A profile's requiresApproval is impr's to enforce only when the config
+	// says so: sange enforces it (APR-11) before calling impr sign.
+	needApproval := p.RequiresApproval && s.Approvals.Enforce
+	if p.RequiresApproval && !s.Approvals.Enforce {
+		s.logf("approve   %s requires approval; the caller enforces it (approvals.enforce is off)", p.Name)
+	}
+	if proj, ok, err := project.Load(root); err != nil {
+		return Result{}, contract.Wrap(contract.Usage, err, "the repository's project file cannot be read; nothing was signed")
+	} else if ok {
+		pls := o.Platforms
+		if len(pls) == 0 {
+			pls = p.Platforms.Names()
+		}
+		if why := proj.CheckSign(p.Name, o.Purpose, o.Repo, pls, o.Strict); len(why) > 0 {
+			return Result{}, contract.New(contract.SignFailed, "the repository's %s refuses this run; nothing was signed", project.Path).WithDetails(why...)
+		}
+		needApproval = needApproval || (proj.RequireApproval && o.Purpose == string(profile.PurposeRelease))
+	}
+	purpose := profile.Purpose(o.Purpose)
+	if o.Purpose == "" || !purpose.Valid() {
+		return Result{}, contract.New(contract.Usage, "--purpose release, test or internal is required").
+			WithDetails("imprimatur never guesses what a signature is for: a test certificate must never reach a release.")
+	}
+	if !p.HasPurpose(purpose) {
+		return Result{}, contract.New(contract.SignFailed, "signing profile %s is for %v, not %s", p.Name, p.Purpose, purpose).
+			WithDetails("A test profile never signs a release, and a release profile signs other builds only when its purposes say so.").
+			WithFix("use a profile whose purpose is " + string(purpose))
+	}
+	if purpose == profile.PurposeRelease && p.HasPurpose(profile.PurposeTest) {
+		return Result{}, contract.New(contract.SignFailed, "test profile %s can never sign a release", p.Name)
+	}
+	if o.Repo != "" {
+		if !p.AllowsRepo(o.Repo) {
+			return Result{}, contract.New(contract.SignFailed, "signing profile %s may not sign %s", p.Name, repoLabel(o.Repo)).
+				WithDetails("It is not in the profile's allowedRepos.").WithFix("impr profile show " + p.Name)
+		}
+	} else if purpose == profile.PurposeRelease {
+		return Result{}, contract.New(contract.Usage, "--repo is required to sign a release").
+			WithDetails("A release profile signs only the repositories in its allowedRepos.")
+	}
+	var approvals []RecordedApproval
+	if needApproval {
+		if approvals, err = s.approve(ctx, p, o, bm); err != nil {
+			return Result{}, err
+		}
+	}
+	platforms := o.Platforms
+	if len(platforms) == 0 {
+		platforms = p.Platforms.Names()
+	}
+	for _, pl := range platforms {
+		if !slices.Contains(profile.AllPlatforms(), pl) {
+			return Result{}, contract.New(contract.Usage, "%q is not a platform (%s)", pl, strings.Join(profile.AllPlatforms(), ", "))
+		}
+		if !p.Platforms.Has(pl) {
+			return Result{}, contract.New(contract.Usage, "signing profile %s has no %s configuration", p.Name, pl).
+				WithFix("impr profile edit " + p.Name + " --set platforms." + pl + ".kind=...")
+		}
+	}
+
+	// Every file is checked before anything is signed.
+	files := map[string][]backend.Artifact{}
+	inputs := map[string]string{}
+	for _, a := range bm.Artifacts {
+		path, err := artifact.Resolve(root, a.Path)
+		if err != nil {
+			return Result{}, err
+		}
+		sum, err := artifact.SHA256(path)
+		if err != nil {
+			return Result{}, err
+		}
+		if sum != strings.ToLower(a.SHA256) {
+			return Result{}, contract.New(contract.SignFailed, "%s differs from the build manifest; nothing was signed", a.Path).
+				WithDetails("manifest "+strings.ToLower(a.SHA256), "on disk  "+sum).WithFix("rebuild, then sign the new build manifest")
+		}
+		inputs[a.Path] = sum
+		k, err := artifact.KindOf(path)
+		if err != nil {
+			return Result{}, err
+		}
+		if err := unsupportedFormat(a.Path, k, platforms); err != nil {
+			return Result{}, err
+		}
+		files[string(k)] = append(files[string(k)], backend.Artifact{Path: path, Rel: a.Path})
+	}
+
+	var plan []work
+	var skipped []string
+	for _, pl := range platforms {
+		units := []unit{{prof: p}}
+		switch pl {
+		case profile.Windows, profile.MacOS:
+			if len(files[pl]) == 0 {
+				s.logf("sign      %s: no %s files in the build manifest", pl, pl)
+				continue
+			}
+			units[0].files = files[pl]
+			if pl == profile.Windows {
+				us, err := s.windowsUnits(p, files[pl])
+				if err != nil {
+					return Result{}, err
+				}
+				units = us
+			}
+		}
+		for _, u := range units {
+			w := work{platform: pl, files: u.files, prof: u.prof, signerID: u.signerID}
+			be, err := s.backendFor(u.prof, pl)
+			if err != nil {
+				return Result{}, err
+			}
+			w.be = be
+			c := be.Capability(s.Host)
+			if !c.Sign {
+				if o.Strict {
+					return Result{}, contract.New(contract.Unavailable, "%s signing is not available on this host: %s; nothing was signed", pl, c.Reason).
+						WithFix("run the sign stage on a host or runner that can sign " + pl)
+				}
+				skipped = append(skipped, pl+": "+c.Reason)
+				continue
+			}
+			if err := backend.Preflight(ctx, be, u.prof); err != nil {
+				return Result{}, err
+			}
+			if err := s.certificateUsable(ctx, be, u.prof, pl); err != nil {
+				return Result{}, err
+			}
+			plan = append(plan, w)
+		}
+	}
+
+	if err := onStart(bm, platforms); err != nil {
+		return Result{}, err
+	}
+	m := Manifest{Schema: ManifestSchema, Signer: "imprimatur " + s.Version, Profile: p.Name, Purpose: purpose, Identity: p.Pinned(),
+		Commit: bm.Commit, Tree: bm.Tree, Repo: o.Repo, BuildManifestDigest: bm.Digest,
+		Artifacts: []SignedArtifact{}, Outputs: []SignedArtifact{}, Skipped: skipped, Approvals: approvals}
+	m.IdentityDigest = m.Identity.Digest()
+	signed := map[string]int{} // manifest path -> index in m.Artifacts
+
+	// Binaries first: Windows, then macOS with one notarisation for them all.
+	for _, w := range plan {
+		if w.platform != profile.Windows && w.platform != profile.MacOS {
+			continue
+		}
+		for _, f := range w.files {
+			sig, err := w.be.Sign(ctx, f, w.prof)
+			if err != nil {
+				return Result{}, err
+			}
+			signed[f.Rel] = len(m.Artifacts)
+			m.Artifacts = append(m.Artifacts, SignedArtifact{Path: f.Rel, InputSHA256: inputs[f.Rel], Platform: w.platform,
+				Kind: sig.Kind, Signer: sig.Signer, SignerID: w.signerID, Timestamp: sig.Timestamp})
+			s.logf("sign      %s  %s, %s", f.Rel, sig.Kind, sig.Signer)
+		}
+		if ap, ok := w.be.(*backend.Apple); ok && ap.Spec.Notary != nil {
+			ticket, err := ap.Notarize(ctx, w.files)
+			if err != nil {
+				return Result{}, err
+			}
+			for _, f := range w.files {
+				m.Artifacts[signed[f.Rel]].Notarization = ticket
+			}
+			s.logf("notarise  %d file(s), submission %s", len(w.files), ticket)
+		}
+	}
+	for i, a := range m.Artifacts {
+		path, err := artifact.Resolve(root, a.Path)
+		if err != nil {
+			return Result{}, err
+		}
+		if m.Artifacts[i].OutputSHA256, err = artifact.SHA256(path); err != nil {
+			return Result{}, err
+		}
+	}
+
+	// Then the checksum file, over the bytes that will be published.
+	var sumsPlan []work
+	for _, w := range plan {
+		if w.platform == profile.Checksums || w.platform == profile.Containers || w.platform == profile.Attestations {
+			sumsPlan = append(sumsPlan, w)
+		}
+	}
+	if len(sumsPlan) > 0 {
+		var lines [][2]string
+		for _, a := range bm.Artifacts {
+			sum := inputs[a.Path]
+			if i, ok := signed[a.Path]; ok {
+				sum = m.Artifacts[i].OutputSHA256
+			}
+			lines = append(lines, [2]string{sum, a.Path})
+		}
+		sumsPath := filepath.Join(bm.Dir, SumsFile)
+		if err := artifact.WriteFile(sumsPath, artifact.Checksums(lines), 0o644); err != nil {
+			return Result{}, err
+		}
+		sumsRel := artifact.RelToRoot(root, sumsPath)
+		sumsSHA, err := artifact.SHA256(sumsPath)
+		if err != nil {
+			return Result{}, err
+		}
+		m.Outputs = append(m.Outputs, SignedArtifact{Path: sumsRel, OutputSHA256: sumsSHA, Platform: profile.Checksums, Kind: "sha256sums"})
+		for _, w := range sumsPlan {
+			sig, err := w.be.Sign(ctx, backend.Artifact{Path: sumsPath, Rel: sumsRel,
+				Build: &backend.Build{Repo: o.Repo, Commit: bm.Commit, Tree: bm.Tree, ManifestDigest: bm.Digest}}, p)
+			if err != nil {
+				return Result{}, err
+			}
+			for _, out := range sig.Outputs {
+				sum, err := artifact.SHA256(out.Path)
+				if err != nil {
+					return Result{}, err
+				}
+				m.Outputs = append(m.Outputs, SignedArtifact{Path: artifact.RelToRoot(root, out.Path), OutputSHA256: sum,
+					Platform: w.platform, Kind: out.Kind, Signer: sig.Signer})
+			}
+			s.logf("sign      %s  %s, %s", sumsRel, sig.Kind, sig.Signer)
+		}
+	}
+
+	if len(m.Artifacts) == 0 && len(m.Outputs) == 0 && len(skipped) == 0 {
+		return Result{}, contract.New(contract.SignFailed, "nothing was signed: no requested platform had files in the build manifest").
+			WithDetails("platforms requested: " + strings.Join(platforms, ", ")).
+			WithFix("check --platforms against the build manifest's files")
+	}
+	m.SignedAt = s.Host.Now().UTC()
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return Result{}, err
+	}
+	mpath := filepath.Join(bm.Dir, ManifestFile)
+	if err := artifact.WriteFile(mpath, append(b, '\n'), 0o644); err != nil {
+		return Result{}, err
+	}
+	msum, err := artifact.SHA256(mpath)
+	if err != nil {
+		return Result{}, err
+	}
+	res := Result{Contract: contract.Version, OK: len(skipped) == 0, Manifest: m, ManifestPath: mpath, ManifestSHA256: msum, Skipped: skipped}
+	if len(skipped) > 0 {
+		return res, contract.New(contract.Skipped, "%d platform(s) were skipped", len(skipped)).WithDetails(skipped...)
+	}
+	return res, nil
+}
+
+// certificateUsable refuses an expired certificate or one this host does not
+// have, before anything is signed.
+func (s *Service) certificateUsable(ctx context.Context, be backend.Backend, p profile.Profile, pl string) error {
+	e := be.Certificate(ctx, p)
+	if e.NotAfter != nil && !s.Host.Now().Before(*e.NotAfter) {
+		return contract.New(contract.SignFailed, "the %s certificate of profile %s expired on %s; nothing was signed", pl, p.Name, e.NotAfter.Format("2006-01-02")).
+			WithFix("renew it, then re-pin the profile: impr profile edit " + p.Name + " --set platforms." + pl + "...")
+	}
+	switch e.Source {
+	case "store", "keychain", "gpg", "file":
+		if !e.Present {
+			return contract.New(contract.Unavailable, "the %s certificate or key of profile %s is not available on this host; nothing was signed", pl, p.Name).
+				WithFix("impr cert list", "import the certificate or key, or check its reference: impr profile show "+p.Name)
+		}
+	}
+	return nil
+}
+
+func absRoot(root string) (string, error) {
+	if root == "" {
+		root = "."
+	}
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return "", err
+	}
+	st, err := os.Stat(abs)
+	if err != nil || !st.IsDir() {
+		return "", contract.New(contract.Usage, "--root %s is not a directory", root)
+	}
+	return abs, nil
+}
+
+func repoLabel(u string) string {
+	if id := profile.RepoIdentity(u); id != "" {
+		return id
+	}
+	return "that push target"
+}
+
+// event builds an event with the bus's environment, or a local one when no
+// bus is configured, so pre-hooks always see the same shape.
+func (s *Service) event(short, subject string, data any) (events.Event, error) {
+	env := events.Env{Now: s.Host.Now, NewID: events.NewID, InstallID: "0000000000000000", Domain: s.Host.EventsSource}
+	if s.Events != nil {
+		env = s.Events.Env
+	}
+	return env.New(short, subject, data)
+}
+
+// unsupportedFormat refuses, before anything is signed, the formats impr
+// cannot sign and check yet, instead of signing them in place and failing the
+// check afterwards: an .msi (the signer check reads PE files only, audit
+// N-B3) and a .pkg (it needs productsign and a Developer ID Installer
+// identity, not codesign, N-B4).
+func unsupportedFormat(rel string, k artifact.Kind, platforms []string) error {
+	ext := strings.ToLower(filepath.Ext(rel))
+	switch {
+	case k == artifact.KindWindows && ext == ".msi" && slices.Contains(platforms, profile.Windows):
+		return contract.New(contract.SignFailed, "%s is an .msi, which impr cannot sign and check yet; nothing was signed", rel).
+			WithFix("sign the .msi separately, or leave windows out of --platforms for this manifest")
+	case k == artifact.KindMacOS && ext == ".pkg" && slices.Contains(platforms, profile.MacOS):
+		return contract.New(contract.SignFailed, "%s is an installer package, which needs productsign and a Developer ID Installer identity; impr does not sign .pkg yet, and nothing was signed", rel).
+			WithFix("sign the .pkg with productsign, or leave macos out of --platforms for this manifest")
+	}
+	return nil
+}

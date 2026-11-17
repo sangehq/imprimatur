@@ -1,0 +1,40 @@
+# Release: build impr's binaries and publish them on imprimatur's GitHub release, and nowhere else
+# (no `go install` path, Homebrew, Scoop, Winget, image or any other channel). The pipeline is
+# simtabi/.github's shared go-release.yml, driven by src/.goreleaser.yaml; this file only says when.
+#
+#   git push origin vX.Y.Z                                                  builds and publishes vX.Y.Z
+#   gh workflow run release.yml --repo sangehq/imprimatur -f tag=vX.Y.Z     the same, for a tag already pushed
+#
+# Push a version tag only for final code: tags are final, and a pushed tag publishes. The shared
+# workflow also pushes the src/vX.Y.Z module tag, which matches no trigger here.
+# src/internal/guardtest asserts the triggers and the shared call.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'An existing vX.Y.Z tag to build and publish'
+        required: true
+        type: string
+
+permissions: {}
+
+# One run per tag, never cancelled: two runs must not publish the same release.
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    uses: simtabi/.github/.github/workflows/go-release.yml@b3388da3d08193ab1b757bc89e1707196da1ca76  # v0.1.0
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}

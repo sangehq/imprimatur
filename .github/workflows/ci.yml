@@ -1,0 +1,108 @@
+name: CI
+
+# Pull requests, a manual dispatch and one weekly run on the default branch.
+# There is deliberately no push trigger: changes reach main through a pull
+# request, and the weekly schedule catches drift after a merge.
+# src/internal/guardtest asserts both.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+# Our own modules come from git, never proxy.golang.org or sum.golang.org.
+env:
+  GOPRIVATE: github.com/sangehq/*
+  GONOSUMDB: github.com/sangehq/*
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: lint
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+      - name: gofmt
+        run: make fmt-check
+      - name: go vet
+        run: make vet
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # 9.3.0
+        with:
+          version: v2.15.0
+          # The module is src/. Without this the action lints a directory with
+          # no Go in it and passes.
+          working-directory: src
+      - name: govulncheck
+        run: make vuln
+
+  test:
+    name: test
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+      - name: go test -race
+        run: make test
+      - name: build the host binary
+        run: make build
+
+  # Windows and macOS run the code paths Linux only reaches through fakes
+  # (paths, the PE and Mach-O checks, the real codesign test). Weekly and on
+  # request, never on every pull request.
+  test-os:
+    name: test (${{ matrix.os }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+      - name: go test
+        run: go -C src test -count=1 ./...
+
+  # Every fuzzer for 30 seconds each, weekly and on request: what a pull request
+  # adds is covered by its seed corpus, which go test replays on every run.
+  fuzz:
+    name: fuzz
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: src/go.mod
+      - name: fuzz
+        run: make fuzz FUZZTIME=30s

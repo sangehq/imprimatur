@@ -1,0 +1,58 @@
+name: Bug report
+description: Report a defect in imprimatur
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands you ran. Remove certificates, keys, passwords, tokens and private paths.
+      placeholder: |
+        1. impr ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: imprimatur version
+      placeholder: "output of: impr version"
+    validations:
+      required: true
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Signing backend
+      options:
+        - Authenticode (Azure Artifact Signing)
+        - Authenticode (Certum / SimplySign)
+        - Authenticode (PFX)
+        - Authenticode (Windows certificate store)
+        - Apple (codesign / notarytool)
+        - GPG
+        - minisign
+        - SSH
+        - cosign
+        - Not signing-related
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and architecture
+      placeholder: "macOS 26.1 (arm64)"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Error output, or the `--json` result. Remove anything sensitive.
+      render: shell
