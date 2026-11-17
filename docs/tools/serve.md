@@ -20,6 +20,8 @@ impr serve --listen 127.0.0.1:8743             # or a loopback port
   remote clients are refused, and impr creates it as the first instance, so it will not start if another
   process already holds the name. File modes mean nothing on Windows, so a Unix socket there
   (`"listen": "unix"`, still accepted) relies on the profile folder's permissions and the token alone.
+  A client that finds every instance busy (`ERROR_PIPE_BUSY`) waits and tries again, as .NET's
+  `NamedPipeClientStream` does; impr opens the next instance as it accepts each connection.
 - **Addresses.** A loopback port is the other everyday choice. An address other machines can reach is
   allowed only with `server.allowRemote` and `server.tls` set (see below).
 - **Stopping.** Ctrl-C or SIGTERM stops it gracefully.

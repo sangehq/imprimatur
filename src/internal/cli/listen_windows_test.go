@@ -17,17 +17,27 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// dialPipe opens the pipe as a client does: ERROR_PIPE_BUSY means every
+// instance is taken for the moment (the server makes the next one as it
+// accepts), so a client waits and tries again, as .NET's
+// NamedPipeClientStream and go-winio's DialPipe do.
 func dialPipe(path string) (net.Conn, error) {
 	name, err := windows.UTF16PtrFromString(path)
 	if err != nil {
 		return nil, err
 	}
-	h, err := windows.CreateFile(name, windows.GENERIC_READ|windows.GENERIC_WRITE|windows.READ_CONTROL, 0, nil,
-		windows.OPEN_EXISTING, windows.FILE_FLAG_OVERLAPPED, 0)
-	if err != nil {
-		return nil, err
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		h, err := windows.CreateFile(name, windows.GENERIC_READ|windows.GENERIC_WRITE|windows.READ_CONTROL, 0, nil,
+			windows.OPEN_EXISTING, windows.FILE_FLAG_OVERLAPPED, 0)
+		if err == nil {
+			return pipeConn{File: os.NewFile(uintptr(h), path), addr: pipeAddr(path)}, nil
+		}
+		if !errors.Is(err, windows.ERROR_PIPE_BUSY) || time.Now().After(deadline) {
+			return nil, err
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	return pipeConn{File: os.NewFile(uintptr(h), path), addr: pipeAddr(path)}, nil
 }
 
 func TestNamedPipeServesOnlyItsOwner(t *testing.T) {
