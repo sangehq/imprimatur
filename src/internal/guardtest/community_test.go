@@ -3,6 +3,7 @@ package guardtest
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -27,6 +28,18 @@ var requiredFiles = map[string][]string{
 	".github/PULL_REQUEST_TEMPLATE.md":           {"## Summary"},
 }
 
+// contains reports whether text holds want. A YAML key: value want matches the
+// value bare or quoted, as YAML reads them alike: the Dependabot standard
+// writes package-ecosystem: "gomod", which a plain substring check refused.
+func contains(text, want string) bool {
+	key, val, ok := strings.Cut(want, ": ")
+	if !ok || strings.ContainsAny(val, " \t\"'") {
+		return strings.Contains(text, want)
+	}
+	re := regexp.MustCompile(`(?m)^[\t -]*` + regexp.QuoteMeta(key) + `:[ \t]*(?:"` + regexp.QuoteMeta(val) + `"|'` + regexp.QuoteMeta(val) + `'|` + regexp.QuoteMeta(val) + `)[ \t]*(?:#.*)?$`)
+	return re.MatchString(text)
+}
+
 // communityProblems lists every required file that is missing or lacks its
 // expected text under root.
 func communityProblems(root string) []string {
@@ -38,7 +51,7 @@ func communityProblems(root string) []string {
 			continue
 		}
 		for _, w := range wants {
-			if !strings.Contains(string(b), w) {
+			if !contains(string(b), w) {
 				p = append(p, name+" does not contain "+w)
 			}
 		}
@@ -85,5 +98,33 @@ func TestCommunityGuardCanFail(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("guard missed %q; got:\n%s", want, got)
 		}
+	}
+}
+
+// TestContainsReadsYAMLValues: a key: value requirement is met by the value
+// bare or quoted, and still refused when the value is another or absent.
+func TestContainsReadsYAMLValues(t *testing.T) {
+	want := "package-ecosystem: gomod"
+	for _, text := range []string{
+		"  - package-ecosystem: gomod\n",
+		"  - package-ecosystem: \"gomod\"\n",
+		"  - package-ecosystem: 'gomod'  # the module\n",
+	} {
+		if !contains(text, want) {
+			t.Errorf("%q refused", text)
+		}
+	}
+	for _, text := range []string{
+		"  - package-ecosystem: \"gomodules\"\n",
+		"  - package-ecosystem: \"npm\"\n",
+		"# package-ecosystem: gomod is not configured\n",
+		"",
+	} {
+		if contains(text, want) {
+			t.Errorf("%q accepted", text)
+		}
+	}
+	if !contains("Report it to security@example.invalid", "security@example.invalid") {
+		t.Error("a plain substring requirement no longer matches")
 	}
 }
