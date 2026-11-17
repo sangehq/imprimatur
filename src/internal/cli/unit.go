@@ -68,7 +68,7 @@ func cmdServeUnit(_ context.Context, a *App, args []string) (int, error) {
 		how = "systemctl --user daemon-reload && systemctl --user enable --now impr.service"
 	case "launchd":
 		text, where = LaunchdPlist(u), "~/Library/LaunchAgents/"+launchdLabel+".plist"
-		how = "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/" + launchdLabel + ".plist"
+		how = a.launchdHow(launchdLabel, legacyLaunchdLabel)
 	case "task":
 		text, where = TaskXML(u), "impr-serve.xml"
 		how = `schtasks /Create /TN "imprimatur\impr serve" /XML impr-serve.xml`
@@ -99,7 +99,63 @@ func unitExe(exe string) (string, error) {
 	return exe, nil
 }
 
-const launchdLabel = "sh.sange.imprimatur.serve"
+// launchdLabel names the impr serve launch agent, in Simtabi LLC's
+// reverse-DNS namespace (owner decision, 2026-11-17).
+const launchdLabel = "com.simtabi.sange.imprimatur.serve"
+
+// The launch agent labels impr printed before 2026-11-17. impr installs no
+// agent itself, so it never removes one either: it recognises a plist under
+// an old label and prints the steps that replace it (install-unit,
+// install-check), reports it (doctor) and names it (uninstall).
+//
+// Deprecated: recognising these labels may be removed no earlier than v0.2.0.
+const (
+	legacyLaunchdLabel = "sh.sange.imprimatur.serve"
+	legacyCheckLabel   = "sh.sange.imprimatur.cert-check"
+)
+
+// launchAgentPlist is where a per-user launch agent's plist lives.
+func (a *App) launchAgentPlist(label string) string {
+	return filepath.Join(a.Home, "Library", "LaunchAgents", label+".plist")
+}
+
+// hasLaunchAgent reports whether a plist for label is in the user's
+// LaunchAgents folder.
+func (a *App) hasLaunchAgent(label string) bool {
+	_, err := os.Lstat(a.launchAgentPlist(label))
+	return err == nil
+}
+
+// removeAgentSteps are the shell commands that stop a launch agent and remove
+// its plist. Each is safe to run again: bootout of an agent that is not
+// loaded fails harmlessly, and rm -f of a missing file does nothing.
+func removeAgentSteps(label string) string {
+	return "launchctl bootout gui/$(id -u)/" + label + "; rm -f ~/Library/LaunchAgents/" + label + ".plist"
+}
+
+// launchdHow is how to install the agent for label: when an agent under the
+// old label is in place, its removal comes first, so the two never run side
+// by side. With no old agent it is the bootstrap alone, so printing it again
+// after migrating prints the same thing.
+func (a *App) launchdHow(label, legacy string) string {
+	how := "launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/" + label + ".plist"
+	if a.hasLaunchAgent(legacy) {
+		a.say("unit      ~/Library/LaunchAgents/%s.plist uses the label impr used before 2026-11-17; these steps replace it", legacy)
+		how = removeAgentSteps(legacy) + "; " + how
+	}
+	return how
+}
+
+// legacyAgentProblems are doctor's findings for agents under old labels.
+func (a *App) legacyAgentProblems() []string {
+	var ps []string
+	for _, c := range [][2]string{{legacyLaunchdLabel, "impr serve install-unit --print"}, {legacyCheckLabel, "impr cert install-check --print"}} {
+		if a.hasLaunchAgent(c[0]) {
+			ps = append(ps, "launch agent "+c[0]+" uses the label impr used before 2026-11-17; replace it: "+c[1]+" prints the steps ("+removeAgentSteps(c[0])+", then install the new one)")
+		}
+	}
+	return ps
+}
 
 // systemdQuote quotes a path for a systemd directive.
 func systemdQuote(s string) string {

@@ -10,9 +10,14 @@ impr notify doctor                                                     # which n
 ```
 
 impr shows notifications through go-notifykit, the library every Go program in the estate shares.
-They appear under impr's own name and icon (`sh.sange.imprimatur`): on macOS through a helper app
-impr builds, signs ad hoc and registers on first use, on Linux through `notify-send`, and on Windows
+They appear under impr's own name and icon (`com.simtabi.sange.imprimatur`): on macOS through a helper
+app impr builds, signs ad hoc and registers on first use, on Linux through `notify-send`, and on Windows
 as a toast.
+
+The id was `sh.sange.imprimatur` before 2026-11-17. The macOS helper app keeps its path, so the next
+notification rewrites it with the new id and registers it again; nothing needs doing by hand. macOS keeps
+notification permission by the helper's bundle id (`com.simtabi.sange.imprimatur.notifier`, was
+`sh.sange.imprimatur.notifier`), so it asks for permission once more.
 
 ## What is shown
 
@@ -36,7 +41,9 @@ you, and you can use any of them:
 - **`impr serve`** checks every six hours while it runs.
 - **A daily scheduled check.** `impr cert install-check --print` prints a systemd timer, a launchd job or
   a Windows task that runs `impr cert list` once a day, and how to install it. impr installs nothing
-  itself.
+  itself. The launchd job's label is `com.simtabi.sange.imprimatur.cert-check` (`sh.sange.imprimatur.cert-check`
+  before 2026-11-17); with the old plist in `~/Library/LaunchAgents`, the printed steps stop and remove it
+  first, as for [`impr serve`](serve.md#the-launchd-label).
 - **On every command.** With `notify.checkOnCommand` on, any other impr command runs the check, at most
   once a day. It is off by default, because it runs the certificate tools (gpg, `security`, certutil)
   when nobody asked for them. sange's own calls (`companion`, `profile`, `cert`) never trigger it.

@@ -9,7 +9,8 @@ something.
   edit, rm, import, default and import-legacy; `config` set, unset and profile; `server token`;
   `webhooks secret`; and `completion` install and uninstall. Read-only commands are not recorded.
 - **Each record holds:** the user, the command and its arguments, the exit code and the duration. It is a
-  CloudEvent of type `sh.sange.imprimatur.audit.command.completed`.
+  CloudEvent of type `com.simtabi.sange.imprimatur.audit.command.completed`
+  (`sh.sange.imprimatur.audit.command.completed` before 2026-11-17; see [type names](events.md#type-names)).
 - **Secrets are kept out.** An argument shaped like a secret (`whsec_…`, an API token, a private key,
   `password=`) is written as `[redacted]`. Secrets themselves never appear in arguments; impr takes only
   references.
@@ -60,8 +61,11 @@ A receiver for sange's server, or any other, needs to do three things:
 
 1. Verify each delivery as a Standard Webhook (`webhook-id`, `webhook-timestamp`, `webhook-signature`)
    with the subscription's secret, and refuse a replayed `webhook-id`.
-2. Keep each `sh.sange.imprimatur.audit.head` CloudEvent, keyed by its `source` (one per impr install)
-   and `time`. Only append: never let a later delivery replace an earlier one.
+2. Keep each `com.simtabi.sange.imprimatur.audit.head` CloudEvent (`sh.sange.imprimatur.audit.head`
+   from an impr before 2026-11-17), keyed by its `source` (one per impr install) and `time`. Only append:
+   never let a later delivery replace an earlier one. The `source` is
+   `https://sange.sh/imprimatur/install/<id>`, or `https://simtabi.com/sange/imprimatur/install/<id>` when
+   the install sets `events.source` to `simtabi.com` ([event source](events.md#event-source)).
 3. Hand a kept event back on request, so `impr audit verify --against` can check it.
 
 ---

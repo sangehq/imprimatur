@@ -29,6 +29,10 @@ type Host struct {
 	Now     func() time.Time
 	// Root is the signing root, which relative profile paths resolve against.
 	Root string
+	// EventsSource is the events.source setting, which chooses the
+	// provenance build type an attestation is written with (BuildTypeFor).
+	// Verification accepts every BuildTypes entry whatever it says.
+	EventsSource string
 }
 
 // preflighter is a backend that can refuse before anything is signed: a pin

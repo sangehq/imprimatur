@@ -122,7 +122,7 @@ impr serve install-unit --print --for systemd    # systemd, launchd or task
 | `--for` | Unit | Notes |
 | --- | --- | --- |
 | `systemd` (Linux default) | a user service, `~/.config/systemd/user/impr.service` | Sandboxed: `ProtectSystem=strict`, a read-only home, `NoNewPrivileges`. It writes only impr's state directory and the configured `server.roots` |
-| `launchd` (macOS default) | a launch agent, `~/Library/LaunchAgents/sh.sange.imprimatur.serve.plist` | Restarted when it exits with an error; logs to `<state>/server/serve.log` |
+| `launchd` (macOS default) | a launch agent, `~/Library/LaunchAgents/com.simtabi.sange.imprimatur.serve.plist` | Restarted when it exits with an error; logs to `<state>/server/serve.log` |
 | `task` (Windows default) | a Task Scheduler task that starts at logon and restarts on failure | impr is not a Windows service, which would need a service control handler |
 
 - **Checks first.** It refuses when the config is not valid or no token or inbound endpoint is
@@ -131,6 +131,27 @@ impr serve install-unit --print --for systemd    # systemd, launchd or task
   names another one.
 - **After an upgrade.** Re-run it when the binary moves, and after you add a signing root, so the
   systemd unit can write there.
+
+### The launchd label
+
+The launch agent's label was `sh.sange.imprimatur.serve` before 2026-11-17, and is
+`com.simtabi.sange.imprimatur.serve` since. impr installs no agent, so it moves none itself:
+
+- **`install-unit --print` replaces the old one.** When `~/Library/LaunchAgents/sh.sange.imprimatur.serve.plist`
+  is there, the printed steps stop and remove it before installing the new one:
+
+  ```bash
+  launchctl bootout gui/$(id -u)/sh.sange.imprimatur.serve; rm -f ~/Library/LaunchAgents/sh.sange.imprimatur.serve.plist; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.simtabi.sange.imprimatur.serve.plist
+  ```
+
+  Each step is safe to run again. Once the old plist is gone, the steps are the `bootstrap` alone.
+- **`impr doctor` reports an agent under the old label** as a problem, with the same steps.
+- **`impr uninstall` names every agent left behind**, under either label, with the commands to remove it.
+  It removes none.
+- **Deprecated.** Recognising the old label may be removed no earlier than v0.2.0.
+
+The daily certificate check moved the same way, from `sh.sange.imprimatur.cert-check` to
+`com.simtabi.sange.imprimatur.cert-check` ([notify](notify.md#certificate-expiry)).
 
 ## Event stream
 
@@ -144,8 +165,8 @@ curl -N --unix-socket ~/.local/state/imprimatur/server/impr.sock \
 
 ```text
 id: 6f0c…
-event: sh.sange.imprimatur.signing.run.completed
-data: {"specversion":"1.0","id":"6f0c…","type":"sh.sange.imprimatur.signing.run.completed",…}
+event: com.simtabi.sange.imprimatur.signing.run.completed
+data: {"specversion":"1.0","id":"6f0c…","type":"com.simtabi.sange.imprimatur.signing.run.completed",…}
 ```
 
 - **Messages.** `id` is the CloudEvent id, `event` its type, and `data` the CloudEvent as one JSON line.

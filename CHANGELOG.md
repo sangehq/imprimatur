@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `events.source`: `sange.sh` (the default, unchanged output) or `simtabi.com`.
+  It chooses the domain of every event's `source`
+  (`https://sange.sh/imprimatur/install/<id>` or
+  `https://simtabi.com/sange/imprimatur/install/<id>`) and of the in-toto
+  provenance build type (`https://sange.sh/imprimatur/buildtypes/manifest/v1`
+  or `https://simtabi.com/sange/imprimatur/buildtypes/manifest/v1`). Any other
+  value is refused when the configuration loads. Verification accepts both
+  build types under either setting, so earlier attestations still verify.
+- The in-toto provenance builder id follows `events.source` too:
+  `https://sange.sh/imprimatur` under `sange.sh` (the default, unchanged) and
+  `https://simtabi.com/sange/imprimatur` under `simtabi.com`. `impr verify` now
+  checks it, accepting either form under either setting and refusing any
+  other; every attestation impr wrote before carries the default, so it
+  still verifies.
+- `impr doctor` reports a launch agent installed under a label impr used before
+  2026-11-17, and `impr uninstall` names every impr launch agent left behind,
+  under either label. Neither removes one.
+
 - On macOS, `impr serve` checks each Unix-socket connection's peer uid
   (`LOCAL_PEERCRED`), as it already does on Linux.
 - On Windows, `impr serve` listens on a named pipe by default. Only the
@@ -439,6 +457,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dispatch-only workflow and its `confirm=release-go` input are gone; the guard
   tests now pin the new triggers, the pinned shared call, a GoReleaser config
   that publishes nowhere else, and its targets against `build/targets.txt`.
+- Event types moved from `sh.sange.imprimatur.*` to
+  `com.simtabi.sange.imprimatur.*`, the namespace of Simtabi LLC, which owns
+  sange and its family (owner decision, 2026-11-17). The part after the prefix
+  is unchanged. New events, webhook deliveries, the event stream, hooks'
+  `IMPR_EVENT_TYPE` and `impr events types` carry the new name; a receiver that
+  compares the full type must accept it (sange's server already does for
+  `audit.head`). Events already logged keep their old type and still verify.
+- The launchd labels moved too: `com.simtabi.sange.imprimatur.serve` (was
+  `sh.sange.imprimatur.serve`) and `com.simtabi.sange.imprimatur.cert-check`
+  (was `sh.sange.imprimatur.cert-check`). impr still installs nothing: with the
+  old plist in `~/Library/LaunchAgents`, `impr serve install-unit --print` and
+  `impr cert install-check --print` print `launchctl bootout` and `rm -f` for
+  it before the new `bootstrap`, and each step is safe to repeat.
+- The notifier id is `com.simtabi.sange.imprimatur` (was
+  `sh.sange.imprimatur`), and the macOS helper app's bundle id
+  `com.simtabi.sange.imprimatur.notifier`. The helper app keeps its path and is
+  rewritten on the next notification; macOS asks for notification permission
+  once more.
+
+### Deprecated
+
+- The `sh.sange.imprimatur.` type prefix in filters: hook `on`, webhook
+  `types`, `impr events tail|replay --type` and the event stream's `type` still
+  select the same events with it, and events logged under it still match. May
+  be removed no earlier than v0.2.0; write short names (`signing.*`) or the new
+  prefix.
+- Recognising launch agents under `sh.sange.imprimatur.serve` and
+  `sh.sange.imprimatur.cert-check`. May be removed no earlier than v0.2.0.
 
 ### Security
 

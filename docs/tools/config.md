@@ -60,6 +60,10 @@ The system config can lock dotted keys:
   config.
 - **A record or nothing.** `events.required: true` makes `sign` and `verify` exit 5 when the event log
   cannot be written ([events](events.md)).
+- **Event source.** `events.source` is `sange.sh` (the default) or `simtabi.com`, and any other value is
+  refused. It chooses the domain of every event's `source` (`https://sange.sh/imprimatur/install/<id>` or
+  `https://simtabi.com/sange/imprimatur/install/<id>`) and of the provenance build type and builder id
+  ([events](events.md#event-source)).
 - **Approvals.** `approvals.enforce`, `approvals.required` and `approvals.approvers` decide whether impr
   itself requires approval for profiles with `requiresApproval`, and whose SSH keys may give it. Lock
   `approvals` in the system config, or a signer could add their own key. See

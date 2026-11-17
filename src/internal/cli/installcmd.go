@@ -140,6 +140,14 @@ func cmdUninstall(_ context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	// impr installs no launch agent, so it removes none; it names any left,
+	// under the current label or the one before 2026-11-17, since each runs
+	// an impr that may be the one being removed.
+	for _, l := range []string{launchdLabel, checkLabel, legacyLaunchdLabel, legacyCheckLabel} {
+		if a.hasLaunchAgent(l) {
+			a.say("uninstall the launch agent %s is still installed; to remove it: %s", l, removeAgentSteps(l))
+		}
+	}
 	dst := filepath.Join(a.installDir(p), a.binName())
 	if _, err := os.Lstat(dst); errors.Is(err, os.ErrNotExist) {
 		a.say("uninstall %s is not there", dst)

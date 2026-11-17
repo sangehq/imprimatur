@@ -157,10 +157,13 @@ func (l Log) Verify() (int, error) {
 }
 
 // Matches reports whether a type matches a glob over full or short type
-// names ("signing.*", "sh.sange.imprimatur.cert.*", "*").
+// names ("signing.*", "com.simtabi.sange.imprimatur.cert.*", "*"). The type
+// may carry either prefix, and the glob is tried against both full forms, so
+// a filter written with the sh.sange.imprimatur prefix (deprecated, see
+// LegacyTypePrefix) keeps selecting the same events.
 func Matches(glob, typ string) bool {
-	short := strings.TrimPrefix(typ, TypePrefix)
-	for _, t := range []string{typ, short} {
+	short := ShortType(typ)
+	for _, t := range []string{TypePrefix + short, LegacyTypePrefix + short, short} {
 		if ok, _ := filepath.Match(glob, t); ok {
 			return true
 		}

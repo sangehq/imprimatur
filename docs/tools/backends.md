@@ -23,8 +23,16 @@ envelope holding an in-toto Statement v1.
 
 - **Subjects.** Every entry of `SHA256SUMS`, by path and sha256, so the attestation covers the signed
   binaries and every other file the build manifest lists.
-- **Predicate.** SLSA provenance v1 (`https://slsa.dev/provenance/v1`). Build type
-  `https://sange.sh/imprimatur/buildtypes/manifest/v1`, builder `https://sange.sh/imprimatur`. The
+- **Predicate.** SLSA provenance v1 (`https://slsa.dev/provenance/v1`). The build type and the builder
+  id follow [`events.source`](events.md#event-source):
+
+  | `events.source` | Build type written | Builder id written |
+  | --- | --- | --- |
+  | `sange.sh` (the default, also when unset) | `https://sange.sh/imprimatur/buildtypes/manifest/v1` | `https://sange.sh/imprimatur` |
+  | `simtabi.com` | `https://simtabi.com/sange/imprimatur/buildtypes/manifest/v1` | `https://simtabi.com/sange/imprimatur` |
+
+  `impr verify` accepts both forms of each, whatever the setting, so attestations made before the setting
+  existed, and under either value, all verify. Any other build type or builder id is refused. The
   external parameters are the commit, tree and repository, the build manifest's digest is an internal
   parameter, and the source is a resolved dependency (`git+<repo>`, `gitCommit`, `gitTree`).
 - **Signature.** The profile's own pinned signer signs DSSE's pre-authentication encoding:

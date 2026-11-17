@@ -19,7 +19,7 @@ func (a *App) logOnly(short, subject string, data any) {
 	if err != nil {
 		return
 	}
-	ev, err := events.Env{Now: a.Now, NewID: events.NewID, InstallID: id}.New(short, subject, data)
+	ev, err := a.eventEnv(id).New(short, subject, data)
 	if err != nil {
 		return
 	}

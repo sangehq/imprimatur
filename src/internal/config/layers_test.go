@@ -122,3 +122,31 @@ func TestLayerPermissionsAndStrictness(t *testing.T) {
 		t.Fatal("a world-writable system config was accepted")
 	}
 }
+
+// events.source is sange.sh (the default, also when unset) or simtabi.com;
+// anything else is refused when the configuration loads.
+func TestEventsSourceIsValidated(t *testing.T) {
+	for _, ok := range []string{"", "sange.sh", "simtabi.com"} {
+		c := Config{Schema: Schema, Events: Events{Source: ok}}
+		if ps := c.Validate(); len(ps) != 0 {
+			t.Errorf("%q refused: %v", ok, ps)
+		}
+	}
+	for _, bad := range []string{"simtabi", "https://simtabi.com", "Simtabi.com", "sange", "example.com"} {
+		c := Config{Schema: Schema, Events: Events{Source: bad}}
+		ps := c.Validate()
+		if len(ps) != 1 || !strings.Contains(ps[0], "events.source") || !strings.Contains(ps[0], "sange.sh or simtabi.com") {
+			t.Errorf("%q: %v", bad, ps)
+		}
+	}
+	d := newDirs(t)
+	write(t, filepath.Join(d.user, File), `{"schema":"`+Schema+`","events":{"source":"simtabi.com"}}`)
+	eff, err := d.load("")
+	if err != nil || eff.Config.Events.Source != "simtabi.com" {
+		t.Fatalf("%+v %v", eff.Config.Events, err)
+	}
+	write(t, filepath.Join(d.user, File), `{"schema":"`+Schema+`","events":{"source":"example.com"}}`)
+	if _, err := d.load(""); err == nil || !strings.Contains(err.Error(), "events.source") {
+		t.Fatalf("an unknown source loaded: %v", err)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -204,4 +205,180 @@ func TestPAE(t *testing.T) {
 func TestInTotoNeedsItsSigner(t *testing.T) {
 	_, err := For(Host{}, profile.Profile{Platforms: profile.Platforms{Attestations: &profile.AttestationSpec{Kind: "in-toto", Signer: "cosign"}}}, profile.Attestations)
 	wantCode(t, err, contract.Usage)
+}
+
+// The build type follows events.source: sange.sh (the default) keeps the URL
+// attestations have always carried, simtabi.com gives the simtabi.com form.
+// Every verifier accepts both, whichever setting it runs under, so older
+// attestations and ones made under either setting all verify.
+func TestInTotoBuildTypeFollowsTheSourceSettingAndBothVerify(t *testing.T) {
+	ctx := context.Background()
+	if BuildType != "https://sange.sh/imprimatur/buildtypes/manifest/v1" || SimtabiBuildType != "https://simtabi.com/sange/imprimatur/buildtypes/manifest/v1" {
+		t.Fatalf("build types %q %q", BuildType, SimtabiBuildType)
+	}
+	for setting, want := range map[string]string{"": BuildType, "sange.sh": BuildType, "simtabi.com": SimtabiBuildType} {
+		f := newIntoto(t)
+		h := f.h
+		h.EventsSource = setting
+		be, err := For(h, f.p, profile.Attestations)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := be.Sign(ctx, f.art, f.p); err != nil {
+			t.Fatalf("%q: %v", setting, err)
+		}
+		if _, st := readEnvelope(t, f.sums+AttestationExt); st.Predicate.BuildDefinition.BuildType != want {
+			t.Errorf("%q: emitted %q, want %q", setting, st.Predicate.BuildDefinition.BuildType, want)
+		}
+		for _, verifier := range []string{"", "sange.sh", "simtabi.com"} {
+			vh := f.h
+			vh.EventsSource = verifier
+			vb, err := For(vh, f.p, profile.Attestations)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := vb.Verify(ctx, f.art, f.p); err != nil {
+				t.Errorf("made under %q, verified under %q: %v", setting, verifier, err)
+			}
+		}
+	}
+	t.Run("unknown setting signs nothing", func(t *testing.T) {
+		f := newIntoto(t)
+		h := f.h
+		h.EventsSource = "example.com"
+		be, err := For(h, f.p, profile.Attestations)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = be.Sign(ctx, f.art, f.p)
+		wantCode(t, err, contract.Usage)
+		if _, serr := os.Stat(f.sums + AttestationExt); serr == nil {
+			t.Fatal("an attestation was written")
+		}
+	})
+	t.Run("unknown build type is refused", func(t *testing.T) {
+		for _, bt := range []string{"https://example.com/imprimatur/buildtypes/manifest/v1", "https://simtabi.com/imprimatur/buildtypes/manifest/v1",
+			"https://sange.sh/imprimatur/buildtypes/manifest/v2", ""} {
+			f := newIntoto(t)
+			if _, err := f.be.Sign(ctx, f.art, f.p); err != nil {
+				t.Fatal(err)
+			}
+			_, st := readEnvelope(t, f.sums+AttestationExt)
+			st.Predicate.BuildDefinition.BuildType = bt
+			resign(t, f, st)
+			err := f.be.Verify(ctx, f.art, f.p)
+			wantCode(t, err, contract.VerifyFailed)
+			if err == nil || !strings.Contains(err.Error(), "SLSA provenance") {
+				t.Errorf("%q: %v", bt, err)
+			}
+		}
+	})
+	t.Run("the resigning helper itself verifies an unchanged statement", func(t *testing.T) {
+		// Control: without it, "refused" above could be the helper's broken
+		// signature rather than the build type.
+		f := newIntoto(t)
+		if _, err := f.be.Sign(ctx, f.art, f.p); err != nil {
+			t.Fatal(err)
+		}
+		_, st := readEnvelope(t, f.sums+AttestationExt)
+		st.Predicate.BuildDefinition.BuildType = SimtabiBuildType
+		resign(t, f, st)
+		if err := f.be.Verify(ctx, f.art, f.p); err != nil {
+			t.Fatalf("a correctly signed simtabi.com statement must verify: %v", err)
+		}
+	})
+}
+
+// resign signs st with the fixture's own pinned key, as Sign would, and
+// writes the envelope over the attestation.
+func resign(t *testing.T, f intotoFixture, st Statement) {
+	t.Helper()
+	a, ok := f.be.(*Attestation)
+	if !ok {
+		t.Fatalf("backend is %T", f.be)
+	}
+	payload, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pae := filepath.Join(t.TempDir(), "statement")
+	if err := os.WriteFile(pae, PAE(PayloadType, payload), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sig, err := a.Inner.Sign(context.Background(), Artifact{Path: pae, Rel: "SHA256SUMS" + AttestationExt}, f.p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(pae + a.sigSuffix())
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := Envelope{PayloadType: PayloadType, Payload: base64.StdEncoding.EncodeToString(payload),
+		Signatures: []EnvelopeEntry{{KeyID: a.keyID(sig.Signer), Sig: base64.StdEncoding.EncodeToString(raw)}}}
+	b, _ := json.Marshal(env)
+	if err := os.WriteFile(f.sums+AttestationExt, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The builder id follows events.source like the build type: sange.sh (the
+// default) keeps https://sange.sh/imprimatur, simtabi.com gives
+// https://simtabi.com/sange/imprimatur. Verify, the one place a statement is
+// read back, accepts both under either setting and refuses any other.
+func TestInTotoBuilderIDFollowsTheSourceSettingAndBothVerify(t *testing.T) {
+	ctx := context.Background()
+	if BuilderID != "https://sange.sh/imprimatur" || SimtabiBuilderID != "https://simtabi.com/sange/imprimatur" {
+		t.Fatalf("builder ids %q %q", BuilderID, SimtabiBuilderID)
+	}
+	if len(BuilderIDs) != 2 || !slices.Contains(BuilderIDs, BuilderID) || !slices.Contains(BuilderIDs, SimtabiBuilderID) {
+		t.Fatalf("BuilderIDs %v", BuilderIDs)
+	}
+	for setting, want := range map[string]string{"": BuilderID, "sange.sh": BuilderID, "simtabi.com": SimtabiBuilderID} {
+		if got, ok := BuilderIDFor(setting); !ok || got != want {
+			t.Errorf("BuilderIDFor(%q) = %q %v", setting, got, ok)
+		}
+		f := newIntoto(t)
+		h := f.h
+		h.EventsSource = setting
+		be, err := For(h, f.p, profile.Attestations)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := be.Sign(ctx, f.art, f.p); err != nil {
+			t.Fatalf("%q: %v", setting, err)
+		}
+		if _, st := readEnvelope(t, f.sums+AttestationExt); st.Predicate.RunDetails.Builder.ID != want {
+			t.Errorf("%q: emitted builder %q, want %q", setting, st.Predicate.RunDetails.Builder.ID, want)
+		}
+	}
+	if _, ok := BuilderIDFor("example.com"); ok {
+		t.Error("an unknown setting has a builder id")
+	}
+	// Read back: each form verifies under each setting; any other is refused.
+	for _, id := range []string{BuilderID, SimtabiBuilderID, "https://example.com/imprimatur", "https://simtabi.com/imprimatur", ""} {
+		for _, verifier := range []string{"", "sange.sh", "simtabi.com"} {
+			f := newIntoto(t)
+			if _, err := f.be.Sign(ctx, f.art, f.p); err != nil {
+				t.Fatal(err)
+			}
+			_, st := readEnvelope(t, f.sums+AttestationExt)
+			st.Predicate.RunDetails.Builder.ID = id
+			resign(t, f, st)
+			vh := f.h
+			vh.EventsSource = verifier
+			vb, err := For(vh, f.p, profile.Attestations)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = vb.Verify(ctx, f.art, f.p)
+			if known := id == BuilderID || id == SimtabiBuilderID; known && err != nil {
+				t.Errorf("builder %q under %q: %v", id, verifier, err)
+			} else if !known {
+				wantCode(t, err, contract.VerifyFailed)
+				if err == nil || !strings.Contains(err.Error(), "builder") {
+					t.Errorf("builder %q under %q: %v", id, verifier, err)
+				}
+			}
+		}
+	}
 }

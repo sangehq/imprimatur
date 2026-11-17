@@ -21,13 +21,24 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/events"
 )
 
-// Identity: the binary's name, and an id from the product's own domain.
+// Identity: the binary's name, and an id in Simtabi LLC's reverse-DNS
+// namespace for sange and its family (owner decision, 2026-11-17).
 const (
 	AppName     = "impr"
-	AppID       = "sh.sange.imprimatur"
+	AppID       = "com.simtabi.sange.imprimatur"
 	EnvPrefix   = "IMPR"
 	MinInterval = 30 * time.Second
 )
+
+// LegacyAppID was AppID before 2026-11-17 (the helper app's bundle id was
+// LegacyAppID+".notifier"). The macOS helper app sits at the same path under
+// either id, so go-notifykit rewrites it with the new identity and
+// re-registers it on the next notification; nothing else needs moving. macOS
+// keys notification permission by bundle id, so it asks once more.
+//
+// Deprecated: kept for the record only; it may be removed no earlier than
+// v0.2.0.
+const LegacyAppID = "sh.sange.imprimatur"
 
 // Icon is impr's mark at 1024 px.
 //

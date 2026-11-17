@@ -44,6 +44,9 @@ type harness struct {
 	run execx.Runner
 	os  string
 	now time.Time
+	// home is the user's home for every run when set; empty gives each run
+	// a fresh one.
+	home string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -54,7 +57,11 @@ func newHarness(t *testing.T) *harness {
 
 func (h *harness) impr(args ...string) (code int, stdout, stderr string) {
 	var o, e bytes.Buffer
-	a := &App{Stdout: &o, Stderr: &e, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: h.t.TempDir(), User: "tester",
+	home := h.home
+	if home == "" {
+		home = h.t.TempDir()
+	}
+	a := &App{Stdout: &o, Stderr: &e, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: home, User: "tester",
 		Runner: h.run, Now: func() time.Time { return h.now }}
 	code = a.Run(context.Background(), args)
 	return code, o.String(), e.String()
@@ -755,7 +762,7 @@ func TestPostSignHookSeesTheResultAndCannotChangeIt(t *testing.T) {
 	root, manifest, commit, tree := build(t)
 	h.ok("sign", "--json", "--strict", "--root", root, "--manifest", manifest, "--commit", commit, "--tree", tree,
 		"--profile", "p", "--purpose", "internal", "--platforms", "checksums")
-	if b, _ := os.ReadFile(seen); !strings.Contains(string(b), `"type":"sh.sange.imprimatur.signing.run.completed"`) {
+	if b, _ := os.ReadFile(seen); !strings.Contains(string(b), `"type":"com.simtabi.sange.imprimatur.signing.run.completed"`) {
 		t.Fatalf("the post-sign hook saw: %s", b)
 	}
 	if ev := h.ok("events", "tail", "--json"); !strings.Contains(ev, "hook.failed") || !strings.Contains(ev, "upload failed") {

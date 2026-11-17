@@ -61,7 +61,7 @@ func (a *App) audit(_ context.Context, cmd string, rest []string, code int, star
 			args[i] = "[redacted]"
 		}
 	}
-	env := events.Env{Now: a.Now, NewID: events.NewID, InstallID: id}
+	env := a.eventEnv(id)
 	ev, err := env.New("audit.command.completed", cmd, map[string]any{"user": a.User, "command": cmd, "args": args,
 		"exitCode": code, "durationMs": a.Now().UnixMilli() - start.UnixMilli()})
 	if err != nil {
