@@ -19,7 +19,16 @@ func cmdNotify(ctx context.Context, a *App, args []string) (int, error) {
 	if n == nil {
 		return 0, contract.New(contract.Unavailable, "desktop notifications cannot be set up here")
 	}
-	return notifykit.RunCLI(ctx, n, args, a.Stdin, a.Stdout, a.Stderr), nil
+	// go-notifykit exits 0 done, 1 failed, 2 usage; impr's contract has 1
+	// for usage and 5 for unavailable, and 2 means skipped.
+	switch notifykit.RunCLI(ctx, n, args, a.Stdin, a.Stdout, a.Stderr) {
+	case 0:
+		return 0, nil
+	case 2:
+		return 0, contract.New(contract.Usage, "impr notify send|ping|doctor [-title T] [-body B] ...")
+	default:
+		return 0, contract.New(contract.Unavailable, "the notification could not be delivered")
+	}
 }
 
 // expiryEvents raises cert.expiring at each configured threshold and

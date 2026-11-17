@@ -27,6 +27,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/server"
+	notifykit "github.com/simtabi/go-notifykit/src"
 )
 
 func randHex(t *testing.T, n int) string {
@@ -47,6 +48,8 @@ type harness struct {
 	// home is the user's home for every run when set; empty gives each run
 	// a fresh one.
 	home string
+	// notifier replaces the desktop notifier when set (a Recorder).
+	notifier *notifykit.Notifier
 }
 
 func newHarness(t *testing.T) *harness {
@@ -62,7 +65,7 @@ func (h *harness) impr(args ...string) (code int, stdout, stderr string) {
 		home = h.t.TempDir()
 	}
 	a := &App{Stdout: &o, Stderr: &e, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: home, User: "tester",
-		Runner: h.run, Now: func() time.Time { return h.now }}
+		Runner: h.run, Now: func() time.Time { return h.now }, Notifier: h.notifier}
 	code = a.Run(context.Background(), args)
 	return code, o.String(), e.String()
 }

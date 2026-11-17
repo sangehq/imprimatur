@@ -68,6 +68,9 @@ certificate (a new expiry date) starts again.
 
 The system config can lock `notify`.
 
+
+Exit codes follow impr's contract: 0 done, 1 a usage mistake, 5 the notification could not be delivered.
+
 ---
 
 [← Docs index](../../README.md#documentation)

@@ -75,6 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `impr notify` exits with impr's codes (1 usage, 5 not delivered); it passed
+  on go-notifykit's, where 2 meant usage and read as "skipped" to a caller.
 - `impr build VERSION` and `impr release VERSION` stamp VERSION; the positional
   version was silently ignored. `--version` alone now stamps `main.version`
   (the PowerShell build's variable) instead of nothing, and a version that does
