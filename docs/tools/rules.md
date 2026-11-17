@@ -39,6 +39,12 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   pins: the highest one below the root that the signature carries, as WDAC's Publisher level does (for a
   chain root → PCA → issuing CA → leaf, the PCA, which outlives the issuing CAs Artifact Signing rotates).
   It is pinned by its TBS hash, computed with the same hash as that certificate's own signature.
+- **Integrity first.** Each file is checked against its own signature before any rule is made: the
+  file's Authenticode hash must equal the signed one, and the leaf's key must have made the signature.
+  A file changed after signing is refused with exit 4, so it is never allow-listed. This checks
+  integrity, not trust: whether Windows trusts the certificate is what the rules' pins decide.
+- **Timestamp.** A signature without a timestamp stops being valid when its certificate expires; impr
+  warns for each such file.
 - **Artifact Signing EKU.** For an Artifact Signing certificate, impr reads the certificate profile's own
   EKU (under `1.3.6.1.4.1.311.97`) from the file and pins it, so the rule matches your profile and no
   other customer of the service. `--eku` overrides it, but the generic Artifact Signing EKU

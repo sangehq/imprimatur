@@ -5,6 +5,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
+	"os"
 	"strings"
 	"testing"
 
@@ -39,7 +40,7 @@ func TestRulesUseTheArtifactSigningProfileEKU(t *testing.T) {
 	ca := testpe.NewIntermediate(t, "Microsoft ID Verified CS EOC CA 01", testpe.NewCA(t, "Root"))
 	generic := asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 97, 1, 0}
 	prof := asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 97, 990309390, 766961637, 919164696, 192717234}
-	exe, _ := testpe.SignedWithEKUs(t, t.TempDir(), "tool.exe", sub, ca, generic, prof)
+	exe, _ := testpe.SignedWith(t, t.TempDir(), "tool.exe", sub, ca, testpe.Options{EKUs: []asn1.ObjectIdentifier{generic, prof}})
 	code, out, e := h.impr("rules", exe, "--product", "Acme Tool", "--base-policy", testBasePolicy, "--json")
 	if code != 0 || !strings.Contains(out, "signer EKU "+prof.String()) || !strings.Contains(e, prof.String()) {
 		t.Fatalf("the profile EKU was not pinned: %d\n%s\n%s", code, out, e)
@@ -49,5 +50,35 @@ func TestRulesUseTheArtifactSigningProfileEKU(t *testing.T) {
 	}
 	if code, _, e := h.impr("rules", exe, "--product", "Acme Tool", "--base-policy", testBasePolicy, "--eku", "1.3.6.1.4.1.311.97.1.2.3"); code != 1 || !strings.Contains(e, "does not carry") {
 		t.Fatalf("an EKU the file lacks was accepted: %d %s", code, e)
+	}
+}
+
+// O-173: impr rules checks each file against its own signature first, and
+// says when a signature carries no timestamp (it stops being valid when the
+// certificate expires, and allow rules then pin a dead signature).
+func TestRulesCheckTheSignatureAndTheTimestamp(t *testing.T) {
+	h := newHarness(t)
+	sub := pkix.Name{CommonName: "Acme Ltd", Organization: []string{"Acme Ltd"}, Country: []string{"GB"}}
+	ca := testpe.NewIntermediate(t, "Acme CA", testpe.NewCA(t, "Acme Root"))
+	exe, _ := testpe.Signed(t, t.TempDir(), "tool.exe", sub, ca)
+	stamped, _ := testpe.SignedWith(t, t.TempDir(), "tool.exe", sub, ca, testpe.Options{Timestamped: true})
+
+	if _, _, e := h.impr("rules", exe, "--product", "Acme Tool"); !strings.Contains(e, "no timestamp") {
+		t.Errorf("no warning for an untimestamped signature: %s", e)
+	}
+	if code, _, e := h.impr("rules", stamped, "--product", "Acme Tool"); code != 0 || strings.Contains(e, "no timestamp") {
+		t.Errorf("a timestamped file: %d %s", code, e)
+	}
+
+	b, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b[10] ^= 1 // a byte the signature covers
+	if err := os.WriteFile(exe, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, e := h.impr("rules", exe, "--product", "Acme Tool", "--json"); code != 4 || !strings.Contains(e, "changed after it was signed") || strings.Contains(out, "AppLockerPolicy") {
+		t.Fatalf("a tampered file: exit %d, want 4\n%s\n%s", code, out, e)
 	}
 }

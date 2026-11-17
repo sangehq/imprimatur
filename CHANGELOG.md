@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   root, as WDAC's Publisher level does and the PowerShell toolkit did; they
   pinned the CA right above the leaf, which Artifact Signing rotates. A leaf
   issued straight by a root pins itself.
+- `impr rules FILE...` checks each file against its own Authenticode
+  signature before making rules, and refuses a file changed after signing
+  (exit 4); it took the signer from the file without checking the hash. It
+  also warns for a signature with no timestamp.
 - `impr rules FILE...` reads an Artifact Signing certificate profile's own EKU
   from the files and pins it, refuses the generic Artifact Signing EKU
   `1.3.6.1.4.1.311.97.1.0` (it matches every customer under the CA) and an

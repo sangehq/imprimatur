@@ -88,6 +88,14 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		if err != nil {
 			return rules.Request{}, contract.Wrap(contract.Usage, err, "%s carries no Authenticode signature impr can read", f)
 		}
+		// A file changed after signing is never allow-listed (O-173).
+		if err := backend.VerifyAuthenticode(abs); err != nil {
+			return rules.Request{}, contract.Wrap(contract.VerifyFailed, err, "%s does not match its signature", f).
+				WithFix("rebuild and re-sign it; never write rules for a file that fails this check")
+		}
+		if !s.Timestamped {
+			a.say("rules     %s: its signature has no timestamp, so it stops being valid when the certificate expires; sign with a timestamp server", f)
+		}
 		// Rules pin the publisher's subject and its issuing CA, so files signed
 		// by a renewed certificate of the same publisher and CA belong together.
 		if signer == nil {

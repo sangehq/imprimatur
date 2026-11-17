@@ -50,7 +50,7 @@ func TestReadPESignerFindsTheArtifactSigningProfileEKU(t *testing.T) {
 	ca := testpe.NewIntermediate(t, "Microsoft ID Verified CS EOC CA 01", testpe.NewCA(t, "Root"))
 	generic := asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 97, 1, 0}
 	prof := asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 97, 990309390, 766961637, 919164696, 192717234}
-	path, _ := testpe.SignedWithEKUs(t, t.TempDir(), "tool.exe", sub, ca, generic, prof)
+	path, _ := testpe.SignedWith(t, t.TempDir(), "tool.exe", sub, ca, testpe.Options{EKUs: []asn1.ObjectIdentifier{generic, prof}})
 	s, err := ReadPESigner(path)
 	if err != nil {
 		t.Fatal(err)
