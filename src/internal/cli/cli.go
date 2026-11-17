@@ -519,9 +519,9 @@ Usage:
   impr rules test --policy applocker.xml [--user Everyone] FILE... [--json]   (Windows)
   impr rules (--request FILE | FILE... [--scope publisher|product|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]
-  impr build [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z --version-var PKG.VAR]
+  impr build [VERSION] [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z] [--version-var PKG.VAR]
             [--targets os/arch,...] [--clean] [--allow-dirty] [--json]
-  impr release --profile NAME --purpose release|test|internal [--repo URL] [--platforms ...] [build options] [--json]
+  impr release [VERSION] --profile NAME --purpose release|test|internal [--repo URL] [--platforms ...] [build options] [--json]
   impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
   impr hooks list [--json] | pin FILE | test NAME
   impr webhooks list [--json] | secret | retry [--all] | deliveries [--json]

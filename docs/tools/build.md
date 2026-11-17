@@ -8,6 +8,7 @@
 ```bash
 impr build                                   # targets from build/targets.txt, else this host
 impr build --targets linux/amd64,windows/arm64,darwin/arm64
+impr build v1.2.3                            # stamps main.version, as the PowerShell build did
 impr build --version v1.2.3 --version-var github.com/acme/tool/src/internal/cli.version
 impr build --main ./cmd/tool --module src --clean --json
 ```
@@ -19,6 +20,12 @@ impr build --main ./cmd/tool --module src --clean --json
 | `--main` | the only package under `cmd/` |
 | `--binary` | the main package's folder name |
 | `--targets` | `build/targets.txt` (`GOOS GOARCH [GOARM]` per line), else this host |
+| `VERSION` or `--version` | the latest `v*` tag plus `-snapshot` (`v1.4.0-snapshot`), else `v0.0.0-snapshot` with a warning |
+| `--version-var` | `main.version` |
+
+`VERSION` and `--version` are the same setting; give one, or both with the same value. `impr build` refuses
+`--profile`, `--purpose`, `--platforms` and `--repo`: it only builds, and signing is
+[`impr release`](release.md)'s job.
 
 ## What it writes
 
@@ -68,17 +75,18 @@ impr build --version v1.4.2 --product "Acme Tool" --company "Acme Ltd" --copyrig
   runs a repository's GoReleaser config or its hooks, so nothing the repository controls runs on the
   signing host.
 - **Allowed git commands.** impr runs `go build` only, and git only as `rev-parse HEAD`,
-  `rev-parse HEAD^{tree}`, `remote get-url origin`, and `status` with fsmonitor off.
-- **Version.** `--version` must be a semantic version, because it is stamped through `-ldflags`, and
-  anything else could add linker flags.
+  `rev-parse HEAD^{tree}`, `remote get-url origin`, `describe --tags --abbrev=0 --match v[0-9]*` (the
+  snapshot version; the estate's `src/v*` module tags never match), and `status` with fsmonitor off.
+- **Version.** The version must be a semantic version, because it is stamped through `-ldflags`, and
+  anything else could add linker flags. The Go linker ignores `-X` for a variable that does not exist,
+  so impr checks every binary for the version's bytes: a version you gave that is not in the binary
+  fails the build and names the variable; a snapshot version that is not stamped only warns.
 - **Paths.** `--main` must be a path inside the module.
 - **Uncommitted changes.** A work tree with uncommitted changes to tracked files is refused, because its
   binaries would not match the commit the manifest names. `--allow-dirty` builds anyway and records
   `dirty: true`; [`impr release`](release.md) never allows it.
 - **`--clean`.** It removes only this binary's earlier files under `build/{os}/`, never anything else.
 - **Never tags, pushes or publishes.**
-
-Windows version resources (the PowerShell toolkit's go-winres step) are not built.
 
 ---
 

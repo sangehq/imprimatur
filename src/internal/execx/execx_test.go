@@ -35,6 +35,7 @@ func TestCheckRefuses(t *testing.T) {
 		{Tool: "git", Args: []string{"status", "--porcelain"}}, // fsmonitor not forced off
 		{Tool: "git", Args: []string{"-c", "core.sshCommand=x", "fetch"}},
 		{Tool: "git"},
+		{Tool: "git", Args: []string{"describe", "--tags", "--match", "*"}},
 		{Tool: "go", Args: []string{"run", "."}},
 		{Tool: "go", Args: []string{"build", "-toolexec", "x", "."}},
 		{Tool: "go", Args: []string{"build", "-overlay=o.json", "."}},
@@ -47,6 +48,7 @@ func TestCheckRefuses(t *testing.T) {
 	for _, ok := range []Cmd{
 		{Tool: "xcrun", Args: []string{"notarytool", "submit"}},
 		{Tool: "git", Args: []string{"rev-parse", "HEAD^{tree}"}},
+		{Tool: "git", Args: []string{"describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"}},
 		{Tool: "go", Args: []string{"build", "-trimpath", "-o", "x", "./cmd/x"}},
 	} {
 		if err := Check(ok); err != nil {

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `impr build VERSION` and `impr release VERSION` stamp VERSION; the positional
+  version was silently ignored. `--version` alone now stamps `main.version`
+  (the PowerShell build's variable) instead of nothing, and a version that does
+  not reach the binary fails the build and names the variable.
+- A build given no version takes the latest `v*` tag plus `-snapshot`, or
+  `v0.0.0-snapshot` with a warning, as the PowerShell release did.
+- `impr build` refuses `--profile`, `--purpose`, `--platforms` and `--repo`
+  instead of ignoring them; they belong to `impr release`.
+
 ## [0.1.0] - 2026-11-17
 
 ### Added

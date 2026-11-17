@@ -46,6 +46,7 @@ var gitForms = [][]string{
 	{"rev-parse", "HEAD"},
 	{"rev-parse", "HEAD^{tree}"},
 	{"remote", "get-url", "origin"},
+	{"describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"}, // a build's snapshot version
 	{"-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=no"},
 }
 

@@ -8,6 +8,7 @@ package build
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -95,12 +96,16 @@ func ReadTargets(path string) ([]Target, error) {
 
 // Options are one build.
 type Options struct {
-	RepoRoot   string // the git work tree; build/ is written here
-	ModuleDir  string // holds go.mod (src/ in the estate layout)
-	Main       string // the main package, ./cmd/name, relative to ModuleDir
-	Binary     string // file name stem; default the main package's base name
-	Version    string // vX.Y.Z[-pre]; empty stamps nothing
-	VersionVar string // the -X variable, e.g. github.com/acme/tool/src/internal/cli.version
+	RepoRoot  string // the git work tree; build/ is written here
+	ModuleDir string // holds go.mod (src/ in the estate layout)
+	Main      string // the main package, ./cmd/name, relative to ModuleDir
+	Binary    string // file name stem; default the main package's base name
+	// Version is vX.Y.Z[-pre]. Empty takes a snapshot version: the latest
+	// v* tag plus -snapshot, or v0.0.0-snapshot when there is none.
+	Version string
+	// VersionVar is the -X variable, e.g. github.com/acme/tool/src/internal/cli.version;
+	// empty is main.version, the PowerShell build's variable.
+	VersionVar string
 	Targets    []Target
 	Clean      bool // remove this binary's earlier files from build/ first
 	AllowDirty bool // build a work tree with uncommitted changes (never for a release)
@@ -176,6 +181,25 @@ func (b Builder) Commit(ctx context.Context, repo string) (commit, tree string, 
 	return commit, tree, st != "", err
 }
 
+// DefaultVersionVar is the variable a version is stamped into when no
+// --version-var is given.
+const DefaultVersionVar = "main.version"
+
+// SnapshotVersion is the version of a build given none: the latest v* tag
+// with -snapshot added, or v0.0.0-snapshot when there is no such tag. The
+// estate's src/v* module tags never match.
+func (b Builder) SnapshotVersion(ctx context.Context, repo string) string {
+	r, err := b.Runner.Run(ctx, execx.Cmd{Tool: "git", Dir: repo, Args: []string{"describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"}})
+	if err == nil && r.ExitCode == 0 {
+		if tag := strings.TrimSpace(string(r.Stdout)); versionRe.MatchString(tag + "-snapshot") {
+			b.logf("version   %s-snapshot (latest tag %s; pass VERSION for an exact one)", tag, tag)
+			return tag + "-snapshot"
+		}
+	}
+	b.logf("version   v0.0.0-snapshot: no v* tag yet; pass VERSION, or tag a commit (git tag v1.2.0)")
+	return "v0.0.0-snapshot"
+}
+
 // Remote returns the origin remote's URL, or "" without one.
 func (b Builder) Remote(ctx context.Context, repo string) string {
 	u, err := b.git(ctx, repo, "remote", "get-url", "origin")
@@ -202,8 +226,11 @@ func (b Builder) Build(ctx context.Context, o Options) (string, Manifest, error)
 		// could add linker flags (the PowerShell build's flag injection).
 		return "", Manifest{}, contract.New(contract.Usage, "%q is not a semantic version (v1.2.3, 1.2.3-rc.1)", o.Version)
 	}
-	if o.VersionVar != "" && (o.Version == "" || !varRe.MatchString(o.VersionVar)) {
-		return "", Manifest{}, contract.New(contract.Usage, "--version-var needs --version and a package.variable path")
+	if o.VersionVar == "" {
+		o.VersionVar = DefaultVersionVar
+	}
+	if !varRe.MatchString(o.VersionVar) {
+		return "", Manifest{}, contract.New(contract.Usage, "--version-var is a package.variable path, like main.version")
 	}
 	if len(o.Targets) == 0 {
 		return "", Manifest{}, contract.New(contract.Usage, "no targets: add build/targets.txt or pass --targets")
@@ -230,6 +257,10 @@ func (b Builder) Build(ctx context.Context, o Options) (string, Manifest, error)
 		return "", Manifest{}, contract.New(contract.Usage, "the work tree has uncommitted changes, so the binaries would not match commit %s", commit[:12]).
 			WithFix("commit or stash them", "impr build --allow-dirty (never for a release)")
 	}
+	explicit := o.Version != ""
+	if !explicit {
+		o.Version = b.SnapshotVersion(ctx, o.RepoRoot)
+	}
 	outRoot := filepath.Join(o.RepoRoot, "build")
 	if o.Clean {
 		// Only this binary's own earlier files, only inside build/{os}/.
@@ -240,10 +271,8 @@ func (b Builder) Build(ctx context.Context, o Options) (string, Manifest, error)
 			}
 		}
 	}
-	ldflags := "-s -w"
-	if o.VersionVar != "" {
-		ldflags += " -X " + o.VersionVar + "=" + o.Version
-	}
+	ldflags := "-s -w -X " + o.VersionVar + "=" + o.Version
+	warned := false
 	m := Manifest{Schema: "sange.build-manifest/v1", Commit: commit, Tree: tree, Version: o.Version, Dirty: dirty, Artifacts: []Artifact{}}
 	for _, t := range o.Targets {
 		name := o.Binary + "_" + t.OSName() + "_" + t.ArchName()
@@ -271,6 +300,18 @@ func (b Builder) Build(ctx context.Context, o Options) (string, Manifest, error)
 		}
 		if r.ExitCode != 0 {
 			return "", Manifest{}, contract.New(contract.Usage, "go build failed for %s/%s", t.GOOS, t.GOARCH).WithDetails(strings.TrimSpace(r.Output()))
+		}
+		// The linker ignores -X for a variable that does not exist, so a
+		// binary can come out unversioned with no error; check the bytes.
+		if bin, err := os.ReadFile(out); err == nil && !bytes.Contains(bin, []byte(o.Version)) { //nolint:gosec // G304: a binary this build wrote
+			if explicit {
+				return "", Manifest{}, contract.New(contract.Usage, "version %s was not stamped into %s: %s has no variable %s",
+					o.Version, name, o.Main, o.VersionVar).WithFix("--version-var PKG.VAR naming the program's version variable")
+			}
+			if !warned {
+				b.logf("version   %s was not stamped: %s has no variable %s (pass --version-var)", o.Version, o.Main, o.VersionVar)
+				warned = true
+			}
 		}
 		sum, size, err := digest(out)
 		if err != nil {

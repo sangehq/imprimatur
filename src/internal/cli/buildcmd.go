@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	gobuild "github.com/sangehq/imprimatur/src/internal/build"
 	"github.com/sangehq/imprimatur/src/internal/contract"
@@ -68,9 +69,32 @@ func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
 		wr = &gobuild.WinRes{Product: p.str("product"), Company: p.str("company"), Description: p.str("description"),
 			Copyright: p.str("copyright"), Icon: p.str("icon")}
 	}
-	return gobuild.Options{RepoRoot: root, ModuleDir: mod, Main: main, Binary: p.str("binary"), Version: p.str("version"),
+	version, err := versionArg(p)
+	if err != nil {
+		return gobuild.Options{}, err
+	}
+	return gobuild.Options{RepoRoot: root, ModuleDir: mod, Main: main, Binary: p.str("binary"), Version: version,
 		VersionVar: p.str("version-var"), Targets: targets, Clean: p.on("clean"), AllowDirty: p.on("allow-dirty"), WinRes: wr}, nil
 }
+
+// versionArg is the version from --version or the one positional VERSION
+// (O-14, O-22): both may be given only when they agree.
+func versionArg(p parsed) (string, error) {
+	v := p.str("version")
+	switch {
+	case len(p.pos) > 1:
+		return "", contract.New(contract.Usage, "one VERSION at most (got %s)", strings.Join(p.pos, " "))
+	case len(p.pos) == 1 && v != "" && v != p.pos[0]:
+		return "", contract.New(contract.Usage, "VERSION %s and --version %s disagree", p.pos[0], v)
+	case len(p.pos) == 1:
+		v = p.pos[0]
+	}
+	return v, nil
+}
+
+// releaseOnly are options impr release reads and impr build refuses: build
+// only builds, and signing is release's job.
+var releaseOnly = []string{"profile", "purpose", "repo", "platforms"}
 
 func orDefault(v, d string) string {
 	if v == "" {
@@ -83,6 +107,12 @@ func cmdBuild(ctx context.Context, a *App, args []string) (int, error) {
 	p, err := parse(args, buildFlags)
 	if err != nil {
 		return 0, err
+	}
+	for _, f := range releaseOnly {
+		if p.has(f) {
+			return 0, contract.New(contract.Usage, "impr build only builds; --%s is for impr release", f).
+				WithFix("impr release --profile NAME --purpose P [build options]")
+		}
 	}
 	o, err := a.buildOptions(p)
 	if err != nil {
