@@ -911,3 +911,89 @@ func TestCosignCertificate(t *testing.T) {
 		t.Fatalf("key: %+v", e)
 	}
 }
+
+// O-133 to O-135: with no timestamp in the profile, each backend tries the
+// PowerShell line's servers, in order.
+func TestDefaultTimestampServersPerBackend(t *testing.T) {
+	path, thumb := signedPE(t, t.TempDir(), pkix.Name{CommonName: "Acme"}, true)
+	dir := t.TempDir()
+	dlib, meta := filepath.Join(dir, "Azure.CodeSigning.Dlib.dll"), filepath.Join(dir, "metadata.json")
+	_ = os.WriteFile(dlib, []byte("x"), 0o600)
+	_ = os.WriteFile(meta, []byte(`{"Endpoint":"https://weu.codesigning.azure.net","CodeSigningAccountName":"a","CertificateProfileName":"p"}`), 0o600)
+	for backend, want := range defaultTimestamps {
+		var tried []string
+		f := execx.NewFake("signtool", "osslsigncode")
+		f.Handle = func(c execx.Cmd) execx.Result {
+			for i, a := range c.Args {
+				if a == "/tr" || a == "-ts" {
+					tried = append(tried, c.Args[i+1])
+				}
+			}
+			return execx.Result{ExitCode: 1, Stderr: []byte("timestamp server unreachable")}
+		}
+		spec := profile.WindowsSpec{Kind: "authenticode", Backend: backend, Thumbprint: thumb, Subject: "CN=Acme",
+			CertRef: "env://PFX", DlibPath: dlib, MetadataPath: meta}
+		a := &Authenticode{H: fakeHost("windows", f, map[string]string{"PFX": path}), Spec: spec}
+		_, _ = a.Sign(context.Background(), Artifact{Path: path, Rel: "tool.exe"}, winProfile(spec, profile.PurposeTest))
+		if strings.Join(tried, " ") != strings.Join(want, " ") {
+			t.Errorf("%s tried %v, want %v", backend, tried, want)
+		}
+	}
+	if len(defaultTimestamps) != 4 {
+		t.Fatalf("inspected %d backends, want 4", len(defaultTimestamps))
+	}
+}
+
+// O-129: Artifact Signing's dlib and metadata.json are checked before
+// signtool runs, and passed to it as /dlib and /dmdf.
+func TestAzureMetadataIsChecked(t *testing.T) {
+	dir := t.TempDir()
+	dlib, meta := filepath.Join(dir, "Azure.CodeSigning.Dlib.dll"), filepath.Join(dir, "metadata.json")
+	a := &Authenticode{H: fakeHost("windows", execx.NewFake("signtool"), nil),
+		Spec: profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendAzure, DlibPath: dlib, MetadataPath: meta}}
+	_, err := a.signArgs()
+	wantCode(t, err, contract.Unavailable) // no dlib
+	_ = os.WriteFile(dlib, []byte("x"), 0o600)
+	_, err = a.signArgs()
+	wantCode(t, err, contract.Unavailable) // no metadata.json
+	for body, code := range map[string]contract.Code{
+		`{"Endpoint":"https://weu.codesigning.azure.net","CodeSigningAccountName":"a"}`:                     contract.Usage,
+		`{"Endpoint":"https://evil.example.com","CodeSigningAccountName":"a","CertificateProfileName":"p"}`: contract.Usage,
+		`not json`: contract.Usage,
+	} {
+		_ = os.WriteFile(meta, []byte(body), 0o600)
+		_, err = a.signArgs()
+		wantCode(t, err, code)
+	}
+	_ = os.WriteFile(meta, []byte(`{"Endpoint":"https://weu.codesigning.azure.net","CodeSigningAccountName":"a","CertificateProfileName":"p"}`), 0o600)
+	args, err := a.signArgs()
+	if err != nil || strings.Join(args, " ") != "/dlib "+dlib+" /dmdf "+meta {
+		t.Fatalf("args %v %v", args, err)
+	}
+}
+
+// O-132: a macOS certificate's expiry is read from the keychain: of the
+// certificates matching the identity, only an exact name counts, and of
+// several the one that lasts longest.
+func TestAppleCertificateExpiryFromKeychain(t *testing.T) {
+	ident := "Developer ID Application: Acme Ltd (ABCDE12345)"
+	mk := func(cn string, d time.Duration) []byte {
+		key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		tpl := &x509.Certificate{SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: cn},
+			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(d).Truncate(time.Second)}
+		der, _ := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+		return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	}
+	old, renewed, nearMiss := mk(ident, 10*24*time.Hour), mk(ident, 400*24*time.Hour), mk(ident+" Extra", 900*24*time.Hour)
+	f := execx.NewFake("security")
+	f.Handle = func(execx.Cmd) execx.Result {
+		return execx.Result{Stdout: append(append(append([]byte{}, old...), nearMiss...), renewed...)}
+	}
+	a := &Apple{H: fakeHost("darwin", f, nil), Spec: macSpec()}
+	e := a.Certificate(context.Background(), profile.Profile{Name: "mac"})
+	block, _ := pem.Decode(renewed)
+	want, _ := x509.ParseCertificate(block.Bytes)
+	if !e.Present || e.Source != "keychain" || e.NotAfter == nil || !e.NotAfter.Equal(want.NotAfter) {
+		t.Fatalf("certificate entry: %+v, want expiry %s", e, want.NotAfter)
+	}
+}

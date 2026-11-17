@@ -128,3 +128,21 @@ func TestSecretFieldsRefuseStoreNames(t *testing.T) {
 		t.Fatalf("allowed references refused: %v", ps.Strings())
 	}
 }
+
+// O-124: a self-signed setup with no WINDOWS_SIGN_SUBJECT imports with the
+// PowerShell default subject, CN=<user> Code Signing (Test).
+func TestImportLegacySelfSignedDefaultSubject(t *testing.T) {
+	legacy := t.TempDir()
+	writeJSON(t, filepath.Join(legacy, LegacySettingsFile), map[string]string{"WINDOWS_SIGNER": "SelfSigned", "WINDOWS_SIGN_THUMBPRINT": strings.ToUpper(randHex(t, 20))})
+	s := Store{Dir: t.TempDir()}
+	if _, err := ImportLegacy(s, legacy, legacyEnv(t, s.Dir, nil)); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.Resolve("default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Platforms.Windows.Subject != "CN=Pat Doe Code Signing (Test)" || !p.HasPurpose(PurposeTest) || p.HasPurpose(PurposeRelease) {
+		t.Fatalf("subject %q, purpose %v", p.Platforms.Windows.Subject, p.Purpose)
+	}
+}

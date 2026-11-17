@@ -2,14 +2,21 @@ package cli
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/testpe"
@@ -209,5 +216,80 @@ func TestBuildKeepsTheProjectsOwnSyso(t *testing.T) {
 	v, err := winres.ReadVersion(filepath.Join(repo, "build", "windows", "hello_windows_amd64.exe"))
 	if err != nil || v["ProductName"] != "Own Product" {
 		t.Fatalf("version info %v %v, want the project's own", v, err)
+	}
+}
+
+// selfSignedPEM is a certificate named cn, valid until notAfter, as PEM.
+func selfSignedPEM(t *testing.T, cn string, notAfter time.Time) []byte {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tpl := &x509.Certificate{SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: cn},
+		NotBefore: time.Now().Add(-time.Hour), NotAfter: notAfter}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+// mixRunner runs some tools for real and the rest through a fake.
+type mixRunner struct {
+	real map[string]bool
+	fake *execx.Fake
+}
+
+func (m mixRunner) LookPath(tool string) (string, error) {
+	if m.real[tool] {
+		return execx.OS{}.LookPath(tool)
+	}
+	return m.fake.LookPath(tool)
+}
+
+func (m mixRunner) Run(ctx context.Context, c execx.Cmd) (execx.Result, error) {
+	if m.real[c.Tool] {
+		return execx.OS{}.Run(ctx, c)
+	}
+	return m.fake.Run(ctx, c)
+}
+
+// O-140: impr release with a macOS profile builds, signs with codesign under
+// the pinned identity, notarises, and records the notarisation.
+func TestReleaseSignsMacOSWithTheProfile(t *testing.T) {
+	repo := goRepo(t)
+	h := newHarness(t)
+	h.os = "darwin"
+	team := "ABCDE12345"
+	ident := "Developer ID Application: Acme Ltd (" + team + ")"
+	f := execx.NewFake("codesign", "xcrun", "ditto", "spctl", "security")
+	certPEM := selfSignedPEM(t, ident, time.Now().Add(365*24*time.Hour))
+	f.Handle = func(c execx.Cmd) execx.Result {
+		switch {
+		case c.Tool == "security" && c.Args[0] == "find-certificate":
+			return execx.Result{Stdout: certPEM}
+		case c.Tool == "codesign" && c.Args[0] == "-d":
+			return execx.Result{Stderr: []byte("Authority=" + ident + "\nTeamIdentifier=" + team + "\n")}
+		case c.Tool == "xcrun" && c.Args[0] == "notarytool":
+			return execx.Result{Stdout: []byte(`{"id":"sub-140","status":"Accepted"}`)}
+		}
+		return execx.Result{}
+	}
+	h.run = mixRunner{real: map[string]bool{"git": true, "go": true}, fake: f}
+	h.env["N_KEY"] = "-----BEGIN PRIVATE KEY-----\n" + randHex(t, 16) + "\n-----END PRIVATE KEY-----\n"
+	h.env["N_ID"], h.env["N_ISS"] = randHex(t, 5), randHex(t, 8)
+	h.ok("profile", "add", "mac", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.macos.kind=developer-id", "--set", "platforms.macos.teamId="+team,
+		"--set", "platforms.macos.identity="+ident,
+		"--set", "platforms.macos.notary.apiKeyRef=env://N_KEY", "--set", "platforms.macos.notary.keyId=env://N_ID",
+		"--set", "platforms.macos.notary.issuer=env://N_ISS")
+	out := h.ok("release", "--repo-root", repo, "--targets", "darwin/arm64", "--profile", "mac", "--purpose", "internal",
+		"--platforms", "macos", "--json")
+	if !f.Called("codesign", "--options runtime --timestamp --sign "+ident) || !f.Called("xcrun", "notarytool submit") {
+		t.Fatalf("calls: %+v", f.Calls)
+	}
+	if !strings.Contains(out, "sub-140") {
+		t.Fatalf("the release does not record the notarisation:\n%s", out)
 	}
 }
