@@ -24,3 +24,12 @@ CLAUDE.local.md
 
 # GoReleaser scratch output (src/.goreleaser.yaml dist:)
 /.cache/
+
+# Certificates and keys: never tracked; tests generate their own
+*.pfx
+*.p12
+*.cer
+*.crt
+*.key
+*.p8
+*.pem

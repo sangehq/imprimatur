@@ -42,6 +42,10 @@ explains the common ones.
 - **"refused to run: sha256 … is not the pin".** A pinned tool (`tools.<name>`) was upgraded. Pin the
   new file: `impr tools pin <name>`, then `impr config set tools.<name> …` with what it prints.
 - **"is not signed in" (Azure).** Run `az login`, or give CI a service principal or managed identity.
+- **Artifact Signing answers 403 Forbidden.** Usually the `Endpoint` in `metadata.json` names another
+  region than the code signing account's (`https://weu.codesigning.azure.net` for West Europe,
+  `https://eus.codesigning.azure.net` for East US, …). Match the account's region in the Azure portal;
+  then check that your identity holds the certificate-profile signer role on the account.
 - **"expired on …".** The certificate is past its `notAfter`. Renew it, then re-pin the profile.
 
 ## Verifying

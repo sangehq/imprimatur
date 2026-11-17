@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `.gitignore` ignores certificate and key files (`*.pfx`, `*.p12`, `*.cer`,
+  `*.crt`, `*.key`, `*.p8`, `*.pem`), and a test fails if one is tracked; the
+  PowerShell toolkit once shipped its author's test certificate. Docs: backing
+  up a test certificate's `.pem`, and Artifact Signing's 403 from a wrong
+  region.
 - `impr rules` with no files reads the Windows binaries of
   `build/build-manifest.json` (or `--manifest FILE`), names each binary by
   its `OriginalFilename`, takes `--scope version`'s minimum version from the

@@ -47,6 +47,12 @@ Each old spelling still works as an alias of the Go name (design ID-13):
 
 ## Dropped by decision
 
+- `impr release --create-cert`: run `impr cert create` once, then release with that test profile.
+  `impr build --out DIR`: build output is `build/`, one folder per OS (ID-23).
+- For parity, not ported: SBOMs, deb/rpm packages and reproducible builds (they stay on the roadmap),
+  Rust builds, and allow rules for scripts (ID-24). The PowerShell line's own changelog (1.0–1.8) is not
+  carried into this repository; its history is kept in the owner's archive of the old checkout.
+
 - `impr rules` writes to `--out-dir` only when you name it (no default `policies/`), and makes one set of
   rules per publisher per run (ID-20). Its default input, OriginalFilename grouping, minimum version and
   product-named rules are ported.
