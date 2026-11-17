@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `impr release --json` prints one document holding the build, sign and verify
   results, and `step` on a failure; it printed two documents.
 
+### Changed
+
+- `impr doctor` exits 5 (unavailable) when it finds problems; it exited 1,
+  the usage code, so a caller could not tell a host that is not ready from a
+  mistyped command.
+
 ## [0.1.0] - 2026-11-17
 
 ### Added

@@ -985,8 +985,8 @@ func TestInstallUninstallAndAliases(t *testing.T) {
 	if err := json.Unmarshal([]byte(h.ok("path", "--json", "--dir", dir)), &info); err != nil || info.Installed || info.Config == "" {
 		t.Fatalf("path: %+v %v", info, err)
 	}
-	// d is doctor, which exits 1 here only because no default profile exists.
-	if code, out, _ := h.impr("d", "--json"); code != 1 || !strings.Contains(out, `"contract":1`) || !strings.Contains(out, `"defaultProfile"`) {
+	// d is doctor, which exits 5 here only because no default profile exists.
+	if code, out, _ := h.impr("d", "--json"); code != 5 || !strings.Contains(out, `"contract":1`) || !strings.Contains(out, `"defaultProfile"`) {
 		t.Fatalf("alias d did not run doctor: %d %s", code, out)
 	}
 }

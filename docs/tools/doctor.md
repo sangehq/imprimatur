@@ -15,8 +15,8 @@ impr doctor [--json]
  "problems":[],"ok":true}
 ```
 
-It exits 0 when there are no problems and 1 when there are: an invalid
-profile, or no default profile. The `profiles` entries are the ones
+It exits 0 when there are no problems and 5 (unavailable) when there are: an invalid
+profile, or no default profile. Exit 1 is kept for usage mistakes, such as a stray word. The `profiles` entries are the ones
 [`impr profile capabilities`](profile.md) prints.
 
 ## Permissions and tools

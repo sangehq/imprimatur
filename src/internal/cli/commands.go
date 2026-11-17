@@ -184,7 +184,8 @@ func cmdDoctor(ctx context.Context, a *App, args []string) (int, error) {
 		}
 	}
 	if !rep.OK {
-		return int(contract.Usage), nil
+		// Not ready is "unavailable", never the usage code (O-162).
+		return int(contract.Unavailable), nil
 	}
 	return 0, nil
 }
