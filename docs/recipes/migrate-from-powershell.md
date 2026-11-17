@@ -47,6 +47,10 @@ Each old spelling still works as an alias of the Go name (design ID-13):
 
 ## Dropped by decision
 
+- From `make/impr.mk`: the init and menu targets, the toolkit Makefile's bare aliases (`make release`),
+  and the 1.7 `imprimatur.mk` (ID-21). The build, release, config, completion, install and path targets
+  are ported; include `make/impr.mk` in your own Makefile.
+
 - `--timestamp URL[,URL]` on the command line: put the list in the profile's `platforms.windows.timestamp`,
   which is tried in order (ID-22). The switches `REQUIRE_SIGNING` (use `--strict` or `policy.strict`),
   `IMPR_JSON` (`--json`), `IMPRIMATUR_VERBOSE` (impr always logs each step), `IMPRIMATUR_INTERACTIVE`

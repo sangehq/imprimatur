@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `make/impr.mk` gains `impr-build` (`impr-b`), `impr-release` (`impr-r`),
+  `impr-config`, `impr-config-get`, `impr-config-set`, `impr-completion`,
+  `impr-completion-uninstall`, `impr-install`, `impr-uninstall` and
+  `impr-path`, with `VERSION`, `MAIN`, `TARGETS`, `ARCHIVES`, `KEY`, `VALUE`,
+  `SHELLS`, `DIR` and `FORCE`, as the PowerShell `impr.mk` had.
 - `impr doctor` notes (in `notes`, never as problems) impr off PATH, missing
   shell completion, a missing go or git, certificates expiring within 30
   days, Azure not signed in for Artifact Signing, and a gpg profile's missing

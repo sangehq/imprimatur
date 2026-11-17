@@ -5,7 +5,8 @@
 #
 # Every target is prefixed impr- so it never clashes with the project's own,
 # and runs the impr command of the same name. Short aliases match the CLI's:
-# impr-s (sign), impr-v (verify), impr-d (doctor).
+# impr-s (sign), impr-v (verify), impr-d (doctor), impr-b (build),
+# impr-r (release).
 #
 # Variables (all optional unless a target says so):
 #   IMPR       the impr binary (default: impr on PATH)
@@ -20,6 +21,14 @@
 #   PLATFORMS  --platforms, comma-separated (default: the profile's)
 #   FILE       loose files to verify, space-separated (verify, instead of SIGNED)
 #   REQUEST    --request: a rules request (rules)
+#   VERSION    the version to build (build, release; default: the latest v* tag + -snapshot)
+#   MAIN       --main: the main package (build, release)
+#   TARGETS    --targets, comma-separated (build, release)
+#   ARCHIVES=1 --archives (build, release)
+#   KEY, VALUE the config key and value (config-get, config-set)
+#   SHELLS     shells to install completion for, or all (completion; default: $SHELL)
+#   DIR        --dir: the install folder (install, uninstall)
+#   FORCE=1    --force (install)
 #   STRICT=1   --strict        JSON=1  --json
 #   ARGS       any other impr options
 
@@ -38,11 +47,23 @@ REQUEST   ?=
 STRICT    ?=
 JSON      ?=
 ARGS      ?=
+VERSION   ?=
+MAIN      ?=
+TARGETS   ?=
+ARCHIVES  ?=
+KEY       ?=
+VALUE     ?=
+SHELLS    ?=
+DIR       ?=
+FORCE     ?=
 
 _impr_common = $(if $(STRICT),--strict) $(if $(JSON),--json) $(ARGS)
 _impr_need   = $(if $($(1)),,$(error $(1) is required: make $@ $(1)=...))
+_impr_build  = --repo-root "$(ROOT)" $(if $(MAIN),--main "$(MAIN)") $(if $(TARGETS),--targets "$(TARGETS)") $(if $(ARCHIVES),--archives)
 
-.PHONY: impr-sign impr-s impr-verify impr-v impr-doctor impr-d impr-cert impr-profiles impr-rules impr-events impr-events-verify impr-companion impr-version impr-help
+.PHONY: impr-sign impr-s impr-verify impr-v impr-doctor impr-d impr-cert impr-profiles impr-rules impr-events impr-events-verify impr-companion impr-version impr-help \
+	impr-build impr-b impr-release impr-r impr-config impr-config-get impr-config-set impr-completion \
+	impr-completion-uninstall impr-install impr-uninstall impr-path
 
 impr-sign:
 	$(call _impr_need,PROFILE)$(call _impr_need,PURPOSE)$(call _impr_need,MANIFEST)
@@ -84,3 +105,39 @@ impr-version:
 
 impr-help:
 	$(IMPR) help
+
+impr-build:
+	$(IMPR) build $(_impr_build) $(_impr_common) $(VERSION)
+impr-b: impr-build
+
+impr-release:
+	$(call _impr_need,PROFILE)$(call _impr_need,PURPOSE)
+	$(IMPR) release $(_impr_build) --profile "$(PROFILE)" --purpose "$(PURPOSE)" $(if $(REPO),--repo "$(REPO)") \
+	  $(if $(PLATFORMS),--platforms "$(PLATFORMS)") $(_impr_common) $(VERSION)
+impr-r: impr-release
+
+impr-config:
+	$(IMPR) config show $(_impr_common)
+
+impr-config-get:
+	$(call _impr_need,KEY)
+	$(IMPR) config get "$(KEY)"
+
+impr-config-set:
+	$(call _impr_need,KEY)$(call _impr_need,VALUE)
+	$(IMPR) config set "$(KEY)" '$(VALUE)'
+
+impr-completion:
+	$(IMPR) completion install $(SHELLS)
+
+impr-completion-uninstall:
+	$(IMPR) completion uninstall $(SHELLS)
+
+impr-install:
+	$(IMPR) install $(if $(DIR),--dir "$(DIR)") $(if $(FORCE),--force)
+
+impr-uninstall:
+	$(IMPR) uninstall $(if $(DIR),--dir "$(DIR)")
+
+impr-path:
+	$(IMPR) path $(_impr_common)
