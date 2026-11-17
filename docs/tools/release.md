@@ -17,7 +17,8 @@ impr release v1.4.0 --profile acme-release --purpose release      # VERSION, as 
    The repository comes from `git remote get-url origin` unless `--repo` names it.
 3. `impr verify --signed build/impr-manifest.json --manifest build/build-manifest.json --strict`.
 
-It stops at the first failure and uses that step's exit code.
+It stops at the first failure and uses that step's exit code. With `--archives`, it then packs the
+signed files into `build/archives/` ([archives](build.md#archives)).
 
 With `--json`, stdout holds exactly one document:
 

@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `impr profile add --file` (`--from-file`), `impr profile export --out`
   (`--out-file`), `impr install --yes` (accepted, changes nothing) and
   `impr install --no-completion` (leaves out the completion hint).
+- `impr build --archives` and `impr release --archives` write
+  `build/archives/` (a `.tar.gz` per binary, a `.zip` per Windows one, each
+  with LICENSE and README, and `checksums.txt`) and, on macOS with both darwin
+  targets, a universal binary listed in the build manifest. A release packs
+  the signed files. `lipo` joins the tool allow-list, in one form only.
 
 ### Fixed
 

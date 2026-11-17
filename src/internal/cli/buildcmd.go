@@ -16,7 +16,7 @@ import (
 var buildFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "repo-root": stringFlag, "module": stringFlag, "main": stringFlag,
 	"binary": stringFlag, "version": stringFlag, "version-var": stringFlag, "targets": listFlag, "clean": boolFlag,
 	"allow-dirty": boolFlag, "profile": stringFlag, "purpose": stringFlag, "repo": stringFlag, "platforms": listFlag,
-	"product": stringFlag, "company": stringFlag, "description": stringFlag, "copyright": stringFlag, "icon": stringFlag, "no-winres": boolFlag}
+	"product": stringFlag, "company": stringFlag, "description": stringFlag, "copyright": stringFlag, "icon": stringFlag, "no-winres": boolFlag, "archives": boolFlag}
 
 // BuildResult is `impr build --json`.
 type BuildResult struct {
@@ -87,7 +87,18 @@ func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
 		return gobuild.Options{}, err
 	}
 	return gobuild.Options{RepoRoot: root, ModuleDir: mod, Main: main, Binary: p.str("binary"), Version: version,
-		VersionVar: p.str("version-var"), Targets: targets, Clean: p.on("clean"), AllowDirty: p.on("allow-dirty"), WinRes: wr}, nil
+		VersionVar: p.str("version-var"), Targets: targets, Clean: p.on("clean"), AllowDirty: p.on("allow-dirty"), WinRes: wr,
+		Universal: p.on("archives")}, nil
+}
+
+// archive writes build/archives/ (ID-12) and says what it wrote.
+func (a *App) archive(root string, m gobuild.Manifest, note string) error {
+	names, err := gobuild.Archive(root, m)
+	if err != nil {
+		return err
+	}
+	a.say("archives  %d archive(s) and checksums.txt in build/%s (%s)", len(names), gobuild.ArchiveDir, note)
+	return nil
 }
 
 // versionArg is the version from --version or the one positional VERSION
@@ -134,6 +145,11 @@ func cmdBuild(ctx context.Context, a *App, args []string) (int, error) {
 	path, m, err := gobuild.Builder{Runner: a.Runner, Log: a.say}.Build(ctx, o)
 	if err != nil {
 		return 0, err
+	}
+	if p.on("archives") {
+		if err := a.archive(o.RepoRoot, m, "unsigned: impr release archives the signed files"); err != nil {
+			return 0, err
+		}
 	}
 	if p.on("json") {
 		a.json(BuildResult{Contract: contract.Version, ManifestPath: path, Manifest: m})
@@ -185,6 +201,11 @@ func cmdRelease(ctx context.Context, a *App, args []string) (int, error) {
 			return code, nil
 		}
 		code := a.Run(ctx, verify)
+		if code == 0 && p.on("archives") {
+			if err := a.archive(o.RepoRoot, m, "signed"); err != nil {
+				return 0, err
+			}
+		}
 		if code == 0 {
 			a.say("release   built, signed and verified %d file(s); nothing was tagged, pushed or published", len(m.Artifacts))
 		}
@@ -217,6 +238,11 @@ func cmdRelease(ctx context.Context, a *App, args []string) (int, error) {
 		code = step("verify", verify)
 	}
 	r.OK = code == 0
+	if r.OK && p.on("archives") {
+		if err := a.archive(o.RepoRoot, m, "signed"); err != nil {
+			return 0, err
+		}
+	}
 	a.json(r)
 	if r.OK {
 		a.say("release   built, signed and verified %d file(s); nothing was tagged, pushed or published", len(m.Artifacts))

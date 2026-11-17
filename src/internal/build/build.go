@@ -109,6 +109,9 @@ type Options struct {
 	Targets    []Target
 	Clean      bool // remove this binary's earlier files from build/ first
 	AllowDirty bool // build a work tree with uncommitted changes (never for a release)
+	// Universal joins the darwin/amd64 and darwin/arm64 builds into a macOS
+	// universal binary, listed in the manifest (ID-12; macOS only, lipo).
+	Universal bool
 	// WinRes is the Windows version information embedded in each Windows
 	// binary; nil embeds none.
 	WinRes *WinRes
@@ -273,6 +276,7 @@ func (b Builder) Build(ctx context.Context, o Options) (string, Manifest, error)
 	}
 	ldflags := "-s -w -X " + o.VersionVar + "=" + o.Version
 	warned := false
+	built := map[Target]string{}
 	m := Manifest{Schema: "sange.build-manifest/v1", Commit: commit, Tree: tree, Version: o.Version, Dirty: dirty, Artifacts: []Artifact{}}
 	for _, t := range o.Targets {
 		name := o.Binary + "_" + t.OSName() + "_" + t.ArchName()
@@ -320,6 +324,22 @@ func (b Builder) Build(ctx context.Context, o Options) (string, Manifest, error)
 		rel, _ := filepath.Rel(o.RepoRoot, out)
 		m.Artifacts = append(m.Artifacts, Artifact{Path: filepath.ToSlash(rel), SHA256: sum, Size: size})
 		b.logf("build     %s", filepath.ToSlash(rel))
+		built[t] = out
+	}
+	if o.Universal {
+		out, err := b.universal(ctx, outRoot, o.Binary, built)
+		if err != nil {
+			return "", Manifest{}, err
+		}
+		if out != "" {
+			sum, size, err := digest(out)
+			if err != nil {
+				return "", Manifest{}, err
+			}
+			rel, _ := filepath.Rel(o.RepoRoot, out)
+			m.Artifacts = append(m.Artifacts, Artifact{Path: filepath.ToSlash(rel), SHA256: sum, Size: size})
+			b.logf("build     %s", filepath.ToSlash(rel))
+		}
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {

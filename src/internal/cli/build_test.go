@@ -146,13 +146,20 @@ func TestReleasePositionalVersion(t *testing.T) {
 	h := newHarness(t)
 	internalSSHProfile(t, h, "p")
 	h.ok("release", "--repo-root", repo, "--targets", runtime.GOOS+"/"+runtime.GOARCH, "--profile", "p",
-		"--purpose", "internal", "--platforms", "checksums", "v1.5.0")
+		"--purpose", "internal", "--platforms", "checksums", "--archives", "v1.5.0")
 	b, err := os.ReadFile(filepath.Join(repo, "build", "build-manifest.json"))
 	if err != nil || !strings.Contains(string(b), `"version": "v1.5.0"`) {
 		t.Fatalf("manifest: %s %v", b, err)
 	}
 	if got := runHello(t, repo); got != "v1.5.0" {
 		t.Fatalf("binary says %q", got)
+	}
+	// --archives on a release packs the files after signing and verifying.
+	if runtime.GOOS == "windows" {
+		return // a .zip there, checked by TestBuildArchives
+	}
+	if names := tarNames(t, filepath.Join(repo, "build", "archives", filepath.Base(hostBinary(repo))+".tar.gz")); len(names) == 0 {
+		t.Fatal("release --archives wrote no archive")
 	}
 }
 

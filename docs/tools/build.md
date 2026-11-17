@@ -22,6 +22,7 @@ impr build --main ./cmd/tool --module src --clean --json
 | `--targets` | `build/targets.txt` (`GOOS GOARCH [GOARM]` per line), else this host |
 | `VERSION` or `--version` | the latest `v*` tag plus `-snapshot` (`v1.4.0-snapshot`), else `v0.0.0-snapshot` with a warning |
 | `--version-var` | `main.version` |
+| `--archives` | off; see [Archives](#archives) |
 
 `VERSION` and `--version` are the same setting; give one, or both with the same value. `impr build` refuses
 `--profile`, `--purpose`, `--platforms` and `--repo`: it only builds, and signing is
@@ -35,6 +36,23 @@ build/windows/tool_windows_arm64.exe
 build/macos/tool_macos_arm64
 build/build-manifest.json     sange.build-manifest/v1: commit, tree, version, each file's sha256 and size
 ```
+
+## Archives
+
+`--archives` adds what the PowerShell release's GoReleaser run made:
+
+```
+build/macos/tool_macos_universal      macOS only, with both darwin targets: lipo joins amd64 and arm64;
+                                      it is in the build manifest, so impr sign signs it like the others
+build/archives/tool_linux_amd64.tar.gz
+build/archives/tool_windows_amd64.zip  a .zip for each Windows binary, a .tar.gz for every other
+build/archives/checksums.txt           sha256 of each archive, by bare name
+```
+
+Each archive holds the binary under its own name, plus `LICENSE` and `README.md` when the repository
+has them. Names carry no version, as the estate build layout requires, and entries carry a fixed
+timestamp, so the same files make the same archive. `impr build --archives` packs the files as built
+(unsigned); [`impr release --archives`](release.md) packs them after signing and verifying.
 
 ## Windows version information
 

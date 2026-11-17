@@ -18,7 +18,7 @@ func TestAllowListIsExactly(t *testing.T) {
 	// Test-AppLockerPolicy script, checked byte for byte (powershell.go).
 	// openssl joined 2026-11-16 for the macOS .p12 re-wrap, in two pkcs12 forms
 	// with passwords from the environment only (openssl.go).
-	want := []string{"az", "certutil", "codesign", "cosign", "ditto", "git", "go", "gpg", "minisign", "openssl", "osslsigncode", "powershell", "secret-tool", "security",
+	want := []string{"az", "certutil", "codesign", "cosign", "ditto", "git", "go", "gpg", "lipo", "minisign", "openssl", "osslsigncode", "powershell", "secret-tool", "security",
 		"signtool", "spctl", "ssh-keygen", "xcrun"}
 	if got := Names(); !slices.Equal(got, want) {
 		t.Fatalf("allow-list %v, want %v", got, want)
@@ -36,6 +36,7 @@ func TestCheckRefuses(t *testing.T) {
 		{Tool: "git", Args: []string{"-c", "core.sshCommand=x", "fetch"}},
 		{Tool: "git"},
 		{Tool: "git", Args: []string{"describe", "--tags", "--match", "*"}},
+		{Tool: "lipo", Args: []string{"-remove", "x86_64", "-output", "o", "a"}},
 		{Tool: "go", Args: []string{"run", "."}},
 		{Tool: "go", Args: []string{"build", "-toolexec", "x", "."}},
 		{Tool: "go", Args: []string{"build", "-overlay=o.json", "."}},
@@ -47,6 +48,7 @@ func TestCheckRefuses(t *testing.T) {
 	}
 	for _, ok := range []Cmd{
 		{Tool: "xcrun", Args: []string{"notarytool", "submit"}},
+		{Tool: "lipo", Args: []string{"-create", "-output", "u", "a", "b"}},
 		{Tool: "git", Args: []string{"rev-parse", "HEAD^{tree}"}},
 		{Tool: "git", Args: []string{"describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"}},
 		{Tool: "go", Args: []string{"build", "-trimpath", "-o", "x", "./cmd/x"}},
