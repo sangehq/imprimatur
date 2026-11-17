@@ -8,14 +8,18 @@ you allow it, sign build manifests, without running the CLI themselves.
 ```bash
 impr server token add --scopes read,verify     # prints the token once; only its sha256 is kept
 impr serve --check-config                      # validate config.json without listening
-impr serve                                     # Unix socket at <state>/server/impr.sock
+impr serve                                     # Unix socket at <state>/server/impr.sock (Windows: a named pipe)
 impr serve --listen 127.0.0.1:8743             # or a loopback port
 ```
 
 - **Socket.** The socket is 0600, in a 0700 directory, so only your user can connect.
-  On Linux impr also reads each connection's peer uid (`SO_PEERCRED`) and closes any from another
-  user, root included, recording `server.auth.refused`. On macOS the file modes are the whole check,
-  because Go's standard library has no peer-credential call there.
+  On Linux (`SO_PEERCRED`) and macOS (`LOCAL_PEERCRED`) impr also reads each connection's peer uid
+  and closes any from another user, root included, recording `server.auth.refused`.
+- **Windows.** With `listen` unset, impr serves a named pipe, `\\.\pipe\imprimatur-<hash of the state
+  folder>`, printed when it starts. The pipe's DACL is protected and grants access to your user only,
+  remote clients are refused, and impr creates it as the first instance, so it will not start if another
+  process already holds the name. File modes mean nothing on Windows, so a Unix socket there
+  (`"listen": "unix"`, still accepted) relies on the profile folder's permissions and the token alone.
 - **Addresses.** A loopback port is the other everyday choice. An address other machines can reach is
   allowed only with `server.allowRemote` and `server.tls` set (see below).
 - **Stopping.** Ctrl-C or SIGTERM stops it gracefully.

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- On macOS, `impr serve` checks each Unix-socket connection's peer uid
+  (`LOCAL_PEERCRED`), as it already does on Linux.
+- On Windows, `impr serve` listens on a named pipe by default. Only the
+  current user can open it, remote clients are refused, and a pipe already
+  held under the name stops it from starting. `"listen": "unix"` still
+  selects the Unix socket.
+- `golang.org/x/sys` is a dependency, for the two items above.
 - A `github` inbound kind for `impr serve`. It checks `X-Hub-Signature-256`,
   refuses a repeated `X-GitHub-Delivery` for 7 days, answers `ping`, and records
   each delivery as `webhook.inbound.received`. With `run` set, a delivery also runs

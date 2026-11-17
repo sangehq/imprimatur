@@ -117,7 +117,8 @@ type Token struct {
 
 // Server is the impr serve section (design §7).
 type Server struct {
-	// Listen is "unix" (the default: <state>/server/impr.sock), a loopback
+	// Listen is unset (the default: a named pipe on Windows, the Unix socket
+	// elsewhere), "unix" (<state>/server/impr.sock), a loopback
 	// host:port, or, with AllowRemote and TLS, any host:port (design ID-04,
 	// owner decision 2026-11-15: both, configurably).
 	Listen string `json:"listen,omitempty"`

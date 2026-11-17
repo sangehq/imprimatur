@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package cli
 
@@ -9,7 +9,6 @@ import (
 
 var errPeerUnsupported = errors.New("peer credentials are not read on this platform")
 
-// peerUID is not available from the standard library here (macOS needs
-// LOCAL_PEERCRED from golang.org/x/sys), so the socket's file modes are the
-// check.
+// peerUID is not read here, so the socket's file modes are the check. On
+// Windows impr serves a named pipe by default, whose DACL is the check.
 func peerUID(*net.UnixConn) (int, error) { return -1, errPeerUnsupported }
