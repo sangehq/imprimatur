@@ -35,7 +35,10 @@ explains the common ones.
 
 - **"signing is not available on this host".** The platform's tool is missing: `signtool` or
   `osslsigncode` for Windows, `codesign` for macOS, `gpg`, `minisign`, `ssh-keygen` or `cosign` for
-  checksums. `impr doctor` names it.
+  checksums. `impr doctor` names it. On Windows, impr finds `signtool` on `PATH` or, where the Windows SDK
+  puts it, under `%ProgramFiles(x86)%\Windows Kits\10\bin\<version>\<arch>\signtool.exe`: the newest
+  SDK version, this machine's architecture first, then x64. Install the SDK's "Signing Tools for Desktop
+  Apps" if neither has it.
 - **"refused to run: sha256 … is not the pin".** A pinned tool (`tools.<name>`) was upgraded. Pin the
   new file: `impr tools pin <name>`, then `impr config set tools.<name> …` with what it prints.
 - **"is not signed in" (Azure).** Run `az login`, or give CI a service principal or managed identity.

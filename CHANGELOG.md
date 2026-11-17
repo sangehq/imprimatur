@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   root, as WDAC's Publisher level does and the PowerShell toolkit did; they
   pinned the CA right above the leaf, which Artifact Signing rotates. A leaf
   issued straight by a root pins itself.
+- On Windows, `signtool` is found under `Windows Kits\10\bin` (newest SDK,
+  this architecture first, then x64) when it is not on `PATH`, as the
+  PowerShell toolkit did; a normal SDK install reported Windows signing as
+  unavailable.
 - `impr rules FILE...` checks each file against its own Authenticode
   signature before making rules, and refuses a file changed after signing
   (exit 4); it took the signer from the file without checking the hash. It

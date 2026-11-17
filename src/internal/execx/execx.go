@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -221,6 +222,12 @@ func (o OS) LookPath(tool string) (string, error) {
 		return p.Path, nil
 	}
 	p, err := exec.LookPath(tool)
+	if err != nil && tool == "signtool" && runtime.GOOS == "windows" {
+		// The Windows SDK does not put signtool on PATH (O-130).
+		if k := signtoolInKits(kitsBin(), runtime.GOARCH); k != "" {
+			return k, nil
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", tool, ErrNotFound)
 	}
