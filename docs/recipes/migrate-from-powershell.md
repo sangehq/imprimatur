@@ -47,6 +47,11 @@ Each old spelling still works as an alias of the Go name (design ID-13):
 
 ## Dropped by decision
 
+- `--timestamp URL[,URL]` on the command line: put the list in the profile's `platforms.windows.timestamp`,
+  which is tried in order (ID-22). The switches `REQUIRE_SIGNING` (use `--strict` or `policy.strict`),
+  `IMPR_JSON` (`--json`), `IMPRIMATUR_VERBOSE` (impr always logs each step), `IMPRIMATUR_INTERACTIVE`
+  (the menu opens at a terminal unless `CI` is set) and `NO_COLOR` (impr prints no colour) are not read.
+
 - From the menu: the project dashboard, project picker and `config/state.json`, `o`, the init and rules
   entries, and the number keys (ID-18). `b` build, `r` release and `n` install are ported.
 

@@ -152,9 +152,17 @@ func (a *Authenticode) signArgs() ([]string, error) {
 	return nil, contract.New(contract.Usage, "%q is not a signtool backend", a.Spec.Backend)
 }
 
+// timestamps are the servers tried in turn: the profile's timestamp, which
+// may list several separated by commas (ID-22), else the backend's defaults.
 func (a *Authenticode) timestamps() []string {
-	if a.Spec.Timestamp != "" {
-		return []string{a.Spec.Timestamp}
+	var list []string
+	for _, ts := range strings.Split(a.Spec.Timestamp, ",") {
+		if ts = strings.TrimSpace(ts); ts != "" {
+			list = append(list, ts)
+		}
+	}
+	if len(list) > 0 {
+		return list
 	}
 	return defaultTimestamps[a.Spec.Backend]
 }

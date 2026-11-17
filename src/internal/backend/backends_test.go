@@ -797,3 +797,32 @@ func TestAuthenticodeUntrustedRootNeedsAThumbprintPin(t *testing.T) {
 		t.Fatalf("the refusal does not say a thumbprint is needed: %v", err)
 	}
 }
+
+// ID-22, O-136: a profile's timestamp may list several servers, comma
+// separated; they are tried in order, as the PowerShell --timestamp list was.
+func TestAuthenticodeTriesTheProfilesTimestampListInOrder(t *testing.T) {
+	path, thumb := signedPE(t, t.TempDir(), pkix.Name{CommonName: "Acme"}, true)
+	f := execx.NewFake("signtool")
+	var tried []string
+	f.Handle = func(c execx.Cmd) execx.Result {
+		for i, a := range c.Args {
+			if a == "/tr" {
+				tried = append(tried, c.Args[i+1])
+				if c.Args[i+1] == "http://ts-a.example" {
+					return execx.Result{ExitCode: 1, Stderr: []byte("timestamp server unreachable")}
+				}
+			}
+		}
+		return execx.Result{}
+	}
+	spec := profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendCertStore, Thumbprint: thumb,
+		Timestamp: "http://ts-a.example, http://ts-b.example,http://ts-c.example"}
+	a := &Authenticode{H: fakeHost("windows", f, nil), Spec: spec}
+	sig, err := a.Sign(context.Background(), Artifact{Path: path, Rel: "tool.exe"}, winProfile(spec, profile.PurposeTest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(tried, " ") != "http://ts-a.example http://ts-b.example" || sig.Timestamp != "ts-b.example" {
+		t.Fatalf("tried %v, used %q", tried, sig.Timestamp)
+	}
+}

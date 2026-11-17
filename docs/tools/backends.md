@@ -49,7 +49,9 @@ envelope holding an in-toto Statement v1.
 ## Authenticode
 
 - Signs with SHA-256 and an RFC 3161 timestamp, trying the profile's
-  `timestamp` or, when it names none, each default server in turn
+  `timestamp` servers in order (one URL, or several separated by commas:
+  `--set "platforms.windows.timestamp=http://ts.a,http://ts.b"`) or, when it
+  names none, each default server in turn
   (cert-store: DigiCert, Sectigo, GlobalSign; Certum: Certum, DigiCert; Azure:
   Microsoft's; pfx: DigiCert, Sectigo).
 - `cert-store` and `certum` sign only with a pinned `thumbprint`; a profile
