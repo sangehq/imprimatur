@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr completion install` and `uninstall` take several shells or `all`,
+  and default to the shell in `$SHELL`; the scripts complete option values
+  the usage lists (`--purpose`, `--platforms`, `rules --scope`, …).
 - `impr cert show` (`cert list` plus the `certutil` lines that trust a test
   certificate impr made, only when its `.cer` matches the pinned
   thumbprint), `impr config list` (the same as `show`), and `impr config set`

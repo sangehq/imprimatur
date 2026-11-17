@@ -579,7 +579,7 @@ Usage:
   impr notify send|ping|doctor ...
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules test --policy applocker.xml [--user Everyone] FILE... [--json]   (Windows)
-  impr rules (--request FILE | FILE... [--scope publisher|product|version] [--product NAME] [--file-version a.b.c.d]
+  impr rules (--request FILE | FILE... [--scope publisher|product|file|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]
   impr build [VERSION] [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z] [--version-var PKG.VAR]
             [--targets os/arch,...] [--clean] [--allow-dirty] [--json]
@@ -595,7 +595,7 @@ Usage:
   impr serve [--listen unix|HOST:PORT] [--check-config] [--yes]
   impr serve install-unit --print [--for systemd|launchd|task] [--exe PATH]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
-  impr completion bash|zsh|fish|powershell | install bash|zsh|fish | uninstall bash|zsh|fish
+  impr completion bash|zsh|fish|powershell | install [bash|zsh|fish|all]... | uninstall [bash|zsh|fish|all]...
   impr install [--dir DIR] [--force]
   impr uninstall [--dir DIR]
   impr path [--json]

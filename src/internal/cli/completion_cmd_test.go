@@ -41,7 +41,7 @@ func TestCompletionCommand(t *testing.T) {
 	h.exits(1, "completion")
 	h.exits(1, "completion", "bash", "zsh")
 	h.exits(1, "completion", "tcsh")
-	h.exits(1, "completion", "install", "bash", "zsh")
+	h.exits(1, "completion", "install", "bash", "tcsh") // several shells are allowed (ID-17), unknown ones are not
 
 	h.ok("completion", "install", "zsh")
 	f := filepath.Join(h.home, ".zfunc", "_impr")
