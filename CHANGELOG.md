@@ -148,7 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `impr doctor` prints `impr: doctor found N problem(s)` on stderr when it
-  exits 5, as every other failure says why on stderr.
+  exits 5, and `impr profile validate` prints `impr: N profile(s) are not
+  valid` when it exits 1, as every other failure says why on stderr.
 - Docs: the deploy recipe names the files impr writes
   (`wdac-supplemental.xml`, not `wdac.xml`) and carries the PowerShell
   `DEPLOY.md` steps (AppIDSvc, event IDs, CiTool and the older-Windows copy,

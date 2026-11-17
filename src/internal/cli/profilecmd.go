@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
@@ -293,6 +294,14 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 			a.json(rep)
 		}
 		if !rep.OK {
+			// Like every failure, it says so on stderr.
+			bad := 0
+			for _, vp := range rep.Profiles {
+				if len(vp.Problems) > 0 {
+					bad++
+				}
+			}
+			_, _ = fmt.Fprintf(a.Stderr, "impr: %d profile(s) are not valid\n", bad)
 			return int(contract.Usage), nil
 		}
 		return 0, nil
