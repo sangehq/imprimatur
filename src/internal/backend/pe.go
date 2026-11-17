@@ -204,14 +204,43 @@ func WindowsName(rawSubject []byte) string {
 			if !ok {
 				key = "OID." + atv.Type.String()
 			}
-			v := fmt.Sprint(atv.Value)
-			if strings.ContainsAny(v, ",+=\"\n<>#;") {
-				v = `"` + strings.ReplaceAll(v, `"`, `""`) + `"`
-			}
-			parts = append(parts, key+"="+v)
+			parts = append(parts, key+"="+quoteDN(fmt.Sprint(atv.Value)))
 		}
 	}
 	return strings.Join(parts, ", ")
+}
+
+// AppLockerPublisher is the publisher name AppLocker gives a signer: the
+// subject's O, L, S and C, in that order and upper-cased, without the CN
+// (O-176). A subject with none of them is named by its CN.
+func AppLockerPublisher(rawSubject []byte) string {
+	var rdns pkix.RDNSequence
+	if _, err := asn1.Unmarshal(rawSubject, &rdns); err != nil {
+		return ""
+	}
+	var n pkix.Name
+	n.FillFromRDNSequence(&rdns)
+	var parts []string
+	for _, kv := range []struct {
+		key  string
+		vals []string
+	}{{"O", n.Organization}, {"L", n.Locality}, {"S", n.Province}, {"C", n.Country}} {
+		for _, v := range kv.vals {
+			parts = append(parts, kv.key+"="+quoteDN(strings.ToUpper(v)))
+		}
+	}
+	if len(parts) == 0 {
+		return "CN=" + quoteDN(strings.ToUpper(n.CommonName))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// quoteDN quotes a name value that holds a separator, the way Windows shows it.
+func quoteDN(v string) string {
+	if strings.ContainsAny(v, ",+=\"\n<>#;") {
+		return `"` + strings.ReplaceAll(v, `"`, `""`) + `"`
+	}
+	return v
 }
 
 // SubjectsEqual compares two distinguished names part by part, ignoring the

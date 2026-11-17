@@ -34,7 +34,8 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
 ```
 
 - **What it reads.** Instead of a `--request`, impr reads each named `.exe` or `.dll`'s Authenticode
-  signature. It takes the publisher's subject and the leaf's common name. It also takes the issuing CA,
+  signature. It takes the publisher name in AppLocker's form (the subject's `O`, `L`, `S` and `C`,
+  upper-cased, without the `CN`: `O=ACME LTD, L=LONDON, C=GB`) and the leaf's common name. It also takes the issuing CA,
   pinned by its TBS hash, computed with the same hash as the CA certificate's own signature.
 - **One publisher.** Every file must share one publisher and issuing CA, which is one set of rules.
 - **Scopes.** The same four as the PowerShell toolkit; none is a hash rule.

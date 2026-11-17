@@ -1299,6 +1299,10 @@ func TestRulesFromSignedFiles(t *testing.T) {
 		!strings.Contains(strings.ToUpper(res.WDAC), strings.ToUpper(hex.EncodeToString(tbs[:]))) || !strings.Contains(res.WDAC, "Acme Ltd") {
 		t.Fatalf("rules do not carry the files' signer:\n%s\n%s", res.AppLocker, res.WDAC)
 	}
+	// O-176: AppLocker's form of the publisher, O/L/S/C upper-cased, no CN.
+	if !strings.Contains(res.AppLocker, `PublisherName="O=ACME LTD, C=GB"`) {
+		t.Fatalf("AppLocker publisher name is not O=,C= upper-cased:\n%s", res.AppLocker)
+	}
 	// Without a base policy there is no WDAC supplemental, only AppLocker.
 	if out := h.ok("rules", exe, "--scope", "publisher", "--json"); strings.Contains(out, `"wdac"`) || !strings.Contains(out, "AppLockerPolicy") {
 		t.Fatalf("no base policy: %s", out)

@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of ignoring it, as the PowerShell tool did.
 - `impr profile edit` and `export` with no NAME say on stderr that they use
   the default profile, and name it; they acted on it silently.
+- `impr rules FILE...` writes the AppLocker publisher name in AppLocker's own
+  form, the subject's O, L, S and C upper-cased without the CN
+  (`O=ACME LTD, L=LONDON, C=GB`), as the PowerShell toolkit did. It wrote the
+  whole subject, CN included and not upper-cased, so publisher rules could
+  fail to match on Windows.
 
 ### Changed
 

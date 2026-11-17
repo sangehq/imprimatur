@@ -105,7 +105,7 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 	}
 	sort.Strings(lines)
 	d := sha256.Sum256([]byte(strings.Join(lines, "\n") + "\n"))
-	pub := rules.Publisher{Subject: signer.Subject, LeafCN: signer.Leaf.Subject.CommonName, EKU: p.str("eku")}
+	pub := rules.Publisher{Subject: backend.AppLockerPublisher(signer.Leaf.RawSubject), LeafCN: signer.Leaf.Subject.CommonName, EKU: p.str("eku")}
 	if scope != "publisher" {
 		pub.Product = product
 	}
