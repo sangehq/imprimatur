@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this architecture first, then x64) when it is not on `PATH`, as the
   PowerShell toolkit did; a normal SDK install reported Windows signing as
   unavailable.
+- `impr rules --enforce` notes that it does not reach the WDAC supplemental
+  policy, which follows its base policy's mode; the docs said both were
+  enforced.
 - `impr rules FILE...` checks each file against its own Authenticode
   signature before making rules, and refuses a file changed after signing
   (exit 4); it took the signer from the file without checking the hash. It

@@ -107,7 +107,10 @@ XML is printed on stdout; `--out-dir` also writes `applocker.xml` and
   `Script`, `Dll`) and binary name, for that publisher and product, at
   `fileVersion` or newer; WDAC file attributes with the same names and minimum
   version. Without it: anything the publisher signs.
-- AppLocker collections are `AuditOnly` unless `options.enforce`.
+- AppLocker collections are `AuditOnly` unless `options.enforce`. A WDAC supplemental policy takes its
+  mode from its base policy, so `enforce` does not change it; a note says so.
+- The WDAC `PolicyID` is derived from the base policy, publisher, leaf, product and name (or taken from
+  `policyId`), so each build of one product replaces the same supplemental policy.
 - WDAC is always a supplemental policy of `basePolicyId`, its signer pinned by
   the TBS hash of the certificate below the root (`issuerTbs`), the leaf's common name and, when given,
   the EKU.

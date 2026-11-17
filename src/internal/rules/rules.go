@@ -169,6 +169,9 @@ func Render(req Request, renderer string) (Result, error) {
 		}
 		res.WDAC = string(w)
 		res.Notes = append(res.Notes, "the WDAC supplemental policy takes audit or enforcement from its base policy")
+		if opt.Enforce {
+			res.Notes = append(res.Notes, "--enforce does not apply to the WDAC supplemental policy: it is enforced only when its base policy is")
+		}
 	}
 	return res, nil
 }

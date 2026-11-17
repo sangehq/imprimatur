@@ -23,8 +23,13 @@ ConvertFrom-CIPolicy -XmlFilePath policies\wdac.xml -BinaryFilePath policies\wda
 CiTool --update-policy policies\wdac.cip
 ```
 
-- **Audit, then enforce.** Policies are AuditOnly unless you pass `--enforce`. Check the event log for
-  what would have been blocked before you enforce.
+- **Audit, then enforce.** AppLocker collections are AuditOnly unless you pass `--enforce`. The WDAC
+  supplemental policy has no mode of its own: it audits or enforces as its base policy does, so
+  `--enforce` does not change it (impr says so). Check the event log for what would have been blocked
+  before you enforce.
+- **Redeploying.** The WDAC `PolicyID` comes from the base policy, publisher, product and `--name`, so
+  every build of one product gets the same one, and deploying a new build replaces the supplemental
+  policy instead of adding another.
 - **Default rules.** `--include-default-rules` keeps Windows and Program Files running once you enforce;
   leave it out only when the machine's existing policy already has them.
 - **Supplemental only.** impr writes a WDAC supplemental policy for your existing base policy

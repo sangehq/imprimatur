@@ -74,3 +74,37 @@ func TestRenderNotesTheGenericArtifactSigningEKU(t *testing.T) {
 		t.Fatalf("a profile EKU drew the generic note: %v", res.Notes)
 	}
 }
+
+// Old bug 12: the WDAC PolicyID is the same for every build of one product
+// against one base policy, so redeploying replaces the supplemental policy
+// instead of adding another; and --enforce, which a supplemental policy
+// cannot take, says so instead of passing silently.
+func TestWDACPolicyIDStableAndEnforceNoted(t *testing.T) {
+	id := func(req Request) string {
+		res, err := Render(req, "test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		i := strings.Index(res.WDAC, "<PolicyID>")
+		return res.WDAC[i : i+60]
+	}
+	a, b := request(t), request(t) // two builds: new digests, new file hashes
+	b.FileVersion = "1.9.0.0"
+	if id(a) != id(b) {
+		t.Fatalf("two builds of one product got different PolicyIDs: %s %s", id(a), id(b))
+	}
+	c := request(t)
+	c.Publisher.Product = "other"
+	if id(a) == id(c) {
+		t.Fatalf("two products share a PolicyID")
+	}
+	e := request(t)
+	e.Options.Enforce = true
+	res, err := Render(e, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(res.Notes, "\n"), "--enforce does not apply to the WDAC supplemental policy") {
+		t.Fatalf("no note that --enforce does not reach WDAC: %v", res.Notes)
+	}
+}
