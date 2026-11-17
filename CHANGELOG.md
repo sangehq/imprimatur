@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this architecture first, then x64) when it is not on `PATH`, as the
   PowerShell toolkit did; a normal SDK install reported Windows signing as
   unavailable.
+- `impr sign` names, in `uncovered` (result and signed manifest), every file
+  no requested platform covers, and logs each; such files were left out
+  silently (old bug 11). The exit code is unchanged.
 - The Windows PATH command `impr install` prints reads and writes the user
   PATH only, unexpanded; it appended to `$env:Path`, which copied the machine
   PATH into the user PATH and expanded every `%VAR%` (old security finding 14).

@@ -50,6 +50,9 @@ type Manifest struct {
 	Artifacts           []SignedArtifact       `json:"artifacts"`
 	Outputs             []SignedArtifact       `json:"outputs"`
 	Skipped             []string               `json:"skipped,omitempty"`
+	// Uncovered are the build manifest's files no requested platform signs or
+	// lists (old bug 11): with checksums requested there are none.
+	Uncovered []string `json:"uncovered,omitempty"`
 	// Approvals records who approved the run, when the profile or the
 	// repository requires approval.
 	Approvals []RecordedApproval `json:"approvals,omitempty"`
@@ -71,6 +74,7 @@ type Result struct {
 	ManifestPath   string   `json:"manifestPath"`
 	ManifestSHA256 string   `json:"manifestSha256"`
 	Skipped        []string `json:"skipped,omitempty"`
+	Uncovered      []string `json:"uncovered,omitempty"`
 }
 
 // Verified is one entry of a verify result.
