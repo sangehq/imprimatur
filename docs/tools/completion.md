@@ -23,14 +23,18 @@ impr completion uninstall bash
 
 ## What it completes
 
-- Commands, aliases included, plus each command's subcommands and options.
+- Commands, plus each command's subcommands and options. After a one-letter alias (`impr s `), the
+  subcommands and options of the command it stands for.
 - Anything else falls back to file names.
 - The scripts are generated from impr's usage text, so they always match the impr that wrote them.
   Re-run `install` after upgrading.
 
 ```bash
 impr completion bash > /tmp/impr.bash   # print, to inspect or install by hand
+impr completion pwsh                     # the same as powershell
 ```
+
+One shell at a time: `impr completion bash zsh` is refused.
 
 ---
 

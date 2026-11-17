@@ -68,6 +68,10 @@ func completionModel() map[string][]string {
 		out[c] = list
 	}
 	out["help"] = commandNames()
+	// An alias completes like the command it stands for: impr s --pro<TAB>.
+	for a, full := range aliases {
+		out[a] = out[full]
+	}
 	return out
 }
 
@@ -204,7 +208,14 @@ func cmdCompletion(_ context.Context, a *App, args []string) (int, error) {
 		a.say("completion wrote %s; %s", path, note)
 		return 0, nil
 	}
-	script, err := CompletionScript(p.pos[0])
+	if len(p.pos) > 1 {
+		return 0, contract.New(contract.Usage, "one shell at a time (got %s)", strings.Join(p.pos, " "))
+	}
+	shell := p.pos[0]
+	if shell == "pwsh" { // PowerShell 7's name, as the PowerShell toolkit took it
+		shell = "powershell"
+	}
+	script, err := CompletionScript(shell)
 	if err != nil {
 		return 0, err
 	}

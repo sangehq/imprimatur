@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this architecture first, then x64) when it is not on `PATH`, as the
   PowerShell toolkit did; a normal SDK install reported Windows signing as
   unavailable.
+- `impr completion` takes `pwsh` for PowerShell, refuses a second shell
+  instead of ignoring it, and completes a one-letter alias (`impr s --pro…`)
+  like the command it stands for, as the docs said it did.
 - `impr profile import-legacy` keeps the Certum thumbprint from
   `CERTUM_THUMBPRINT` (environment or settings file), so an imported Certum
   profile validates without edits.
