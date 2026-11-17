@@ -41,3 +41,20 @@ func TestSigntoolFoundInWindowsKits(t *testing.T) {
 		t.Errorf("no SDK: %q", got)
 	}
 }
+
+// W2: Available is true only when every tool resolves; kitsBin follows
+// ProgramFiles(x86).
+func TestAvailableAndKitsBin(t *testing.T) {
+	f := NewFake("git")
+	if !Available(f, "git") || Available(f, "git", "go") {
+		t.Fatal("Available")
+	}
+	t.Setenv("ProgramFiles(x86)", "")
+	if kitsBin() != "" {
+		t.Fatal("kitsBin without ProgramFiles(x86)")
+	}
+	t.Setenv("ProgramFiles(x86)", "/pf86")
+	if kitsBin() != filepath.Join("/pf86", "Windows Kits", "10", "bin") {
+		t.Fatalf("kitsBin %q", kitsBin())
+	}
+}

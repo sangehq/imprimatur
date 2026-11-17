@@ -847,3 +847,67 @@ func TestAuthenticodeExplainsSigntoolFailures(t *testing.T) {
 		}
 	}
 }
+
+// W2: minisign signs and verifies through the runner (never run before),
+// refuses a signature by another key, and reports its key as present when
+// the reference resolves.
+func TestMinisignSignVerifyAndCertificate(t *testing.T) {
+	keyLine := func(id uint64) string {
+		raw := make([]byte, 74)
+		copy(raw, "Ed")
+		binary.LittleEndian.PutUint64(raw[2:10], id)
+		return base64.StdEncoding.EncodeToString(raw)
+	}
+	const id = uint64(0x1122334455667788)
+	sigID := id
+	f := execx.NewFake("minisign")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Args[0] == "-S" {
+			out := c.Args[len(c.Args)-1]
+			_ = os.WriteFile(out, []byte("untrusted comment: test\n"+keyLine(sigID)+"\ntrusted comment: x\nAAAA\n"), 0o600)
+		}
+		return execx.Result{}
+	}
+	dir := t.TempDir()
+	art := Artifact{Path: filepath.Join(dir, "SHA256SUMS"), Rel: "SHA256SUMS"}
+	if err := os.WriteFile(art.Path, []byte("x  y\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keyFile := filepath.Join(dir, "minisign.key")
+	if err := os.WriteFile(keyFile, []byte("untrusted comment: minisign secret key\nRWQ"+randHex(t, 20)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := &Minisign{H: fakeHost("linux", f, map[string]string{"MK": keyFile}),
+		Spec: profile.ChecksumSpec{Kind: "minisign", KeyRef: "env://MK", PublicKey: keyLine(id), Fingerprint: fmt.Sprintf("%016X", id)}}
+	sig, err := m.Sign(context.Background(), art, profile.Profile{})
+	if err != nil || sig.Kind != "minisign" || len(sig.Outputs) != 1 {
+		t.Fatalf("sign: %+v %v", sig, err)
+	}
+	if !f.Called("minisign", "-V -P") {
+		t.Fatal("sign did not verify with the pinned public key")
+	}
+	if c := m.Certificate(context.Background(), profile.Profile{Name: "p"}); !c.Present || c.Fingerprint != fmt.Sprintf("%016X", id) {
+		t.Fatalf("certificate: %+v", c)
+	}
+	sigID = 0x99 // the next signature is by another key
+	_, err = m.Sign(context.Background(), art, profile.Profile{})
+	wantCode(t, err, contract.VerifyFailed)
+	m.Spec.KeyRef = "env://UNSET"
+	if c := m.Certificate(context.Background(), profile.Profile{Name: "p"}); c.Present {
+		t.Fatal("an unresolved key reads as present")
+	}
+}
+
+// W2: cosign's certificate entry: a key is declared by fingerprint, keyless
+// names the identity and issuer.
+func TestCosignCertificate(t *testing.T) {
+	c := &Cosign{H: fakeHost("linux", execx.NewFake("cosign"), nil), Spec: profile.ContainerSpec{Kind: "cosign", Mode: "keyless",
+		Identity: "release@acme.example", Issuer: "https://token.actions.githubusercontent.com"}}
+	if e := c.Certificate(context.Background(), profile.Profile{Name: "p"}); !e.Present || e.Subject != "release@acme.example@https://token.actions.githubusercontent.com" {
+		t.Fatalf("keyless: %+v", e)
+	}
+	c.Spec = profile.ContainerSpec{Kind: "cosign", Mode: "key", KeyRef: "env://NOPE", KeyFingerprint: "ab"}
+	if e := c.Certificate(context.Background(), profile.Profile{Name: "p"}); e.Fingerprint != "ab" || e.Platform != profile.Containers {
+		t.Fatalf("key: %+v", e)
+	}
+}
