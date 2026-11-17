@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of ignoring them; they belong to `impr release`.
 - `impr release --json` prints one document holding the build, sign and verify
   results, and `step` on a failure; it printed two documents.
+- `impr path`, `install`, `uninstall` and `version` refuse a stray word
+  instead of ignoring it, as the PowerShell tool did.
 
 ### Changed
 

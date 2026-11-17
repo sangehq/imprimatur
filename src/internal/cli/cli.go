@@ -445,6 +445,9 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		a.usage()
 		return 0
 	case "-V", "--version", "version":
+		if len(rest) > 0 {
+			return a.fail(contract.New(contract.Usage, "impr version takes no arguments (got %s)", strings.Join(rest, " ")), asJSON)
+		}
 		_, _ = fmt.Fprintf(a.Stdout, "impr %s (%s, %s)\n", version, commit, date)
 		return 0
 	}

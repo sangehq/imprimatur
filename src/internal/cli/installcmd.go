@@ -78,6 +78,9 @@ func cmdInstall(_ context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if err := needNoArgs(p, "impr install"); err != nil {
+		return 0, err
+	}
 	self, err := os.Executable()
 	if err != nil {
 		return 0, contract.Wrap(contract.Unavailable, err, "cannot find the running impr")
@@ -140,6 +143,9 @@ func cmdUninstall(_ context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	if err := needNoArgs(p, "impr uninstall"); err != nil {
+		return 0, err
+	}
 	// impr installs no launch agent, so it removes none; it names any left,
 	// under the current label or the one before 2026-11-17, since each runs
 	// an impr that may be the one being removed.
@@ -177,6 +183,9 @@ type PathInfo struct {
 func cmdPath(_ context.Context, a *App, args []string) (int, error) {
 	p, err := parse(args, installFlags)
 	if err != nil {
+		return 0, err
+	}
+	if err := needNoArgs(p, "impr path"); err != nil {
 		return 0, err
 	}
 	d, err := a.dirs()
