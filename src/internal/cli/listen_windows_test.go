@@ -63,9 +63,16 @@ func TestNamedPipeServesOnlyItsOwner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// SDDL may print a well-known account by alias ("LA" for the built-in
+	// Administrator a CI runner uses), so compare the SIDs, not the text.
 	sddl := sd.String()
-	if !strings.HasPrefix(sddl, "D:P") || strings.Count(sddl, "(A;") != 1 || !strings.HasSuffix(sddl, ";"+user.User.Sid.String()+")") {
-		t.Fatalf("pipe DACL %s", sddl)
+	if !strings.HasPrefix(sddl, "D:P") || strings.Count(sddl, "(A;") != 1 || !strings.HasSuffix(sddl, ")") {
+		t.Fatalf("pipe DACL %s: want one protected allow entry", sddl)
+	}
+	trustee := sddl[strings.LastIndex(sddl, ";")+1 : len(sddl)-1]
+	sid, err := windows.StringToSid(trustee)
+	if err != nil || !sid.Equals(user.User.Sid) {
+		t.Fatalf("pipe DACL %s grants %q, not the current user %s (%v)", sddl, trustee, user.User.Sid, err)
 	}
 	_ = c.Close()
 
