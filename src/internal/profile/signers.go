@@ -42,6 +42,7 @@ func (w WindowsSpec) validateSigners(ref func(field, v string, required bool)) P
 		}
 		ref(at+".certRef", sg.CertRef, sg.Backend == BackendPFX)
 		ref(at+".passwordRef", sg.PasswordRef, false)
+		ps.limitRef(at+".passwordRef", sg.PasswordRef, passwordSchemes...)
 		ps = append(ps, azurePaths(at, sg.Backend, sg.DlibPath, sg.MetadataPath)...)
 		if sg.Thumbprint == "" && sg.Subject == "" {
 			ps.add(at+".pin", "pin the certificate by thumbprint or exact subject")

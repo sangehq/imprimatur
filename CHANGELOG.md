@@ -36,6 +36,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this architecture first, then x64) when it is not on `PATH`, as the
   PowerShell toolkit did; a normal SDK install reported Windows signing as
   unavailable.
+- Profile validation refuses a store reference (`keychain://`,
+  `cert-store://`, `gpg-agent://`) where impr needs the secret's value: any
+  `passwordRef`, and the notary API key, minisign, ssh and cosign keys. Those
+  resolve to the store's name, which would have been used as the secret or as
+  a file path (old security finding 8).
 - A `test` profile accepts an untrusted test root only when its Windows
   certificate is pinned by thumbprint; a subject alone is a name anyone can
   put in a self-signed certificate (old security finding 2). Profiles made by

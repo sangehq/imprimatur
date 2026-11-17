@@ -63,7 +63,13 @@ invalid.
 | --- | --- |
 | `env://NAME` | the variable's value: a file path, or the key itself |
 | `secret://NAME` | the OS secret store, service `imprimatur`, account `NAME`: the macOS keychain (`security find-generic-password`) or the Linux secret service (`secret-tool`); unavailable on Windows |
+| `file:///ABS/PATH` | a key file, which must be a regular file only its owner can read or write |
 | `keychain://NAME`, `cert-store://NAME`, `gpg-agent://NAME` | the name; the platform tool reads the store itself |
+
+Because a store reference resolves to a name, it is refused where impr needs the secret's value: every
+`passwordRef` takes `env://` or `secret://`, and key material (`notary.apiKeyRef`, a minisign or ssh
+`checksums.keyRef`, a cosign `containers.keyRef`) takes `env://`, `secret://` or `file://`. A gpg
+`keyRef` may still be `gpg-agent://<fingerprint>`.
 
 A value that is key material is written to an owner-only temporary file for
 the one tool call that needs it and removed afterwards. Nothing is printed.

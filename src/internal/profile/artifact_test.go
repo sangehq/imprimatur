@@ -92,3 +92,39 @@ func TestImportLegacyCertumKeepsItsThumbprint(t *testing.T) {
 		})
 	}
 }
+
+// Old security finding 8: a store name (keychain://, cert-store://,
+// gpg-agent://) resolves to the name itself, so where impr needs the secret's
+// value, a password or key material, it would use the name as the secret, or
+// a file of that name. Those fields take env://, secret:// (and file:// for
+// a key file) only.
+func TestSecretFieldsRefuseStoreNames(t *testing.T) {
+	for _, c := range []struct {
+		edit func(p *Profile)
+		code string
+	}{
+		{func(p *Profile) { p.Platforms.MacOS.Notary.APIKeyRef = "keychain://notary" }, "platforms.macos.notary.apiKeyRef"},
+		{func(p *Profile) { p.Platforms.MacOS.PasswordRef = "keychain://p12" }, "platforms.macos.passwordRef"},
+		{func(p *Profile) { p.Platforms.MacOS.PasswordRef = "file:///etc/passwd" }, "platforms.macos.passwordRef"},
+		{func(p *Profile) { p.Platforms.Windows.PasswordRef = "cert-store://x" }, "platforms.windows.passwordRef"},
+		{func(p *Profile) {
+			p.Platforms.Checksums = &ChecksumSpec{Kind: "minisign", KeyRef: "keychain://mini", Fingerprint: randHex(t, 8), PublicKey: "RWQ" + randHex(t, 20)}
+		}, "platforms.checksums.keyRef"},
+		{func(p *Profile) {
+			p.Platforms.Checksums = &ChecksumSpec{Kind: "ssh", KeyRef: "gpg-agent://k", Fingerprint: "SHA256:" + strings.Repeat("A", 43)}
+		}, "platforms.checksums.keyRef"},
+	} {
+		p := releaseProfile(t)
+		c.edit(&p)
+		if got := codes(p.Validate()); !strings.Contains(got, c.code) {
+			t.Errorf("want %s, got %q", c.code, got)
+		}
+	}
+	// What stays allowed: a gpg key in the agent, a key file, a secret.
+	p := releaseProfile(t)
+	p.Platforms.MacOS.Notary.APIKeyRef = "file:///Users/me/.keys/AuthKey.p8"
+	p.Platforms.MacOS.PasswordRef = "secret://p12"
+	if ps := p.Validate(); len(ps) != 0 {
+		t.Fatalf("allowed references refused: %v", ps.Strings())
+	}
+}

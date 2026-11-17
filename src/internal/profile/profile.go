@@ -269,6 +269,28 @@ type AttestationSpec struct {
 // RefSchemes are the reference schemes a profile may use for a credential.
 var RefSchemes = []string{"secret://", "env://", "keychain://", "cert-store://", "gpg-agent://", "file://"}
 
+// passwordSchemes and keySchemes are the references that resolve to the
+// secret's value. keychain://, cert-store:// and gpg-agent:// resolve to the
+// store's name, which a field needing the value would take as the secret
+// itself (old security finding 8); file:// is a key file, never a password.
+var (
+	passwordSchemes = []string{"env://", "secret://"}
+	keySchemes      = []string{"env://", "secret://", "file://"}
+)
+
+// limitRef reports a reference in field whose scheme is not one of schemes.
+func (ps *Problems) limitRef(field, v string, schemes ...string) {
+	if v == "" || !IsRef(v) {
+		return
+	}
+	for _, s := range schemes {
+		if strings.HasPrefix(v, s) {
+			return
+		}
+	}
+	ps.add(field, "%s names a store, not the secret's value; use %s", v, strings.Join(schemes, ", "))
+}
+
 // IsRef reports whether v is a credential reference rather than a value.
 func IsRef(v string) bool {
 	for _, s := range RefSchemes {
@@ -393,6 +415,7 @@ func (p Profile) Validate() Problems {
 		}
 		ref("platforms.windows.certRef", w.CertRef, w.Backend == BackendPFX)
 		ref("platforms.windows.passwordRef", w.PasswordRef, false)
+		ps.limitRef("platforms.windows.passwordRef", w.PasswordRef, passwordSchemes...)
 		ps = append(ps, azurePaths("platforms.windows", w.Backend, w.DlibPath, w.MetadataPath)...)
 		if w.Thumbprint == "" && w.Subject == "" {
 			ps.add("platforms.windows.pin", "pin the certificate by thumbprint or exact subject")
@@ -418,8 +441,10 @@ func (p Profile) Validate() Problems {
 		}
 		ref("platforms.macos.certRef", m.CertRef, false)
 		ref("platforms.macos.passwordRef", m.PasswordRef, false)
+		ps.limitRef("platforms.macos.passwordRef", m.PasswordRef, passwordSchemes...)
 		if m.Notary != nil {
 			ref("platforms.macos.notary.apiKeyRef", m.Notary.APIKeyRef, true)
+			ps.limitRef("platforms.macos.notary.apiKeyRef", m.Notary.APIKeyRef, keySchemes...)
 		}
 	}
 	if c := p.Platforms.Checksums; c != nil {
@@ -428,6 +453,10 @@ func (p Profile) Validate() Problems {
 		}
 		ref("platforms.checksums.keyRef", c.KeyRef, true)
 		ref("platforms.checksums.passwordRef", c.PasswordRef, false)
+		ps.limitRef("platforms.checksums.passwordRef", c.PasswordRef, passwordSchemes...)
+		if c.Kind != "gpg" { // a gpg key may live in the agent; minisign and ssh keys are read as files
+			ps.limitRef("platforms.checksums.keyRef", c.KeyRef, keySchemes...)
+		}
 		if !fprRe.MatchString(c.Fingerprint) {
 			ps.add("platforms.checksums.fingerprint", "pin the signing key's fingerprint")
 		}
@@ -440,9 +469,11 @@ func (p Profile) Validate() Problems {
 			ps.add("platforms.containers.kind", "%q is not cosign", c.Kind)
 		}
 		ref("platforms.containers.passwordRef", c.PasswordRef, false)
+		ps.limitRef("platforms.containers.passwordRef", c.PasswordRef, passwordSchemes...)
 		switch c.Mode {
 		case "key":
 			ref("platforms.containers.keyRef", c.KeyRef, true)
+			ps.limitRef("platforms.containers.keyRef", c.KeyRef, keySchemes...)
 			if c.KeyFingerprint == "" {
 				ps.add("platforms.containers.keyFingerprint", "pin the cosign key's fingerprint")
 			}
