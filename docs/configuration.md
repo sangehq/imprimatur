@@ -82,6 +82,13 @@ the one tool call that needs it and removed afterwards. Nothing is printed.
 | `IMPR_LEGACY_CONFIG` | the PowerShell toolkit's `config/` (or its settings file) to import from; `off` disables discovery |
 | `XDG_CONFIG_HOME`, `XDG_STATE_HOME` | the XDG roots (absolute paths only) |
 | `COSIGN_PASSWORD` | set by impr for cosign from `containers.passwordRef`, never read from you |
+| `NO_COLOR` | nothing to turn off: impr prints no colour. `--no-color` is accepted anywhere on the line for the same reason |
+
+## Help
+
+`impr CMD --help` (or `impr help CMD`) prints what the command does, its usage lines, the exit codes and
+its page under `docs/tools/`. A mistyped command or option gets the nearest name: `impr relase` answers
+`did you mean: impr release`.
 
 ---
 

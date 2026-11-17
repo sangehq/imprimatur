@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr CMD --help` says what the command does and names its docs page; a
+  mistyped command or option gets the nearest name ("did you mean"); and
+  `--no-color` is accepted anywhere, as in the PowerShell toolkit (impr prints
+  no colour).
 - The PowerShell toolkit's option spellings work as aliases:
   `impr profile add --file` (`--from-file`), `impr profile export --out`
   (`--out-file`), `impr install --yes` (accepted, changes nothing) and

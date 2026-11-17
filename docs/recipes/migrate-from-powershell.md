@@ -47,6 +47,10 @@ Each old spelling still works as an alias of the Go name (design ID-13):
 
 ## Dropped by decision
 
+- Short value options (`-p DIR`, `-t LIST`, `-o DIR`, …) and the 1.4 PowerShell style (`-Version 1.2.0`,
+  `-Project X`): use the long options (ID-15). `-h` still works. `--no-color` is accepted and changes
+  nothing.
+
 - `install.ps1`, `install.sh` and the `imprimatur` command name (ID-14). Install by downloading the
   release asset, checking it against `checksums.txt`, and running `impr install`.
 
