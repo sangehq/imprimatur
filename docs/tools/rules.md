@@ -33,6 +33,12 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   --file-version 1.2.0.0 --base-policy {6b2a1c3d-0000-4000-8000-00000000abcd} --out-dir policies
 ```
 
+- **Which files.** The files named on the command line; with none, the Windows binaries (`.exe`, `.dll`)
+  of `build/build-manifest.json`, or of `--manifest FILE`. Files and `--manifest` together are refused.
+- **Names and versions from the files.** A rule names each binary by the `OriginalFilename` in its version
+  information when it has one (so the amd64 and arm64 builds of one program make one rule), else by its
+  file name. `--scope version` without `--file-version` takes the lowest `FileVersion` among the files.
+  `--name` defaults to the product, for every scope but `publisher`.
 - **What it reads.** Instead of a `--request`, impr reads each named `.exe` or `.dll`'s Authenticode
   signature. It takes the publisher name in AppLocker's form (the subject's `O`, `L`, `S` and `C`,
   upper-cased, without the `CN`: `O=ACME LTD, L=LONDON, C=GB`) and the leaf's common name. It also takes the certificate WDAC

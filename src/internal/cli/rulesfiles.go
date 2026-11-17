@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/sangehq/imprimatur/src/internal/artifact"
@@ -19,7 +20,7 @@ import (
 
 var rulesFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "request": stringFlag, "out-dir": stringFlag,
 	"scope": stringFlag, "product": stringFlag, "file-version": stringFlag, "eku": stringFlag, "base-policy": stringFlag,
-	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag,
+	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag, "manifest": stringFlag,
 	"include-default-rules": boolFlag}
 
 // ruleEKU is the EKU a WDAC rule pins (O-181). For an Artifact Signing
@@ -60,9 +61,6 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 			return rules.Request{}, contract.New(contract.Usage, "--scope publisher allows anything the publisher signs; drop --product, or use --scope product")
 		}
 	case "product", "file", "version":
-		if scope == "version" && p.str("file-version") == "" {
-			return rules.Request{}, contract.New(contract.Usage, "--scope version needs --file-version a.b.c.d")
-		}
 		if scope != "version" && p.str("file-version") != "" {
 			return rules.Request{}, contract.New(contract.Usage, "--scope %s allows any version; use --scope version with --file-version", scope)
 		}
@@ -75,6 +73,7 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 	product := p.str("product")
 	readProduct := product == "" && scope != "publisher"
 	productOf := map[string]string{}
+	versionOf := map[string]string{}
 	for _, f := range p.pos {
 		abs, err := filepath.Abs(f)
 		if err != nil {
@@ -115,19 +114,27 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		if err != nil {
 			return rules.Request{}, err
 		}
+		// The version information the file carries (impr build embeds it):
+		// its ProductName, OriginalFilename and FileVersion.
+		v, verr := winres.ReadVersion(abs)
 		if readProduct {
-			// The ProductName the file itself carries (impr build embeds it).
-			v, err := winres.ReadVersion(abs)
-			if err != nil {
-				return rules.Request{}, contract.Wrap(contract.Usage, err, "%s: its version information cannot be read", f)
+			if verr != nil {
+				return rules.Request{}, contract.Wrap(contract.Usage, verr, "%s: its version information cannot be read", f)
 			}
 			productOf[f] = v["ProductName"]
+		}
+		versionOf[f] = v["FileVersion"]
+		bin := strings.ToUpper(filepath.Base(abs))
+		if o := strings.TrimSpace(v["OriginalFilename"]); o != "" {
+			// The name the file was built as: the amd64 and arm64 builds of one
+			// program share it, so they make one rule (O-175).
+			bin = strings.ToUpper(o)
 		}
 		coll := rules.Exe
 		if ext == ".dll" || ext == ".ocx" {
 			coll = rules.Dll
 		}
-		files = append(files, rules.File{Path: filepath.ToSlash(f), SHA256: sum, Collection: coll, BinaryName: strings.ToUpper(filepath.Base(abs))})
+		files = append(files, rules.File{Path: filepath.ToSlash(f), SHA256: sum, Collection: coll, BinaryName: bin})
 		lines = append(lines, sum+"  "+filepath.ToSlash(f))
 	}
 	if readProduct {
@@ -177,8 +184,54 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 	}
 	fv := ""
 	if scope == "version" {
-		fv = p.str("file-version")
+		if fv = p.str("file-version"); fv == "" {
+			// The lowest version among the files (O-175), as the PowerShell
+			// rules allowed each group from its minimum version on.
+			for f, v := range versionOf {
+				if v == "" {
+					return rules.Request{}, contract.New(contract.Usage, "--scope version needs --file-version: %s carries no FileVersion", f)
+				}
+				if fv == "" || slices.Compare(fourPart(v), fourPart(fv)) < 0 {
+					fv = v
+				}
+			}
+			a.say("rules     minimum file version %s, read from the files", fv)
+		}
+	}
+	if opt.Name == "" && scope != "publisher" {
+		opt.Name = product // O-185: the rules are named after the product
 	}
 	return rules.Request{Contract: contract.Version, ManifestDigest: "sha256:" + hex.EncodeToString(d[:]), FileVersion: fv, Scope: scope,
 		Publisher: pub, Files: files, Options: opt}, nil
+}
+
+// fourPart is a FileVersion as numbers, for ordering.
+func fourPart(v string) []int {
+	var out []int
+	for _, x := range strings.Split(v, ".") {
+		n, _ := strconv.Atoi(strings.TrimSpace(x))
+		out = append(out, n)
+	}
+	return out
+}
+
+// windowsFilesOf lists the Windows binaries of a build manifest, as paths
+// from the current folder (ID-20).
+func windowsFilesOf(manifest string) ([]string, error) {
+	bm, err := artifact.ReadManifest(manifest)
+	if err != nil {
+		return nil, contract.Wrap(contract.Usage, err, "read the build manifest %s", manifest)
+	}
+	root := filepath.Dir(filepath.Dir(manifest)) // <root>/build/build-manifest.json
+	var files []string
+	for _, a := range bm.Artifacts {
+		ext := strings.ToLower(filepath.Ext(a.Path))
+		if ext == ".exe" || ext == ".dll" {
+			files = append(files, filepath.Join(root, filepath.FromSlash(a.Path)))
+		}
+	}
+	if len(files) == 0 {
+		return nil, contract.New(contract.Usage, "%s lists no Windows binaries", manifest)
+	}
+	return files, nil
 }

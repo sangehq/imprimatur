@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr rules` with no files reads the Windows binaries of
+  `build/build-manifest.json` (or `--manifest FILE`), names each binary by
+  its `OriginalFilename`, takes `--scope version`'s minimum version from the
+  files when `--file-version` is not given, and names the rules after the
+  product, as the PowerShell rules did.
 - `make/impr.mk` gains `impr-build` (`impr-b`), `impr-release` (`impr-r`),
   `impr-config`, `impr-config-get`, `impr-config-set`, `impr-completion`,
   `impr-completion-uninstall`, `impr-install`, `impr-uninstall` and

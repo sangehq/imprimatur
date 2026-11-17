@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/backend"
+	gobuild "github.com/sangehq/imprimatur/src/internal/build"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/profile"
@@ -379,7 +380,18 @@ func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
 	switch {
 	case len(p.pos) > 0 && p.str("request") != "":
 		return 0, contract.New(contract.Usage, "name signed files or --request, not both")
+	case len(p.pos) > 0 && p.str("manifest") != "":
+		return 0, contract.New(contract.Usage, "name signed files or --manifest, not both")
 	case len(p.pos) > 0:
+		if req, err = rulesFromFiles(a, p); err != nil {
+			return 0, err
+		}
+	case p.str("request") == "" && (p.str("manifest") != "" || regularFile(defaultBuildManifest)):
+		// No files named: the Windows files of the build manifest (ID-20), as
+		// the PowerShell rules read every .exe of the build folder.
+		if p.pos, err = windowsFilesOf(orDefault(p.str("manifest"), defaultBuildManifest)); err != nil {
+			return 0, err
+		}
 		if req, err = rulesFromFiles(a, p); err != nil {
 			return 0, err
 		}
@@ -501,4 +513,13 @@ func (a *App) doctorNotes(ctx context.Context, svc *signing.Service, tools []Too
 		}
 	}
 	return notes
+}
+
+// defaultBuildManifest is where impr rules looks for a build when it is given
+// no files: impr build's manifest, from the repository root.
+var defaultBuildManifest = filepath.Join("build", gobuild.ManifestFile)
+
+func regularFile(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.Mode().IsRegular()
 }

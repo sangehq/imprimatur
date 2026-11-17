@@ -5,7 +5,9 @@ import (
 	"crypto/x509/pkix"
 	"encoding/asn1"
 	"encoding/hex"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -101,4 +103,37 @@ func TestRulesAcceptRotatedIssuingCAsUnderOnePCA(t *testing.T) {
 	other := testpe.NewIntermediate(t, "Other PCA", root)
 	day3, _ := testpe.Signed(t, t.TempDir(), "tool.exe", sub, testpe.NewIntermediate(t, "EOC CA 03", other).WithoutRoot())
 	h.exits(1, "rules", day1, day3, "--product", "Acme Tool", "--base-policy", testBasePolicy)
+}
+
+// ID-20, O-172, O-175, O-185: with no FILE, impr rules reads the Windows
+// files of the build manifest; it names binaries by their OriginalFilename
+// (so the amd64 and arm64 builds make one rule, as the PowerShell grouping
+// did), takes the version scope's minimum version from the files, and names
+// the rules after the product.
+func TestRulesDefaultsFromTheBuild(t *testing.T) {
+	repo := goRepo(t)
+	h := newHarness(t)
+	h.ok("build", "--repo-root", repo, "--targets", "windows/amd64,windows/arm64,linux/amd64", "--version", "v1.2.0", "--product", "Acme Tool")
+	ca := testpe.NewIntermediate(t, "Acme CA", testpe.NewCA(t, "Root"))
+	sub := pkix.Name{CommonName: "Acme Ltd", Organization: []string{"Acme Ltd"}, Country: []string{"GB"}}
+	for _, a := range []string{"amd64", "arm64"} {
+		testpe.SignFile(t, filepath.Join(repo, "build", "windows", "hello_windows_"+a+".exe"), sub, ca)
+	}
+	manifest := filepath.Join(repo, "build", "build-manifest.json")
+	var res struct {
+		AppLocker string `json:"appLocker"`
+		Files     []struct {
+			Path string `json:"path"`
+		} `json:"files"`
+	}
+	out := h.ok("rules", "--manifest", manifest, "--scope", "version", "--json")
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Files) != 2 || strings.Count(res.AppLocker, `BinaryName="HELLO.EXE"`) != 1 ||
+		!strings.Contains(res.AppLocker, `LowSection="1.2.0.0"`) || !strings.Contains(res.AppLocker, "Acme Tool") {
+		t.Fatalf("rules from the build:\n%s", out)
+	}
+	// Files and --manifest together are a mistake.
+	h.exits(1, "rules", "--manifest", manifest, filepath.Join(repo, "build", "windows", "hello_windows_amd64.exe"))
 }
