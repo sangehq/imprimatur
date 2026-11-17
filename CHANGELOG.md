@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this architecture first, then x64) when it is not on `PATH`, as the
   PowerShell toolkit did; a normal SDK install reported Windows signing as
   unavailable.
+- `impr profile import-legacy` keeps the Certum thumbprint from
+  `CERTUM_THUMBPRINT` (environment or settings file), so an imported Certum
+  profile validates without edits.
 - An Artifact Signing profile without `dlibPath` or `metadataPath` fails
   `impr profile validate` (and `add`), naming the field; it validated and
   failed only when signing. `impr profile import-legacy` uses the PowerShell

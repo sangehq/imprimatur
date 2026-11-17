@@ -19,7 +19,7 @@ const LegacySettingsFile = "imprimatur.settings.json"
 
 // LegacyKeys are the settings the PowerShell line saved.
 var LegacyKeys = []string{"WINDOWS_SIGNER", "WINDOWS_SIGN_THUMBPRINT", "WINDOWS_SIGN_SUBJECT", "CERTUM_SUBJECT",
-	"ARTIFACT_DLIB", "ARTIFACT_METADATA", "GPG_FINGERPRINT"}
+	"CERTUM_THUMBPRINT", "ARTIFACT_DLIB", "ARTIFACT_METADATA", "GPG_FINGERPRINT"}
 
 // LegacyMacOSVars are the environment variables the PowerShell line read for
 // macOS signing. They were never saved (they hold secrets), so migration
@@ -251,7 +251,14 @@ func settingsProfile(st map[string]string, dir string, e LegacyEnv) *Profile {
 		p = &Profile{Name: "default", Scope: ScopePersonal, Owner: owner, Purpose: []Purpose{PurposeTest}, Platforms: Platforms{Windows: w},
 			Notes: "Migrated from imprimatur.settings.json: the self-signed test certificate. It can never sign a release."}
 	case "certum":
-		w := &WindowsSpec{Kind: "authenticode", Backend: BackendCertum, Subject: st["CERTUM_SUBJECT"]}
+		// The PowerShell line read the thumbprint from CERTUM_THUMBPRINT at run
+		// time; a settings file may carry it too (O-193).
+		thumb := st["CERTUM_THUMBPRINT"]
+		if thumb == "" && e.Getenv != nil {
+			thumb = e.Getenv("CERTUM_THUMBPRINT")
+		}
+		thumb = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(thumb), " ", ""))
+		w := &WindowsSpec{Kind: "authenticode", Backend: BackendCertum, Subject: st["CERTUM_SUBJECT"], Thumbprint: thumb}
 		if w.Subject != "" && !strings.Contains(w.Subject, "=") {
 			w.Subject = "CN=" + w.Subject
 		}

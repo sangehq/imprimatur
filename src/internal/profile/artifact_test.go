@@ -60,3 +60,35 @@ func TestImportLegacyArtifactUsesTheDefaultMetadata(t *testing.T) {
 		t.Fatalf("metadataPath %q, want the legacy default %q", p.Platforms.Windows.MetadataPath, meta)
 	}
 }
+
+// O-193: the Certum thumbprint the PowerShell line read from CERTUM_THUMBPRINT
+// comes along, so an imported Certum profile validates without edits.
+func TestImportLegacyCertumKeepsItsThumbprint(t *testing.T) {
+	thumb := strings.ToUpper(randHex(t, 20))
+	for _, c := range []struct {
+		name     string
+		settings map[string]string
+		env      map[string]string
+	}{
+		{"from the environment", map[string]string{"WINDOWS_SIGNER": "Certum", "CERTUM_SUBJECT": "Open Source Developer, Pat Doe"},
+			map[string]string{"CERTUM_THUMBPRINT": strings.ToLower(thumb[:20]) + " " + thumb[20:]}},
+		{"from the settings file", map[string]string{"WINDOWS_SIGNER": "Certum", "CERTUM_SUBJECT": "Open Source Developer, Pat Doe", "CERTUM_THUMBPRINT": thumb}, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			legacy := t.TempDir()
+			writeJSON(t, filepath.Join(legacy, LegacySettingsFile), c.settings)
+			s := Store{Dir: t.TempDir()}
+			rep, err := ImportLegacy(s, legacy, legacyEnv(t, s.Dir, c.env))
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := s.Resolve("default")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Platforms.Windows.Thumbprint != thumb || len(rep.Problems) != 0 {
+				t.Fatalf("thumbprint %q (want %q), problems %v", p.Platforms.Windows.Thumbprint, thumb, rep.Problems)
+			}
+		})
+	}
+}
