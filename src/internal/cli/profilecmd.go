@@ -115,6 +115,10 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 		b, _ := json.MarshalIndent(x, "", "  ")
 		_, _ = a.Stdout.Write(append(b, '\n'))
 		a.say("identity  %s", x.Pinned().Digest())
+		// An invalid profile says why, as the PowerShell show did (O-60).
+		for _, pr := range x.Validate().Strings() {
+			a.say("problem   %s", pr)
+		}
 		return 0, nil
 	case "add":
 		if arg == "" {

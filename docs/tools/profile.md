@@ -27,7 +27,7 @@ impr profile import-legacy [--from PATH] [--json]
 | Subcommand | What it does |
 | --- | --- |
 | `list` | every profile and the default. `--json`: `{"contract":1,"default":"me-test","profiles":[<profile>...]}` |
-| `show` | one profile as JSON on stdout, and its identity digest on stderr. `--json` adds `"contract": 1` to the profile document |
+| `show` | one profile as JSON on stdout, and its identity digest on stderr, with a `problem` line for each thing that makes it invalid. `--json` adds `"contract": 1` to the profile document |
 | `add` | creates a profile and validates it; nothing is saved if it is invalid. The first profile becomes the default. `--force` replaces an existing one |
 | `edit` | changes a profile; `--set` reaches any field by dotted path, `--unset` removes one |
 | `rm` | removes a profile; the default needs `--force` |

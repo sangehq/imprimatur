@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -66,4 +68,65 @@ func TestInstallPrintsAUserOnlyPathCommand(t *testing.T) {
 	if strings.Contains(e, "$env:Path") || !strings.Contains(e, "DoNotExpandEnvironmentNames") || !strings.Contains(e, "ExpandString") {
 		t.Fatalf("the PATH command is not user-only and unexpanded:\n%s", e)
 	}
+}
+
+// O-60: profile show names an invalid profile's problems, as the PowerShell
+// show did; a valid profile shows none.
+func TestProfileShowNamesProblems(t *testing.T) {
+	h := newHarness(t)
+	h.ok("profile", "add", "ok", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://K",
+		"--set", "platforms.checksums.fingerprint=SHA256:"+strings.Repeat("A", 43))
+	if _, _, e := h.impr("profile", "show", "ok"); strings.Contains(e, "problem") {
+		t.Fatalf("a valid profile shows problems: %s", e)
+	}
+	// A hand-edited file, as an import-legacy run or an editor leaves one.
+	b, err := os.ReadFile(writeBrokenProfile(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(h.env["IMPR_CONFIG_DIR"], "profiles", "broken.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, _, e := h.impr("profile", "show", "broken")
+	if !strings.Contains(e, "problem   platforms.checksums.fingerprint") {
+		t.Fatalf("show printed no problems: %s", e)
+	}
+}
+
+// O-81, O-82: uninstall also removes the completion files impr wrote, and
+// path prints the line that puts the install folder on PATH.
+func TestUninstallRemovesCompletionAndPathPrintsTheLine(t *testing.T) {
+	h := newHarness(t)
+	h.home = t.TempDir()
+	h.env["PATH"] = "/usr/bin"
+	dir := t.TempDir()
+	h.ok("install", "--dir", dir)
+	h.ok("completion", "install", "all")
+	_, _, e := h.impr("path")
+	if !strings.Contains(e, `export PATH="`+filepath.Join(h.home, ".local", "bin")+`:$PATH"`) {
+		t.Fatalf("path prints no PATH line:\n%s", e)
+	}
+	_, _, e = h.impr("uninstall", "--dir", dir)
+	for _, f := range []string{filepath.Join(h.home, ".zfunc", "_impr"), filepath.Join(h.home, ".config", "fish", "completions", "impr.fish")} {
+		if _, err := os.Stat(f); !os.IsNotExist(err) {
+			t.Errorf("uninstall left %s", f)
+		}
+		if !strings.Contains(e, f) {
+			t.Errorf("uninstall did not report %s:\n%s", f, e)
+		}
+	}
+}
+
+// writeBrokenProfile writes a profile file that imports but does not
+// validate (an unpinned checksum key).
+func writeBrokenProfile(t *testing.T) string {
+	t.Helper()
+	f := filepath.Join(t.TempDir(), "broken.json")
+	body := `{"schema":"imprimatur.profile/v1","name":"broken","scope":"personal","owner":"me","purpose":["internal"],` +
+		`"platforms":{"checksums":{"kind":"ssh","keyRef":"env://K"}}}`
+	if err := os.WriteFile(f, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return f
 }

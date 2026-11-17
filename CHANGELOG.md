@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr profile show` prints the problems of an invalid profile; `impr path`
+  prints the line that puts the install folder on PATH; `impr uninstall` also
+  removes the completion files impr wrote, as the PowerShell uninstall did.
 - `impr build` and `impr release` work from any folder inside the
   repository: the root is the nearest folder with `.git`, the module the
   nearest `go.mod`. With several commands and no `--main`, the error lists
