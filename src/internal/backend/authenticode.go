@@ -199,6 +199,9 @@ func (a *Authenticode) Sign(ctx context.Context, art Artifact, p profile.Profile
 			failures = append(failures, "with "+ts+": "+firstLine(r.Output()))
 		}
 		if used == "" {
+			if why := signtoolReason(strings.Join(failures, "\n"), a.Spec.Thumbprint); why != "" {
+				return Signature{}, contract.New(contract.SignFailed, "signtool could not sign %s: %s", art.Rel, why).WithDetails(failures...)
+			}
 			return Signature{}, contract.New(contract.SignFailed, "signtool could not sign %s", art.Rel).WithDetails(failures...).
 				WithFix("check the certificate is available (Certum: SimplySign Desktop logged in; Artifact Signing: az login)",
 					"if every timestamp server failed, check the network or name one: --set platforms.windows.timestamp=<url>")
@@ -476,4 +479,19 @@ func (a *Authenticode) storeNotAfter(ctx context.Context) *time.Time {
 func sha1Hex(b []byte) string {
 	s := sha1.Sum(b) //nolint:gosec // G401: a certificate thumbprint is a SHA-1 identifier, not a security check
 	return hex.EncodeToString(s[:])
+}
+
+// signtoolReason explains the signtool failures the PowerShell toolkit
+// explained (O-127), or "" for any other.
+func signtoolReason(out, thumb string) string {
+	low := strings.ToLower(out)
+	switch {
+	case strings.Contains(low, "private key"):
+		return "the certificate " + strings.ToUpper(thumb) + " is in the store but has no private key here " +
+			"(a Certum card needs SimplySign Desktop logged in; a certificate imported from a .cer has no key; re-import the .pfx)"
+	case strings.Contains(low, "no certificates were found"):
+		return "there is no certificate with thumbprint " + strings.ToUpper(thumb) + " in the current user's store " +
+			"(check Cert:\\CurrentUser\\My, or pin the thumbprint of the certificate that is there)"
+	}
+	return ""
 }

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Windows signing explains a store certificate without its private key and
+  a thumbprint that matches no certificate, instead of passing on signtool's
+  first line, as the PowerShell toolkit did.
 - `impr profile show` prints the problems of an invalid profile; `impr path`
   prints the line that puts the install folder on PATH; `impr uninstall` also
   removes the completion files impr wrote, as the PowerShell uninstall did.

@@ -826,3 +826,24 @@ func TestAuthenticodeTriesTheProfilesTimestampListInOrder(t *testing.T) {
 		t.Fatalf("tried %v, used %q", tried, sig.Timestamp)
 	}
 }
+
+// O-127: signtool failures the PowerShell toolkit explained are explained
+// here too: a certificate in the store without its private key, and no
+// certificate with the pinned thumbprint at all.
+func TestAuthenticodeExplainsSigntoolFailures(t *testing.T) {
+	path, thumb := signedPE(t, t.TempDir(), pkix.Name{CommonName: "Acme"}, true)
+	for _, c := range []struct{ out, want string }{
+		{"SignTool Error: The specified private key is not available.", "has no private key here"},
+		{"SignTool Error: No certificates were found that met all the given criteria.", "no certificate with thumbprint " + thumb},
+	} {
+		f := execx.NewFake("signtool")
+		f.Handle = func(execx.Cmd) execx.Result { return execx.Result{ExitCode: 1, Stderr: []byte(c.out)} }
+		spec := profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendCertStore, Thumbprint: thumb, Timestamp: "http://ts.example"}
+		a := &Authenticode{H: fakeHost("windows", f, nil), Spec: spec}
+		_, err := a.Sign(context.Background(), Artifact{Path: path, Rel: "tool.exe"}, winProfile(spec, profile.PurposeTest))
+		wantCode(t, err, contract.SignFailed)
+		if !strings.Contains(contract.Text(err), c.want) {
+			t.Errorf("%q: the error does not say %q:\n%s", c.out, c.want, contract.Text(err))
+		}
+	}
+}
