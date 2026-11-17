@@ -9,10 +9,10 @@ impr profile show NAME [--json]
 impr profile add NAME [--scope S] [--owner O] [--purpose P[,P]] [--allowed-repo GLOB]...
                       [--requires-approval] [--notes TEXT] [--set KEY=VALUE]... [--unset KEY]...
                       [--from-file FILE] [--force]
-impr profile edit NAME [the same options as add, except --from-file and --force]
+impr profile edit [NAME] [the same options as add, except --from-file and --force]
 impr profile rm NAME [--force]
 impr profile import FILE [--force]
-impr profile export NAME [--out-file FILE]
+impr profile export [NAME] [--out-file FILE]
 impr profile validate [NAME] [--json]
 impr profile default [NAME] [--json]
 impr profile capabilities [NAME] [--json]
@@ -40,6 +40,9 @@ impr profile import-legacy [--from PATH] [--json]
 | `bundle install FILE` | installs an organisation's signed profile bundle (see below). `--sig` names the signature; the default is `FILE.sig` |
 | `bundle list` | installed bundles and their profiles. `--json`: `{"contract":1,"bundles":{"acme":["acme-release"]}}` |
 | `bundle verify` | checks every managed profile against its signed bundle; exit 4 when one differs. `--json`: `{"contract":1,"ok":true,"profiles":[{"profile":"...","owner":"...","ok":true}]}` |
+
+`edit` and `export` without NAME use the default profile, and say so on stderr
+(`no NAME given: using the default profile me-test`).
 
 ## Options
 

@@ -158,6 +158,9 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 		if err != nil {
 			return 0, err
 		}
+		if arg == "" {
+			a.say("edit      no NAME given: using the default profile %s", x.Name)
+		}
 		if x.Managed {
 			return 0, profile.ErrManaged(x.Name, "edited")
 		}
@@ -219,6 +222,9 @@ func cmdProfile(ctx context.Context, a *App, args []string) (int, error) {
 		x, err := s.Resolve(arg)
 		if err != nil {
 			return 0, err
+		}
+		if arg == "" {
+			a.say("export    no NAME given: using the default profile %s", x.Name)
 		}
 		b, _ := json.MarshalIndent(x, "", "  ")
 		b = append(b, '\n')

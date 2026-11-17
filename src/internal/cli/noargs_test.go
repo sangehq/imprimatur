@@ -29,3 +29,28 @@ func TestNoArgumentCommandsRefuseWords(t *testing.T) {
 		h.ok(c, "--help")
 	}
 }
+
+// Old bug 8: profile edit and export with no NAME use the default profile,
+// and now say so on stderr instead of acting silently. stdout stays the
+// profile alone, so `impr profile export > f.json` still works.
+func TestProfileEditExportNameTheDefault(t *testing.T) {
+	h := newHarness(t)
+	h.home = t.TempDir()
+	h.ok("profile", "add", "me", "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://K",
+		"--set", "platforms.checksums.fingerprint=SHA256:"+strings.Repeat("A", 43))
+	h.ok("profile", "default", "me")
+	for _, args := range [][]string{{"profile", "export"}, {"profile", "edit", "--notes", "x"}} {
+		code, out, e := h.impr(args...)
+		if code != 0 || !strings.Contains(e, "no NAME given: using the default profile me") {
+			t.Errorf("impr %s: exit %d, no note naming the default\n%s", strings.Join(args, " "), code, e)
+		}
+		if args[1] == "export" && !strings.HasPrefix(strings.TrimSpace(out), "{") {
+			t.Errorf("export stdout is not the profile: %q", out)
+		}
+	}
+	// A named profile prints no such note.
+	if _, _, e := h.impr("profile", "export", "me"); strings.Contains(e, "no NAME given") {
+		t.Errorf("a named export printed the default note: %s", e)
+	}
+}

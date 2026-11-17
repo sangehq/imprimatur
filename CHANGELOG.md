@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   results, and `step` on a failure; it printed two documents.
 - `impr path`, `install`, `uninstall` and `version` refuse a stray word
   instead of ignoring it, as the PowerShell tool did.
+- `impr profile edit` and `export` with no NAME say on stderr that they use
+  the default profile, and name it; they acted on it silently.
 
 ### Changed
 
