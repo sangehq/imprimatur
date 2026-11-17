@@ -86,9 +86,10 @@ the one tool call that needs it and removed afterwards. Nothing is printed.
 
 ## Help
 
-`impr CMD --help` (or `impr help CMD`) prints what the command does, its usage lines, the exit codes and
+`impr CMD --help`, `impr help CMD` or `impr -h CMD` (also `--help`, `-?` and `/?`) prints what the command does, its usage lines, the exit codes and
 its page under `docs/tools/`. A mistyped command or option gets the nearest name: `impr relase` answers
-`did you mean: impr release`.
+`did you mean: impr release`. An option before the command is refused with the line to run instead:
+`impr --profile p sign` answers `put the command first` and `impr sign --profile p`.
 
 ---
 

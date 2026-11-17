@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `-?` and `/?` are help, like `-h` and `--help`, and a command after any of
+  them narrows the help to it; an option before the command is refused with
+  "put the command first" and the line to run.
 - `.gitignore` ignores certificate and key files (`*.pfx`, `*.p12`, `*.cer`,
   `*.crt`, `*.key`, `*.p8`, `*.pem`), and a test fails if one is tracked; the
   PowerShell toolkit once shipped its author's test certificate. Docs: backing

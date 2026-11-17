@@ -481,14 +481,29 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return int(contract.Usage)
 	}
 	cmd, rest := resolveAlias(args[0]), args[1:]
+	// -h, --help, -? and /? as the first word are help, and a command after
+	// them narrows it (O-03).
+	if cmd == "-h" || cmd == "--help" || cmd == "-?" || cmd == "/?" {
+		cmd = "help"
+	}
 	if cmd == "help" && len(rest) > 0 {
 		return a.helpFor(resolveAlias(rest[0]))
 	}
-	if wantHelp && cmd != "-h" && cmd != "--help" {
+	if wantHelp && cmd != "help" {
 		return a.helpFor(cmd)
 	}
+	// An option before the command (O-06): say to put the command first.
+	if strings.HasPrefix(cmd, "-") && cmd != "-V" && cmd != "--version" {
+		for i, x := range rest {
+			if _, ok := commands[resolveAlias(x)]; ok && !strings.HasPrefix(x, "-") {
+				line := append(append([]string{resolveAlias(x)}, args[:i+1]...), rest[i+1:]...)
+				return a.fail(contract.New(contract.Usage, "put the command first").
+					WithFix("impr "+strings.Join(line, " ")), asJSON)
+			}
+		}
+	}
 	switch cmd {
-	case "-h", "--help", "help":
+	case "help":
 		a.usage()
 		return 0
 	case "-V", "--version", "version":

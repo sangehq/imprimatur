@@ -63,3 +63,28 @@ func TestHelpDescribesEachCommand(t *testing.T) {
 		t.Fatalf("inspected %d commands, want at least 20", n)
 	}
 }
+
+// O-03: -h, --help, -? and /? all print help, and a command after them
+// narrows it to that command, as in the PowerShell toolkit.
+func TestEveryHelpForm(t *testing.T) {
+	h := newHarness(t)
+	for _, f := range []string{"-h", "--help", "-?", "/?"} {
+		code, _, e := h.impr(f)
+		if code != 0 || !strings.Contains(e, "Usage:") {
+			t.Errorf("impr %s: exit %d\n%s", f, code, e)
+		}
+		code, _, e = h.impr(f, "sign")
+		if code != 0 || !strings.Contains(e, "Signs a build manifest") || strings.Contains(e, "impr rules") {
+			t.Errorf("impr %s sign did not narrow to sign: exit %d\n%s", f, code, e)
+		}
+	}
+}
+
+// O-06: an option before the command says to put the command first.
+func TestOptionBeforeTheCommand(t *testing.T) {
+	h := newHarness(t)
+	code, _, e := h.impr("--profile", "p", "sign")
+	if code != 1 || !strings.Contains(e, "put the command first") || !strings.Contains(e, "impr sign --profile") {
+		t.Fatalf("exit %d\n%s", code, e)
+	}
+}
