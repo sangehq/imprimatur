@@ -35,7 +35,7 @@ GOFILES_DIRS := $(MODULE)/cmd $(MODULE)/internal
 # directory fails instead of passing nothing.
 BUILD_LAYOUT_MIN ?= 1
 
-.PHONY: help build test vet fmt fmt-check lint check cross check-build clean fuzz vuln
+.PHONY: help build test test-all vet fmt fmt-check lint check cross check-build clean fuzz vuln
 
 # Each fuzzer runs this long in `make fuzz`; FUZZ_MIN is the fewest fuzzers it
 # must find, so a rename that hides them fails instead of fuzzing nothing.
@@ -68,6 +68,9 @@ lint: ## golangci-lint (config in src/.golangci.yml)
 	cd $(MODULE) && golangci-lint run ./...
 
 check: fmt-check vet lint test ## every local gate
+
+test-all: ## every gate and the counted end-to-end run, one command (scripts/test-all.sh)
+	scripts/test-all.sh
 
 cross: clean ## cross-build build/targets.txt into build/{os}/ with build/checksums.txt
 	@grep -vE '^[[:space:]]*(#|$$)' build/targets.txt | while read -r os arch arm; do \

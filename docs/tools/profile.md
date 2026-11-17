@@ -8,11 +8,11 @@ impr profile list [--json]
 impr profile show NAME [--json]
 impr profile add NAME [--scope S] [--owner O] [--purpose P[,P]] [--allowed-repo GLOB]...
                       [--requires-approval] [--notes TEXT] [--set KEY=VALUE]... [--unset KEY]...
-                      [--from-file FILE] [--force]
-impr profile edit NAME [the same options as add, except --from-file and --force]
+                      [--from-file FILE] [--force]     (--file is the same as --from-file)
+impr profile edit [NAME] [the same options as add, except --from-file and --force]
 impr profile rm NAME [--force]
 impr profile import FILE [--force]
-impr profile export NAME [--out-file FILE]
+impr profile export [NAME] [--out-file FILE]
 impr profile validate [NAME] [--json]
 impr profile default [NAME] [--json]
 impr profile capabilities [NAME] [--json]
@@ -27,12 +27,12 @@ impr profile import-legacy [--from PATH] [--json]
 | Subcommand | What it does |
 | --- | --- |
 | `list` | every profile and the default. `--json`: `{"contract":1,"default":"me-test","profiles":[<profile>...]}` |
-| `show` | one profile as JSON on stdout, and its identity digest on stderr. `--json` adds `"contract": 1` to the profile document |
+| `show` | one profile as JSON on stdout, and its identity digest on stderr, with a `problem` line for each thing that makes it invalid. `--json` adds `"contract": 1` to the profile document |
 | `add` | creates a profile and validates it; nothing is saved if it is invalid. The first profile becomes the default. `--force` replaces an existing one |
 | `edit` | changes a profile; `--set` reaches any field by dotted path, `--unset` removes one |
 | `rm` | removes a profile; the default needs `--force` |
 | `import` | adds a profile from a file, which must be valid |
-| `export` | the profile as JSON, on stdout or to `--out-file` (0600) |
+| `export` | the profile as JSON, on stdout or to `--out-file` (0600); `--out` is the same option |
 | `validate` | every problem in one or all profiles; exit 1 when any has one. `--json`: `{"contract":1,"ok":false,"profiles":[{"name":"...","identityDigest":"sha256:...","problems":["code: detail"]}]}` |
 | `default` | prints the default, or sets it |
 | `capabilities` | per profile and platform, whether this host can sign and verify, with the reason when it cannot. `--json`: `{"contract":1,"host":"macos","profiles":[{"name":"...","valid":true,"platforms":{"checksums":{"platform":"checksums","kind":"ssh","sign":true,"verify":true,"tools":["ssh-keygen"],"supported":true}},"ready":["checksums"]}]}` |
@@ -40,6 +40,9 @@ impr profile import-legacy [--from PATH] [--json]
 | `bundle install FILE` | installs an organisation's signed profile bundle (see below). `--sig` names the signature; the default is `FILE.sig` |
 | `bundle list` | installed bundles and their profiles. `--json`: `{"contract":1,"bundles":{"acme":["acme-release"]}}` |
 | `bundle verify` | checks every managed profile against its signed bundle; exit 4 when one differs. `--json`: `{"contract":1,"ok":true,"profiles":[{"profile":"...","owner":"...","ok":true}]}` |
+
+`edit` and `export` without NAME use the default profile, and say so on stderr
+(`no NAME given: using the default profile me-test`).
 
 ## Options
 

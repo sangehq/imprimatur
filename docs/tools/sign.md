@@ -92,6 +92,9 @@ impr sign dist/tool.tar.gz dist/tool.exe --profile dev --purpose internal --root
 - Paths are relative to `--root` with forward slashes.
 - `notarization` (the notarytool submission id) appears on macOS artifacts of a
   notarised run; `skipped` lists platforms skipped without `--strict`.
+- `uncovered` (in the result and the signed manifest) lists build-manifest files no requested platform
+  signs, such as a Linux binary when only `windows` is signed. With `checksums` requested there are none,
+  since the checksum file covers every file. It does not change the exit code.
 
 Exit codes are in [companion](companion.md). A failure after signing has begun
 leaves the files signed so far changed in place; rebuild and sign the new

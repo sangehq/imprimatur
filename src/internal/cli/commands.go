@@ -2,13 +2,21 @@ package cli
 
 import (
 	"context"
+	"crypto/sha1" //nolint:gosec // G505: a certificate thumbprint is a SHA-1 identifier
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
+	"github.com/sangehq/imprimatur/src/internal/backend"
+	gobuild "github.com/sangehq/imprimatur/src/internal/build"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/execx"
+	"github.com/sangehq/imprimatur/src/internal/profile"
 	"github.com/sangehq/imprimatur/src/internal/rules"
 	"github.com/sangehq/imprimatur/src/internal/signing"
 )
@@ -116,7 +124,10 @@ type DoctorReport struct {
 	// Tools is every allow-listed tool with its path, sha256 and pin.
 	Tools    []ToolRow `json:"tools"`
 	Problems []string  `json:"problems"`
-	OK       bool      `json:"ok"`
+	// Notes are what the PowerShell doctor also checked (ID-19); none of
+	// them makes doctor fail.
+	Notes []string `json:"notes,omitempty"`
+	OK    bool     `json:"ok"`
 }
 
 func cmdDoctor(ctx context.Context, a *App, args []string) (int, error) {
@@ -160,6 +171,7 @@ func cmdDoctor(ctx context.Context, a *App, args []string) (int, error) {
 		}
 	}
 	rep.Problems = append(rep.Problems, a.permissionProblems(d)...)
+	rep.Notes = a.doctorNotes(ctx, svc, rep.Tools)
 	rep.Problems = append(rep.Problems, a.legacyAgentProblems()...)
 	rep.OK = len(rep.Problems) == 0
 	if p.on("json") {
@@ -179,12 +191,18 @@ func cmdDoctor(ctx context.Context, a *App, args []string) (int, error) {
 				a.say("tool      %-13s %s %s (%s)", t.Name, t.Path, shortSum(t.SHA256), pin)
 			}
 		}
+		for _, x := range rep.Notes {
+			a.say("note      %s", x)
+		}
 		for _, x := range rep.Problems {
 			a.say("problem   %s", x)
 		}
 	}
 	if !rep.OK {
-		return int(contract.Usage), nil
+		// Not ready is "unavailable", never the usage code (O-162), and like
+		// every failure it says so on stderr.
+		_, _ = fmt.Fprintf(a.Stderr, "impr: doctor found %d problem(s)\n", len(rep.Problems))
+		return int(contract.Unavailable), nil
 	}
 	return 0, nil
 }
@@ -207,8 +225,8 @@ func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if len(p.pos) != 1 || p.pos[0] != "list" {
-		return 0, contract.New(contract.Usage, "impr cert list | impr cert create").WithFix("impr cert list --json")
+	if len(p.pos) != 1 || (p.pos[0] != "list" && p.pos[0] != "show") {
+		return 0, contract.New(contract.Usage, "impr cert list | show | create").WithFix("impr cert list --json")
 	}
 	svc, err := a.service()
 	if err != nil {
@@ -233,8 +251,35 @@ func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
 			state = "present"
 		}
 		a.say("%-10s %s: %s, %s (%s)", c.Platform, c.Profile, state, exp, c.Source)
+		if p.pos[0] == "show" {
+			a.trustSteps(c)
+		}
 	}
 	return 0, nil
+}
+
+// trustSteps prints, for impr cert show (ID-16, O-69), how to trust a test
+// certificate impr cert create made, but only when the .cer beside it is the
+// certificate the profile pins (old security finding 1).
+func (a *App) trustSteps(c backend.CertEntry) {
+	if c.Platform != profile.Windows || c.Thumbprint == "" {
+		return
+	}
+	d, err := a.dirs()
+	if err != nil {
+		return
+	}
+	cer := filepath.Join(d.Config, "test-certs", c.Profile+".cer")
+	der, err := os.ReadFile(cer) //nolint:gosec // G304: the public certificate impr cert create wrote
+	if err != nil {
+		return
+	}
+	sum := sha1.Sum(der) //nolint:gosec // G401: the thumbprint Windows shows and impr pins
+	if !strings.EqualFold(hex.EncodeToString(sum[:]), c.Thumbprint) {
+		a.say("           %s does not match the pinned thumbprint %s; do not trust it", cer, c.Thumbprint)
+		return
+	}
+	a.say("           to trust it on a Windows test machine: certutil -user -addstore Root %s && certutil -user -addstore TrustedPublisher %s", cer, cer)
 }
 
 var signFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "manifest": stringFlag, "commit": stringFlag, "tree": stringFlag,
@@ -337,7 +382,18 @@ func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
 	switch {
 	case len(p.pos) > 0 && p.str("request") != "":
 		return 0, contract.New(contract.Usage, "name signed files or --request, not both")
+	case len(p.pos) > 0 && p.str("manifest") != "":
+		return 0, contract.New(contract.Usage, "name signed files or --manifest, not both")
 	case len(p.pos) > 0:
+		if req, err = rulesFromFiles(a, p); err != nil {
+			return 0, err
+		}
+	case p.str("request") == "" && (p.str("manifest") != "" || regularFile(defaultBuildManifest)):
+		// No files named: the Windows files of the build manifest (ID-20), as
+		// the PowerShell rules read every .exe of the build folder.
+		if p.pos, err = windowsFilesOf(orDefault(p.str("manifest"), defaultBuildManifest)); err != nil {
+			return 0, err
+		}
 		if req, err = rulesFromFiles(a, p); err != nil {
 			return 0, err
 		}
@@ -381,4 +437,91 @@ func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
 		_, _ = a.Stdout.Write([]byte(res.AppLocker + res.WDAC))
 	}
 	return 0, nil
+}
+
+// doctorNotes are the PowerShell doctor's other checks (ID-19, O-163 to
+// O-166), reported as notes: impr on PATH, completion for the user's shell,
+// go and git for impr build, certificates expiring within 30 days, Azure
+// sign-in for Artifact Signing profiles, and gpg profiles' secret keys.
+func (a *App) doctorNotes(ctx context.Context, svc *signing.Service, tools []ToolRow) []string {
+	var notes []string
+	if dir := a.installDir(parsed{}); !a.onPath(dir) {
+		notes = append(notes, "impr's install folder "+dir+" is not on PATH (impr install prints the line to add)")
+	}
+	if sh := filepath.Base(a.Getenv("SHELL")); sh != "" && sh != "." {
+		if f, _ := a.completionFile(sh); f != "" {
+			if _, err := os.Stat(f); err != nil {
+				notes = append(notes, "no shell completion for "+sh+" (impr completion install)")
+			}
+		}
+	}
+	for _, t := range tools {
+		if (t.Name == "go" || t.Name == "git") && t.Path == "" {
+			notes = append(notes, t.Name+" is not installed: impr build and impr release need it")
+		}
+	}
+	if list, err := svc.Certificates(ctx); err == nil {
+		for _, c := range list.Certificates {
+			if c.NotAfter == nil {
+				continue
+			}
+			left := c.NotAfter.Sub(a.Now())
+			switch {
+			case left <= 0:
+				notes = append(notes, fmt.Sprintf("the %s certificate of profile %s expired on %s", c.Platform, c.Profile, c.NotAfter.Format("2006-01-02")))
+			case left < 30*24*time.Hour:
+				notes = append(notes, fmt.Sprintf("the %s certificate of profile %s expires on %s, in %d day(s)", c.Platform, c.Profile,
+					c.NotAfter.Format("2006-01-02"), int(left.Hours()/24)+1))
+			}
+		}
+	}
+	profiles, err := svc.Store.List()
+	if err != nil {
+		return notes
+	}
+	azure, gpgKeys := false, map[string]bool{}
+	for _, p := range profiles {
+		if w := p.Platforms.Windows; w != nil {
+			azure = azure || w.Backend == profile.BackendAzure
+			for _, sg := range w.Signers {
+				azure = azure || sg.Backend == profile.BackendAzure
+			}
+		}
+		if c := p.Platforms.Checksums; c != nil && c.Kind == "gpg" {
+			if fpr, ok := strings.CutPrefix(c.KeyRef, "gpg-agent://"); ok {
+				gpgKeys[fpr] = true
+			}
+		}
+	}
+	if azure {
+		if _, err := a.Runner.LookPath("az"); err == nil {
+			if r, err := a.Runner.Run(ctx, execx.Cmd{Tool: "az", Args: []string{"account", "show", "--output", "none"}}); err == nil && r.ExitCode != 0 {
+				notes = append(notes, "not signed in to Azure, which Artifact Signing profiles need (az login)")
+			}
+		}
+	}
+	if len(gpgKeys) > 0 {
+		if _, err := a.Runner.LookPath("gpg"); err == nil {
+			fprs := make([]string, 0, len(gpgKeys))
+			for f := range gpgKeys {
+				fprs = append(fprs, f)
+			}
+			sort.Strings(fprs)
+			for _, f := range fprs {
+				if r, err := a.Runner.Run(ctx, execx.Cmd{Tool: "gpg", Args: []string{"--batch", "--list-secret-keys", f}}); err == nil && r.ExitCode != 0 {
+					notes = append(notes, "gpg has no secret key "+f+" for a gpg checksum profile")
+				}
+			}
+		}
+	}
+	return notes
+}
+
+// defaultBuildManifest is where impr rules looks for a build when it is given
+// no files: impr build's manifest, from the repository root.
+var defaultBuildManifest = filepath.Join("build", gobuild.ManifestFile)
+
+func regularFile(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && st.Mode().IsRegular()
 }

@@ -35,10 +35,23 @@ explains the common ones.
 
 - **"signing is not available on this host".** The platform's tool is missing: `signtool` or
   `osslsigncode` for Windows, `codesign` for macOS, `gpg`, `minisign`, `ssh-keygen` or `cosign` for
-  checksums. `impr doctor` names it.
+  checksums. `impr doctor` names it. On Windows, impr finds `signtool` on `PATH` or, where the Windows SDK
+  puts it, under `%ProgramFiles(x86)%\Windows Kits\10\bin\<version>\<arch>\signtool.exe`: the newest
+  SDK version, this machine's architecture first, then x64. Install the SDK's "Signing Tools for Desktop
+  Apps" if neither has it.
 - **"refused to run: sha256 … is not the pin".** A pinned tool (`tools.<name>`) was upgraded. Pin the
   new file: `impr tools pin <name>`, then `impr config set tools.<name> …` with what it prints.
+- **"has no private key here" (Windows).** The pinned certificate is in the store without its key: a
+  Certum card needs SimplySign Desktop logged in, and a certificate imported from a `.cer` has no key
+  (import the `.pfx`).
+- **"there is no certificate with thumbprint …" (Windows).** Nothing in `Cert:\CurrentUser\My` has the
+  pinned thumbprint. List them with `Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert` and pin the
+  right one.
 - **"is not signed in" (Azure).** Run `az login`, or give CI a service principal or managed identity.
+- **Artifact Signing answers 403 Forbidden.** Usually the `Endpoint` in `metadata.json` names another
+  region than the code signing account's (`https://weu.codesigning.azure.net` for West Europe,
+  `https://eus.codesigning.azure.net` for East US, …). Match the account's region in the Azure portal;
+  then check that your identity holds the certificate-profile signer role on the account.
 - **"expired on …".** The certificate is past its `notAfter`. Renew it, then re-pin the profile.
 
 ## Verifying

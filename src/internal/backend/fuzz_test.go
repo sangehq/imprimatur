@@ -45,3 +45,16 @@ func FuzzWindowsName(f *testing.F) {
 		_ = WindowsName(b)
 	})
 }
+
+// FuzzVerifyAuthenticode: no file, PE or not, panics the integrity check.
+func FuzzVerifyAuthenticode(f *testing.F) {
+	f.Add([]byte("MZ"))
+	f.Add(append([]byte("MZ"), make([]byte, 0x200)...))
+	f.Fuzz(func(t *testing.T, b []byte) {
+		p := filepath.Join(t.TempDir(), "x.exe")
+		if err := os.WriteFile(p, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_ = VerifyAuthenticode(p)
+	})
+}

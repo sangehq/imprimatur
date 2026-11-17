@@ -74,7 +74,7 @@ else is in the [documentation](#documentation) below.
 - [`impr approve`](docs/tools/approve.md) — a second person's SSH-signed approval for a release, for profiles with `requiresApproval`
 - [`impr verify`](docs/tools/verify.md) — checking signatures against a pinned identity
 - [`impr cert list`](docs/tools/cert.md) — the certificates and keys profiles use, with expiry
-- [`impr rules`](docs/tools/rules.md) — AppLocker and WDAC supplemental policies from a request
+- [`impr rules`](docs/tools/rules.md) — AppLocker and WDAC supplemental policies from a request or from signed files
 - [`impr doctor`](docs/tools/doctor.md) — a health report of profiles and host capability
 - [`impr menu`](docs/tools/menu.md) — the interactive menu, for a person at a terminal
 - [`impr completion`](docs/tools/completion.md) — tab completion for bash, zsh, fish and PowerShell

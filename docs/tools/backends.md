@@ -49,13 +49,16 @@ envelope holding an in-toto Statement v1.
 ## Authenticode
 
 - Signs with SHA-256 and an RFC 3161 timestamp, trying the profile's
-  `timestamp` or, when it names none, each default server in turn
+  `timestamp` servers in order (one URL, or several separated by commas:
+  `--set "platforms.windows.timestamp=http://ts.a,http://ts.b"`) or, when it
+  names none, each default server in turn
   (cert-store: DigiCert, Sectigo, GlobalSign; Certum: Certum, DigiCert; Azure:
   Microsoft's; pfx: DigiCert, Sectigo).
 - `cert-store` and `certum` sign only with a pinned `thumbprint`; a profile
   pinned by subject alone is refused before signtool runs, because
   `signtool /n` picks any certificate whose name matches.
-- `azure-artifact-signing` needs `dlibPath` and `metadataPath`; the metadata
+- `azure-artifact-signing` needs `dlibPath` and `metadataPath`, and `impr profile validate` reports a
+  profile missing either (`platforms.windows.dlibPath`, `…metadataPath`); the metadata
   must have `Endpoint` (`https://<region>.codesigning.azure.net`),
   `CodeSigningAccountName` and `CertificateProfileName`.
 - `pfx` reads the `.pfx` from `certRef` (a path or base64 content) and its

@@ -63,7 +63,13 @@ invalid.
 | --- | --- |
 | `env://NAME` | the variable's value: a file path, or the key itself |
 | `secret://NAME` | the OS secret store, service `imprimatur`, account `NAME`: the macOS keychain (`security find-generic-password`) or the Linux secret service (`secret-tool`); unavailable on Windows |
+| `file:///ABS/PATH` | a key file, which must be a regular file only its owner can read or write |
 | `keychain://NAME`, `cert-store://NAME`, `gpg-agent://NAME` | the name; the platform tool reads the store itself |
+
+Because a store reference resolves to a name, it is refused where impr needs the secret's value: every
+`passwordRef` takes `env://` or `secret://`, and key material (`notary.apiKeyRef`, a minisign or ssh
+`checksums.keyRef`, a cosign `containers.keyRef`) takes `env://`, `secret://` or `file://`. A gpg
+`keyRef` may still be `gpg-agent://<fingerprint>`.
 
 A value that is key material is written to an owner-only temporary file for
 the one tool call that needs it and removed afterwards. Nothing is printed.
@@ -76,6 +82,14 @@ the one tool call that needs it and removed afterwards. Nothing is printed.
 | `IMPR_LEGACY_CONFIG` | the PowerShell toolkit's `config/` (or its settings file) to import from; `off` disables discovery |
 | `XDG_CONFIG_HOME`, `XDG_STATE_HOME` | the XDG roots (absolute paths only) |
 | `COSIGN_PASSWORD` | set by impr for cosign from `containers.passwordRef`, never read from you |
+| `NO_COLOR` | nothing to turn off: impr prints no colour. `--no-color` is accepted anywhere on the line for the same reason |
+
+## Help
+
+`impr CMD --help`, `impr help CMD` or `impr -h CMD` (also `--help`, `-?` and `/?`) prints what the command does, its usage lines, the exit codes and
+its page under `docs/tools/`. A mistyped command or option gets the nearest name: `impr relase` answers
+`did you mean: impr release`. An option before the command is refused with the line to run instead:
+`impr --profile p sign` answers `put the command first` and `impr sign --profile p`.
 
 ---
 

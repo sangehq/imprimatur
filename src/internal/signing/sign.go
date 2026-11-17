@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 
 	"github.com/sangehq/imprimatur/src/internal/approval"
@@ -344,6 +345,23 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 		files[string(k)] = append(files[string(k)], backend.Artifact{Path: path, Rel: a.Path})
 	}
 
+	// Files no requested platform covers are named, never left out silently
+	// (old bug 11). Checksums cover every file.
+	var uncovered []string
+	if !slices.Contains(platforms, profile.Checksums) {
+		for k, fs := range files {
+			if k == string(artifact.KindOther) || !slices.Contains(platforms, k) {
+				for _, f := range fs {
+					uncovered = append(uncovered, f.Rel)
+				}
+			}
+		}
+		sort.Strings(uncovered)
+		for _, f := range uncovered {
+			s.logf("sign      %s: no requested platform covers it (checksums would); it is not signed", f)
+		}
+	}
+
 	var plan []work
 	var skipped []string
 	for _, pl := range platforms {
@@ -394,7 +412,7 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 	}
 	m := Manifest{Schema: ManifestSchema, Signer: "imprimatur " + s.Version, Profile: p.Name, Purpose: purpose, Identity: p.Pinned(),
 		Commit: bm.Commit, Tree: bm.Tree, Repo: o.Repo, BuildManifestDigest: bm.Digest,
-		Artifacts: []SignedArtifact{}, Outputs: []SignedArtifact{}, Skipped: skipped, Approvals: approvals}
+		Artifacts: []SignedArtifact{}, Outputs: []SignedArtifact{}, Skipped: skipped, Uncovered: uncovered, Approvals: approvals}
 	m.IdentityDigest = m.Identity.Digest()
 	signed := map[string]int{} // manifest path -> index in m.Artifacts
 
@@ -496,7 +514,7 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 	if err != nil {
 		return Result{}, err
 	}
-	res := Result{Contract: contract.Version, OK: len(skipped) == 0, Manifest: m, ManifestPath: mpath, ManifestSHA256: msum, Skipped: skipped}
+	res := Result{Contract: contract.Version, OK: len(skipped) == 0, Manifest: m, ManifestPath: mpath, ManifestSHA256: msum, Skipped: skipped, Uncovered: uncovered}
 	if len(skipped) > 0 {
 		return res, contract.New(contract.Skipped, "%d platform(s) were skipped", len(skipped)).WithDetails(skipped...)
 	}

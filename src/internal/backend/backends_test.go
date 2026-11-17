@@ -779,3 +779,221 @@ func TestOsslKeyArgsSplitsAPEMBundle(t *testing.T) {
 		t.Fatal("the key file was left behind")
 	}
 }
+
+// Old security finding 2: the untrusted-root allowance of a test profile is
+// taken only when the certificate is pinned by thumbprint. A subject alone
+// is a name anyone can put in a self-signed certificate.
+func TestAuthenticodeUntrustedRootNeedsAThumbprintPin(t *testing.T) {
+	path, _ := signedPE(t, t.TempDir(), pkix.Name{CommonName: "Test"}, true)
+	f := execx.NewFake("osslsigncode")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		return execx.Result{ExitCode: 1, Stderr: []byte("unable to get local issuer certificate")}
+	}
+	spec := profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendPFX, CertRef: "env://PFX", Subject: "CN=Test"}
+	a := &Authenticode{H: fakeHost("linux", f, nil), Spec: spec}
+	err := a.Verify(context.Background(), Artifact{Path: path, Rel: "tool.exe"}, winProfile(spec, profile.PurposeTest))
+	wantCode(t, err, contract.VerifyFailed)
+	if !strings.Contains(err.Error(), "thumbprint") {
+		t.Fatalf("the refusal does not say a thumbprint is needed: %v", err)
+	}
+}
+
+// ID-22, O-136: a profile's timestamp may list several servers, comma
+// separated; they are tried in order, as the PowerShell --timestamp list was.
+func TestAuthenticodeTriesTheProfilesTimestampListInOrder(t *testing.T) {
+	path, thumb := signedPE(t, t.TempDir(), pkix.Name{CommonName: "Acme"}, true)
+	f := execx.NewFake("signtool")
+	var tried []string
+	f.Handle = func(c execx.Cmd) execx.Result {
+		for i, a := range c.Args {
+			if a == "/tr" {
+				tried = append(tried, c.Args[i+1])
+				if c.Args[i+1] == "http://ts-a.example" {
+					return execx.Result{ExitCode: 1, Stderr: []byte("timestamp server unreachable")}
+				}
+			}
+		}
+		return execx.Result{}
+	}
+	spec := profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendCertStore, Thumbprint: thumb,
+		Timestamp: "http://ts-a.example, http://ts-b.example,http://ts-c.example"}
+	a := &Authenticode{H: fakeHost("windows", f, nil), Spec: spec}
+	sig, err := a.Sign(context.Background(), Artifact{Path: path, Rel: "tool.exe"}, winProfile(spec, profile.PurposeTest))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(tried, " ") != "http://ts-a.example http://ts-b.example" || sig.Timestamp != "ts-b.example" {
+		t.Fatalf("tried %v, used %q", tried, sig.Timestamp)
+	}
+}
+
+// O-127: signtool failures the PowerShell toolkit explained are explained
+// here too: a certificate in the store without its private key, and no
+// certificate with the pinned thumbprint at all.
+func TestAuthenticodeExplainsSigntoolFailures(t *testing.T) {
+	path, thumb := signedPE(t, t.TempDir(), pkix.Name{CommonName: "Acme"}, true)
+	for _, c := range []struct{ out, want string }{
+		{"SignTool Error: The specified private key is not available.", "has no private key here"},
+		{"SignTool Error: No certificates were found that met all the given criteria.", "no certificate with thumbprint " + thumb},
+	} {
+		f := execx.NewFake("signtool")
+		f.Handle = func(execx.Cmd) execx.Result { return execx.Result{ExitCode: 1, Stderr: []byte(c.out)} }
+		spec := profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendCertStore, Thumbprint: thumb, Timestamp: "http://ts.example"}
+		a := &Authenticode{H: fakeHost("windows", f, nil), Spec: spec}
+		_, err := a.Sign(context.Background(), Artifact{Path: path, Rel: "tool.exe"}, winProfile(spec, profile.PurposeTest))
+		wantCode(t, err, contract.SignFailed)
+		if !strings.Contains(contract.Text(err), c.want) {
+			t.Errorf("%q: the error does not say %q:\n%s", c.out, c.want, contract.Text(err))
+		}
+	}
+}
+
+// W2: minisign signs and verifies through the runner (never run before),
+// refuses a signature by another key, and reports its key as present when
+// the reference resolves.
+func TestMinisignSignVerifyAndCertificate(t *testing.T) {
+	keyLine := func(id uint64) string {
+		raw := make([]byte, 74)
+		copy(raw, "Ed")
+		binary.LittleEndian.PutUint64(raw[2:10], id)
+		return base64.StdEncoding.EncodeToString(raw)
+	}
+	const id = uint64(0x1122334455667788)
+	sigID := id
+	f := execx.NewFake("minisign")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Args[0] == "-S" {
+			out := c.Args[len(c.Args)-1]
+			_ = os.WriteFile(out, []byte("untrusted comment: test\n"+keyLine(sigID)+"\ntrusted comment: x\nAAAA\n"), 0o600)
+		}
+		return execx.Result{}
+	}
+	dir := t.TempDir()
+	art := Artifact{Path: filepath.Join(dir, "SHA256SUMS"), Rel: "SHA256SUMS"}
+	if err := os.WriteFile(art.Path, []byte("x  y\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keyFile := filepath.Join(dir, "minisign.key")
+	if err := os.WriteFile(keyFile, []byte("untrusted comment: minisign secret key\nRWQ"+randHex(t, 20)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := &Minisign{H: fakeHost("linux", f, map[string]string{"MK": keyFile}),
+		Spec: profile.ChecksumSpec{Kind: "minisign", KeyRef: "env://MK", PublicKey: keyLine(id), Fingerprint: fmt.Sprintf("%016X", id)}}
+	sig, err := m.Sign(context.Background(), art, profile.Profile{})
+	if err != nil || sig.Kind != "minisign" || len(sig.Outputs) != 1 {
+		t.Fatalf("sign: %+v %v", sig, err)
+	}
+	if !f.Called("minisign", "-V -P") {
+		t.Fatal("sign did not verify with the pinned public key")
+	}
+	if c := m.Certificate(context.Background(), profile.Profile{Name: "p"}); !c.Present || c.Fingerprint != fmt.Sprintf("%016X", id) {
+		t.Fatalf("certificate: %+v", c)
+	}
+	sigID = 0x99 // the next signature is by another key
+	_, err = m.Sign(context.Background(), art, profile.Profile{})
+	wantCode(t, err, contract.VerifyFailed)
+	m.Spec.KeyRef = "env://UNSET"
+	if c := m.Certificate(context.Background(), profile.Profile{Name: "p"}); c.Present {
+		t.Fatal("an unresolved key reads as present")
+	}
+}
+
+// W2: cosign's certificate entry: a key is declared by fingerprint, keyless
+// names the identity and issuer.
+func TestCosignCertificate(t *testing.T) {
+	c := &Cosign{H: fakeHost("linux", execx.NewFake("cosign"), nil), Spec: profile.ContainerSpec{Kind: "cosign", Mode: "keyless",
+		Identity: "release@acme.example", Issuer: "https://token.actions.githubusercontent.com"}}
+	if e := c.Certificate(context.Background(), profile.Profile{Name: "p"}); !e.Present || e.Subject != "release@acme.example@https://token.actions.githubusercontent.com" {
+		t.Fatalf("keyless: %+v", e)
+	}
+	c.Spec = profile.ContainerSpec{Kind: "cosign", Mode: "key", KeyRef: "env://NOPE", KeyFingerprint: "ab"}
+	if e := c.Certificate(context.Background(), profile.Profile{Name: "p"}); e.Fingerprint != "ab" || e.Platform != profile.Containers {
+		t.Fatalf("key: %+v", e)
+	}
+}
+
+// O-133 to O-135: with no timestamp in the profile, each backend tries the
+// PowerShell line's servers, in order.
+func TestDefaultTimestampServersPerBackend(t *testing.T) {
+	path, thumb := signedPE(t, t.TempDir(), pkix.Name{CommonName: "Acme"}, true)
+	dir := t.TempDir()
+	dlib, meta := filepath.Join(dir, "Azure.CodeSigning.Dlib.dll"), filepath.Join(dir, "metadata.json")
+	_ = os.WriteFile(dlib, []byte("x"), 0o600)
+	_ = os.WriteFile(meta, []byte(`{"Endpoint":"https://weu.codesigning.azure.net","CodeSigningAccountName":"a","CertificateProfileName":"p"}`), 0o600)
+	for backend, want := range defaultTimestamps {
+		var tried []string
+		f := execx.NewFake("signtool", "osslsigncode")
+		f.Handle = func(c execx.Cmd) execx.Result {
+			for i, a := range c.Args {
+				if a == "/tr" || a == "-ts" {
+					tried = append(tried, c.Args[i+1])
+				}
+			}
+			return execx.Result{ExitCode: 1, Stderr: []byte("timestamp server unreachable")}
+		}
+		spec := profile.WindowsSpec{Kind: "authenticode", Backend: backend, Thumbprint: thumb, Subject: "CN=Acme",
+			CertRef: "env://PFX", DlibPath: dlib, MetadataPath: meta}
+		a := &Authenticode{H: fakeHost("windows", f, map[string]string{"PFX": path}), Spec: spec}
+		_, _ = a.Sign(context.Background(), Artifact{Path: path, Rel: "tool.exe"}, winProfile(spec, profile.PurposeTest))
+		if strings.Join(tried, " ") != strings.Join(want, " ") {
+			t.Errorf("%s tried %v, want %v", backend, tried, want)
+		}
+	}
+	if len(defaultTimestamps) != 4 {
+		t.Fatalf("inspected %d backends, want 4", len(defaultTimestamps))
+	}
+}
+
+// O-129: Artifact Signing's dlib and metadata.json are checked before
+// signtool runs, and passed to it as /dlib and /dmdf.
+func TestAzureMetadataIsChecked(t *testing.T) {
+	dir := t.TempDir()
+	dlib, meta := filepath.Join(dir, "Azure.CodeSigning.Dlib.dll"), filepath.Join(dir, "metadata.json")
+	a := &Authenticode{H: fakeHost("windows", execx.NewFake("signtool"), nil),
+		Spec: profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendAzure, DlibPath: dlib, MetadataPath: meta}}
+	_, err := a.signArgs()
+	wantCode(t, err, contract.Unavailable) // no dlib
+	_ = os.WriteFile(dlib, []byte("x"), 0o600)
+	_, err = a.signArgs()
+	wantCode(t, err, contract.Unavailable) // no metadata.json
+	for body, code := range map[string]contract.Code{
+		`{"Endpoint":"https://weu.codesigning.azure.net","CodeSigningAccountName":"a"}`:                     contract.Usage,
+		`{"Endpoint":"https://evil.example.com","CodeSigningAccountName":"a","CertificateProfileName":"p"}`: contract.Usage,
+		`not json`: contract.Usage,
+	} {
+		_ = os.WriteFile(meta, []byte(body), 0o600)
+		_, err = a.signArgs()
+		wantCode(t, err, code)
+	}
+	_ = os.WriteFile(meta, []byte(`{"Endpoint":"https://weu.codesigning.azure.net","CodeSigningAccountName":"a","CertificateProfileName":"p"}`), 0o600)
+	args, err := a.signArgs()
+	if err != nil || strings.Join(args, " ") != "/dlib "+dlib+" /dmdf "+meta {
+		t.Fatalf("args %v %v", args, err)
+	}
+}
+
+// O-132: a macOS certificate's expiry is read from the keychain: of the
+// certificates matching the identity, only an exact name counts, and of
+// several the one that lasts longest.
+func TestAppleCertificateExpiryFromKeychain(t *testing.T) {
+	ident := "Developer ID Application: Acme Ltd (ABCDE12345)"
+	mk := func(cn string, d time.Duration) []byte {
+		key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		tpl := &x509.Certificate{SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: cn},
+			NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(d).Truncate(time.Second)}
+		der, _ := x509.CreateCertificate(rand.Reader, tpl, tpl, &key.PublicKey, key)
+		return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	}
+	old, renewed, nearMiss := mk(ident, 10*24*time.Hour), mk(ident, 400*24*time.Hour), mk(ident+" Extra", 900*24*time.Hour)
+	f := execx.NewFake("security")
+	f.Handle = func(execx.Cmd) execx.Result {
+		return execx.Result{Stdout: append(append(append([]byte{}, old...), nearMiss...), renewed...)}
+	}
+	a := &Apple{H: fakeHost("darwin", f, nil), Spec: macSpec()}
+	e := a.Certificate(context.Background(), profile.Profile{Name: "mac"})
+	block, _ := pem.Decode(renewed)
+	want, _ := x509.ParseCertificate(block.Bytes)
+	if !e.Present || e.Source != "keychain" || e.NotAfter == nil || !e.NotAfter.Equal(want.NotAfter) {
+		t.Fatalf("certificate entry: %+v, want expiry %s", e, want.NotAfter)
+	}
+}

@@ -193,7 +193,53 @@ func suggest(name string, spec flagSpec) string {
 		names = append(names, "--"+n)
 	}
 	sort.Strings(names)
-	return "options here: " + strings.Join(names, " ")
+	list := "options here: " + strings.Join(names, " ")
+	if near := nearest("--"+name, names); near != "" {
+		return "did you mean " + near + "? " + list
+	}
+	return list
+}
+
+// nearest is the name a mistyped word most likely meant (O-07): the only
+// name it is a prefix of, else the closest within two edits, else "".
+func nearest(word string, names []string) string {
+	var prefixed []string
+	for _, n := range names {
+		if strings.HasPrefix(n, word) {
+			prefixed = append(prefixed, n)
+		}
+	}
+	if len(prefixed) == 1 {
+		return prefixed[0]
+	}
+	best, bestD := "", 3
+	for _, n := range names {
+		if d := editDistance(word, n); d < bestD {
+			best, bestD = n, d
+		}
+	}
+	return best
+}
+
+// editDistance is the Levenshtein distance between a and b.
+func editDistance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur := make([]int, len(b)+1)
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(b)]
 }
 
 // ---- output ------------------------------------------------------------------
@@ -425,6 +471,7 @@ func (a *App) notifier() *notifykit.Notifier {
 
 // Run runs one command line and returns the exit code.
 func (a *App) Run(ctx context.Context, args []string) int {
+	args = withoutNoColor(args)
 	asJSON, wantHelp := scanGlobal(args)
 	if len(args) == 0 {
 		if a.Interactive != nil && a.Interactive() && a.Stdin != nil {
@@ -434,26 +481,48 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		return int(contract.Usage)
 	}
 	cmd, rest := resolveAlias(args[0]), args[1:]
+	// -h, --help, -? and /? as the first word are help, and a command after
+	// them narrows it (O-03).
+	if cmd == "-h" || cmd == "--help" || cmd == "-?" || cmd == "/?" {
+		cmd = "help"
+	}
 	if cmd == "help" && len(rest) > 0 {
 		return a.helpFor(resolveAlias(rest[0]))
 	}
-	if wantHelp && cmd != "-h" && cmd != "--help" {
+	if wantHelp && cmd != "help" {
 		return a.helpFor(cmd)
 	}
+	// An option before the command (O-06): say to put the command first.
+	if strings.HasPrefix(cmd, "-") && cmd != "-V" && cmd != "--version" {
+		for i, x := range rest {
+			if _, ok := commands[resolveAlias(x)]; ok && !strings.HasPrefix(x, "-") {
+				line := append(append([]string{resolveAlias(x)}, args[:i+1]...), rest[i+1:]...)
+				return a.fail(contract.New(contract.Usage, "put the command first").
+					WithFix("impr "+strings.Join(line, " ")), asJSON)
+			}
+		}
+	}
 	switch cmd {
-	case "-h", "--help", "help":
+	case "help":
 		a.usage()
 		return 0
 	case "-V", "--version", "version":
+		if len(rest) > 0 {
+			return a.fail(contract.New(contract.Usage, "impr version takes no arguments (got %s)", strings.Join(rest, " ")), asJSON)
+		}
 		_, _ = fmt.Fprintf(a.Stdout, "impr %s (%s, %s)\n", version, commit, date)
 		return 0
 	}
-	h, ok := commands[cmd]
+	c, ok := commands[cmd]
 	if !ok {
-		return a.fail(contract.New(contract.Usage, "unknown command %q", cmd).WithFix("impr help"), asJSON)
+		fix := []string{"impr help"}
+		if near := nearest(cmd, commandNames()); near != "" {
+			fix = append([]string{"did you mean: impr " + near}, fix...)
+		}
+		return a.fail(contract.New(contract.Usage, "unknown command %q", cmd).WithFix(fix...), asJSON)
 	}
 	start := a.Now()
-	code, err := h(ctx, a, rest)
+	code, err := c.run(ctx, a, rest)
 	if err != nil {
 		code = a.fail(err, asJSON)
 	}
@@ -464,34 +533,42 @@ func (a *App) Run(ctx context.Context, args []string) int {
 
 type handler func(ctx context.Context, a *App, args []string) (int, error)
 
-var commands map[string]handler
+// command is one top-level command: its handler, what it does in one
+// sentence, and its page under docs/tools (impr CMD --help prints both).
+type command struct {
+	run   handler
+	about string
+	doc   string
+}
+
+var commands map[string]command
 
 func init() {
-	commands = map[string]handler{
-		"companion":  cmdCompanion,
-		"doctor":     cmdDoctor,
-		"profile":    cmdProfile,
-		"cert":       cmdCert,
-		"sign":       cmdSign,
-		"approve":    cmdApprove,
-		"verify":     cmdVerify,
-		"rules":      cmdRules,
-		"events":     cmdEvents,
-		"hooks":      cmdHooks,
-		"webhooks":   cmdWebhooks,
-		"serve":      cmdServe,
-		"server":     cmdServer,
-		"config":     cmdConfig,
-		"completion": cmdCompletion,
-		"install":    cmdInstall,
-		"uninstall":  cmdUninstall,
-		"path":       cmdPath,
-		"menu":       cmdMenu,
-		"build":      cmdBuild,
-		"release":    cmdRelease,
-		"tools":      cmdTools,
-		"audit":      cmdAudit,
-		"notify":     cmdNotify,
+	commands = map[string]command{
+		"companion":  {cmdCompanion, "Tells sange which contract and commands this impr speaks.", "companion.md"},
+		"doctor":     {cmdDoctor, "Reports profiles, tools and host capability, and any problems.", "doctor.md"},
+		"profile":    {cmdProfile, "Manages signing profiles: list, show, add, edit, import, export and validate them.", "profile.md"},
+		"cert":       {cmdCert, "Lists the certificates and keys profiles use, and makes a test certificate.", "cert.md"},
+		"sign":       {cmdSign, "Signs a build manifest's files, or loose files, with a profile.", "sign.md"},
+		"approve":    {cmdApprove, "Writes a second person's signed approval for a release.", "approve.md"},
+		"verify":     {cmdVerify, "Checks signed files against a profile's pinned identity.", "verify.md"},
+		"rules":      {cmdRules, "Writes AppLocker and WDAC allow rules from a request or from signed files.", "rules.md"},
+		"events":     {cmdEvents, "Reads and checks impr's event log.", "events.md"},
+		"hooks":      {cmdHooks, "Lists, pins and tests the hooks impr runs on events.", "hooks.md"},
+		"webhooks":   {cmdWebhooks, "Manages outbound webhooks and their deliveries.", "webhooks.md"},
+		"serve":      {cmdServe, "Runs impr as a local signing server.", "serve.md"},
+		"server":     {cmdServer, "Manages the signing server's tokens.", "serve.md"},
+		"config":     {cmdConfig, "Reads and changes impr's configuration and configuration profiles.", "config.md"},
+		"completion": {cmdCompletion, "Prints or installs tab completion for bash, zsh, fish and PowerShell.", "completion.md"},
+		"install":    {cmdInstall, "Copies impr into ~/.local/bin.", "install.md"},
+		"uninstall":  {cmdUninstall, "Removes impr from ~/.local/bin.", "install.md"},
+		"path":       {cmdPath, "Shows impr's config, state and install folders.", "install.md"},
+		"menu":       {cmdMenu, "Opens the interactive menu.", "menu.md"},
+		"build":      {cmdBuild, "Cross-compiles a Go module into build/ and writes its build manifest.", "build.md"},
+		"release":    {cmdRelease, "Builds, signs and verifies in one step; never tags, pushes or publishes.", "release.md"},
+		"tools":      {cmdTools, "Lists the external tools impr may run, and pins one by its digest.", "config.md"},
+		"audit":      {cmdAudit, "Reads, checks and anchors impr's hash-chained audit trail.", "audit.md"},
+		"notify":     {cmdNotify, "Sends and checks desktop notifications.", "notify.md"},
 	}
 }
 
@@ -507,7 +584,7 @@ Usage:
   impr doctor [--json]
   impr profile list|show|add|edit|rm|import|export|validate|default|capabilities|import-legacy ... [--json]
   impr profile bundle install BUNDLE.json [--sig FILE] | list [--json] | verify [--json]
-  impr cert list [--json]
+  impr cert list|show [--json]
   impr cert create [--name NAME] [--subject CN] [--days N] [--json]
   impr cert install-check --print [--for systemd|launchd|task] [--exe PATH]
   impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
@@ -517,15 +594,15 @@ Usage:
   impr notify send|ping|doctor ...
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules test --policy applocker.xml [--user Everyone] FILE... [--json]   (Windows)
-  impr rules (--request FILE | FILE... [--scope publisher|product|version] [--product NAME] [--file-version a.b.c.d]
+  impr rules (--request FILE | FILE... [--scope publisher|product|file|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]
-  impr build [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z --version-var PKG.VAR]
+  impr build [VERSION] [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z] [--version-var PKG.VAR]
             [--targets os/arch,...] [--clean] [--allow-dirty] [--json]
-  impr release --profile NAME --purpose release|test|internal [--repo URL] [--platforms ...] [build options] [--json]
+  impr release [VERSION] --profile NAME --purpose release|test|internal [--repo URL] [--platforms ...] [build options] [--json]
   impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
   impr hooks list [--json] | pin FILE | test NAME
   impr webhooks list [--json] | secret | retry [--all] | deliveries [--json]
-  impr config path|show|validate [--json] | get KEY | set KEY VALUE [--profile NAME] | unset KEY [--profile NAME]
+  impr config path|show|list|validate [--json] | get KEY | set KEY VALUE [--profile NAME] | unset KEY [--profile NAME]
   impr config profile list [--json] | create NAME | use NAME | use --none | rm NAME
   impr tools list [--json] | pin NAME
   impr events replay --to WEBHOOK [--since 24h|TIME] [--type GLOB]... [--limit N] [--dry-run] [--force] [--json]
@@ -533,7 +610,7 @@ Usage:
   impr serve [--listen unix|HOST:PORT] [--check-config] [--yes]
   impr serve install-unit --print [--for systemd|launchd|task] [--exe PATH]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
-  impr completion bash|zsh|fish|powershell | install bash|zsh|fish | uninstall bash|zsh|fish
+  impr completion bash|zsh|fish|powershell | install [bash|zsh|fish|all]... | uninstall [bash|zsh|fish|all]...
   impr install [--dir DIR] [--force]
   impr uninstall [--dir DIR]
   impr path [--json]
@@ -558,6 +635,21 @@ func needNoArgs(p parsed, what string) error {
 // other --option consumes the next word as its value.
 var boolOptions = map[string]bool{"--json": true, "--strict": true, "--force": true, "--requires-approval": true,
 	"--check-config": true, "--none": true, "--all": true, "--help": true, "-h": true}
+
+// withoutNoColor drops --no-color before "--" (O-05): the PowerShell toolkit
+// took it anywhere on the line, and impr prints no colour at all.
+func withoutNoColor(args []string) []string {
+	out := make([]string, 0, len(args))
+	for i, x := range args {
+		if x == "--" {
+			return append(out, args[i:]...)
+		}
+		if x != "--no-color" {
+			out = append(out, x)
+		}
+	}
+	return out
+}
 
 // scanGlobal finds --json and --help before "--", skipping a word that is
 // the value of the option before it, so `--notes --json` or a file named
@@ -604,7 +696,13 @@ func (a *App) helpFor(cmd string) int {
 		a.usage()
 		return int(contract.Usage)
 	}
-	_, _ = fmt.Fprintln(a.Stderr, "Usage:\n"+strings.Join(out, "\n")+"\n\nExit codes: 0 ok, 1 usage, 2 skipped, 3 signing failed, 4 verification failed, 5 unavailable.")
+	about, docs := "", ""
+	if c, ok := commands[cmd]; ok {
+		about = c.about + "\n\n"
+		docs = "\nDocs: docs/tools/" + c.doc + " (https://github.com/sangehq/imprimatur/blob/main/docs/tools/" + c.doc + ")"
+	}
+	_, _ = fmt.Fprintln(a.Stderr, about+"Usage:\n"+strings.Join(out, "\n")+
+		"\n\nExit codes: 0 ok, 1 usage, 2 skipped, 3 signing failed, 4 verification failed, 5 unavailable."+docs)
 	return 0
 }
 

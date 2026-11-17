@@ -27,6 +27,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/server"
+	notifykit "github.com/simtabi/go-notifykit/src"
 )
 
 func randHex(t *testing.T, n int) string {
@@ -47,6 +48,8 @@ type harness struct {
 	// home is the user's home for every run when set; empty gives each run
 	// a fresh one.
 	home string
+	// notifier replaces the desktop notifier when set (a Recorder).
+	notifier *notifykit.Notifier
 }
 
 func newHarness(t *testing.T) *harness {
@@ -62,7 +65,7 @@ func (h *harness) impr(args ...string) (code int, stdout, stderr string) {
 		home = h.t.TempDir()
 	}
 	a := &App{Stdout: &o, Stderr: &e, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: home, User: "tester",
-		Runner: h.run, Now: func() time.Time { return h.now }}
+		Runner: h.run, Now: func() time.Time { return h.now }, Notifier: h.notifier}
 	code = a.Run(context.Background(), args)
 	return code, o.String(), e.String()
 }
@@ -985,8 +988,8 @@ func TestInstallUninstallAndAliases(t *testing.T) {
 	if err := json.Unmarshal([]byte(h.ok("path", "--json", "--dir", dir)), &info); err != nil || info.Installed || info.Config == "" {
 		t.Fatalf("path: %+v %v", info, err)
 	}
-	// d is doctor, which exits 1 here only because no default profile exists.
-	if code, out, _ := h.impr("d", "--json"); code != 1 || !strings.Contains(out, `"contract":1`) || !strings.Contains(out, `"defaultProfile"`) {
+	// d is doctor, which exits 5 here only because no default profile exists.
+	if code, out, _ := h.impr("d", "--json"); code != 5 || !strings.Contains(out, `"contract":1`) || !strings.Contains(out, `"defaultProfile"`) {
 		t.Fatalf("alias d did not run doctor: %d %s", code, out)
 	}
 }
@@ -1280,7 +1283,8 @@ func TestCertCreateMakesATestOnlyProfile(t *testing.T) {
 func TestRulesFromSignedFiles(t *testing.T) {
 	h := newHarness(t)
 	dir := t.TempDir()
-	ca := testpe.NewCA(t, "Acme Code Signing CA")
+	// A code signing CA under a root, as real chains are: WDAC pins the CA.
+	ca := testpe.NewIntermediate(t, "Acme Code Signing CA", testpe.NewCA(t, "Acme Root"))
 	sub := pkix.Name{CommonName: "Acme Ltd", Organization: []string{"Acme Ltd"}, Country: []string{"GB"}}
 	exe, _ := testpe.Signed(t, dir, "tool.exe", sub, ca)
 	dll, _ := testpe.Signed(t, filepath.Join(dir), "core.dll", sub, ca)
@@ -1299,6 +1303,10 @@ func TestRulesFromSignedFiles(t *testing.T) {
 		!strings.Contains(strings.ToUpper(res.WDAC), strings.ToUpper(hex.EncodeToString(tbs[:]))) || !strings.Contains(res.WDAC, "Acme Ltd") {
 		t.Fatalf("rules do not carry the files' signer:\n%s\n%s", res.AppLocker, res.WDAC)
 	}
+	// O-176: AppLocker's form of the publisher, O/L/S/C upper-cased, no CN.
+	if !strings.Contains(res.AppLocker, `PublisherName="O=ACME LTD, C=GB"`) {
+		t.Fatalf("AppLocker publisher name is not O=,C= upper-cased:\n%s", res.AppLocker)
+	}
 	// Without a base policy there is no WDAC supplemental, only AppLocker.
 	if out := h.ok("rules", exe, "--scope", "publisher", "--json"); strings.Contains(out, `"wdac"`) || !strings.Contains(out, "AppLockerPolicy") {
 		t.Fatalf("no base policy: %s", out)
@@ -1306,6 +1314,26 @@ func TestRulesFromSignedFiles(t *testing.T) {
 	other := testpe.NewCA(t, "Other CA")
 	stranger, _ := testpe.Signed(t, t.TempDir(), "x.exe", pkix.Name{CommonName: "Someone Else"}, other)
 	h.exits(1, "rules", exe, stranger, "--scope", "publisher")
-	h.exits(1, "rules", exe, "--scope", "file")
+	h.exits(1, "rules", exe, "--scope", "file")    // no --product
 	h.exits(1, "rules", exe, "--scope", "product") // no --product
+	h.exits(1, "rules", exe, "--scope", "hash", "--product", "Acme Tool")
+
+	// ID-11: the PowerShell scopes. product is any file of the product; file
+	// is this product and file name, any version.
+	byScope := func(scope string) string {
+		var r struct {
+			AppLocker string `json:"appLocker"`
+		}
+		if err := json.Unmarshal([]byte(h.ok("rules", exe, "--scope", scope, "--product", "Acme Tool", "--json")), &r); err != nil {
+			t.Fatal(err)
+		}
+		return r.AppLocker
+	}
+	if al := byScope("product"); !strings.Contains(al, `ProductName="ACME TOOL" BinaryName="*"`) {
+		t.Errorf("scope product: %s", al)
+	}
+	if al := byScope("file"); !strings.Contains(al, `ProductName="ACME TOOL" BinaryName="TOOL.EXE"`) || !strings.Contains(al, `LowSection="0.0.0.0"`) {
+		t.Errorf("scope file: %s", al)
+	}
+	h.exits(1, "rules", exe, "--scope", "file", "--product", "Acme Tool", "--file-version", "1.0.0.0")
 }

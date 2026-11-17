@@ -7,6 +7,166 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- End-to-end tests (`src/internal/e2e`) build `impr` and run it as a person
+  or sange would: help, suggestions, companion info, doctor, a release from a
+  folder inside the repository with archives, verify and tamper, sign's exit
+  codes, completion, rules from a signed file, and import-legacy. They run in
+  CI on every OS the suite runs on. `scripts/test-all.sh` (`make test-all`)
+  runs every gate and fails if fewer than 9 end-to-end tests passed.
+- Windows signing explains a store certificate without its private key and
+  a thumbprint that matches no certificate, instead of passing on signtool's
+  first line, as the PowerShell toolkit did.
+- `impr profile show` prints the problems of an invalid profile; `impr path`
+  prints the line that puts the install folder on PATH; `impr uninstall` also
+  removes the completion files impr wrote, as the PowerShell uninstall did.
+- `impr build` and `impr release` work from any folder inside the
+  repository: the root is the nearest folder with `.git`, the module the
+  nearest `go.mod`. With several commands and no `--main`, the error lists
+  each one; `windows/arm` is refused before anything builds.
+- `-?` and `/?` are help, like `-h` and `--help`, and a command after any of
+  them narrows the help to it; an option before the command is refused with
+  "put the command first" and the line to run.
+- `.gitignore` ignores certificate and key files (`*.pfx`, `*.p12`, `*.cer`,
+  `*.crt`, `*.key`, `*.p8`, `*.pem`), and a test fails if one is tracked; the
+  PowerShell toolkit once shipped its author's test certificate. Docs: backing
+  up a test certificate's `.pem`, and Artifact Signing's 403 from a wrong
+  region.
+- `impr rules` with no files reads the Windows binaries of
+  `build/build-manifest.json` (or `--manifest FILE`), names each binary by
+  its `OriginalFilename`, takes `--scope version`'s minimum version from the
+  files when `--file-version` is not given, and names the rules after the
+  product, as the PowerShell rules did.
+- `make/impr.mk` gains `impr-build` (`impr-b`), `impr-release` (`impr-r`),
+  `impr-config`, `impr-config-get`, `impr-config-set`, `impr-completion`,
+  `impr-completion-uninstall`, `impr-install`, `impr-uninstall` and
+  `impr-path`, with `VERSION`, `MAIN`, `TARGETS`, `ARCHIVES`, `KEY`, `VALUE`,
+  `SHELLS`, `DIR` and `FORCE`, as the PowerShell `impr.mk` had.
+- `impr doctor` notes (in `notes`, never as problems) impr off PATH, missing
+  shell completion, a missing go or git, certificates expiring within 30
+  days, Azure not signed in for Artifact Signing, and a gpg profile's missing
+  secret key, as the PowerShell doctor checked.
+- A profile's Windows `timestamp` may list several servers, separated by
+  commas; they are tried in order, like the PowerShell `--timestamp` list.
+- The menu builds (`b`), releases (`r`, after a typed `yes`) and installs
+  (`n`), as the PowerShell menu did, through the same commands.
+- `impr completion install` and `uninstall` take several shells or `all`,
+  and default to the shell in `$SHELL`; the scripts complete option values
+  the usage lists (`--purpose`, `--platforms`, `rules --scope`, …).
+- `impr cert show` (`cert list` plus the `certutil` lines that trust a test
+  certificate impr made, only when its `.cer` matches the pinned
+  thumbprint), `impr config list` (the same as `show`), and `impr config set`
+  joining the words of its value, as in the PowerShell toolkit; an empty
+  value is refused.
+- `impr CMD --help` says what the command does and names its docs page; a
+  mistyped command or option gets the nearest name ("did you mean"); and
+  `--no-color` is accepted anywhere, as in the PowerShell toolkit (impr prints
+  no colour).
+- The PowerShell toolkit's option spellings work as aliases:
+  `impr profile add --file` (`--from-file`), `impr profile export --out`
+  (`--out-file`), `impr install --yes` (accepted, changes nothing) and
+  `impr install --no-completion` (leaves out the completion hint).
+- `impr build --archives` and `impr release --archives` write
+  `build/archives/` (a `.tar.gz` per binary, a `.zip` per Windows one, each
+  with LICENSE and README, and `checksums.txt`) and, on macOS with both darwin
+  targets, a universal binary listed in the build manifest. A release packs
+  the signed files. `lipo` joins the tool allow-list, in one form only.
+
+### Fixed
+
+- `impr notify` exits with impr's codes (1 usage, 5 not delivered); it passed
+  on go-notifykit's, where 2 meant usage and read as "skipped" to a caller.
+- `impr build VERSION` and `impr release VERSION` stamp VERSION; the positional
+  version was silently ignored. `--version` alone now stamps `main.version`
+  (the PowerShell build's variable) instead of nothing, and a version that does
+  not reach the binary fails the build and names the variable.
+- A build given no version takes the latest `v*` tag plus `-snapshot`, or
+  `v0.0.0-snapshot` with a warning, as the PowerShell release did.
+- `impr build` refuses `--profile`, `--purpose`, `--platforms` and `--repo`
+  instead of ignoring them; they belong to `impr release`.
+- `impr release --json` prints one document holding the build, sign and verify
+  results, and `step` on a failure; it printed two documents.
+- `impr path`, `install`, `uninstall` and `version` refuse a stray word
+  instead of ignoring it, as the PowerShell tool did.
+- `impr profile edit` and `export` with no NAME say on stderr that they use
+  the default profile, and name it; they acted on it silently.
+- `impr rules FILE...` writes the AppLocker publisher name in AppLocker's own
+  form, the subject's O, L, S and C upper-cased without the CN
+  (`O=ACME LTD, L=LONDON, C=GB`), as the PowerShell toolkit did. It wrote the
+  whole subject, CN included and not upper-cased, so publisher rules could
+  fail to match on Windows.
+- WDAC rules from `impr rules FILE...` pin the highest certificate below the
+  root, as WDAC's Publisher level does and the PowerShell toolkit did; they
+  pinned the CA right above the leaf, which Artifact Signing rotates. A leaf
+  issued straight by a root pins itself.
+- On Windows, `signtool` is found under `Windows Kits\10\bin` (newest SDK,
+  this architecture first, then x64) when it is not on `PATH`, as the
+  PowerShell toolkit did; a normal SDK install reported Windows signing as
+  unavailable.
+- `impr rules FILE...` makes one set of rules from files whose issuing CAs
+  differ under one PCA (Artifact Signing rotates them); it refused them as
+  different publishers.
+- `impr sign` names, in `uncovered` (result and signed manifest), every file
+  no requested platform covers, and logs each; such files were left out
+  silently (old bug 11). The exit code is unchanged.
+- The Windows PATH command `impr install` prints reads and writes the user
+  PATH only, unexpanded; it appended to `$env:Path`, which copied the machine
+  PATH into the user PATH and expanded every `%VAR%` (old security finding 14).
+- Profile validation refuses a store reference (`keychain://`,
+  `cert-store://`, `gpg-agent://`) where impr needs the secret's value: any
+  `passwordRef`, and the notary API key, minisign, ssh and cosign keys. Those
+  resolve to the store's name, which would have been used as the secret or as
+  a file path (old security finding 8).
+- A `test` profile accepts an untrusted test root only when its Windows
+  certificate is pinned by thumbprint; a subject alone is a name anyone can
+  put in a self-signed certificate (old security finding 2). Profiles made by
+  `impr cert create` pin the thumbprint already.
+- `impr completion` takes `pwsh` for PowerShell, refuses a second shell
+  instead of ignoring it, and completes a one-letter alias (`impr s --pro…`)
+  like the command it stands for, as the docs said it did.
+- `impr profile import-legacy` keeps the Certum thumbprint from
+  `CERTUM_THUMBPRINT` (environment or settings file), so an imported Certum
+  profile validates without edits.
+- An Artifact Signing profile without `dlibPath` or `metadataPath` fails
+  `impr profile validate` (and `add`), naming the field; it validated and
+  failed only when signing. `impr profile import-legacy` uses the PowerShell
+  default `config/metadata.json` when `ARTIFACT_METADATA` was not set.
+- `impr rules --enforce` notes that it does not reach the WDAC supplemental
+  policy, which follows its base policy's mode; the docs said both were
+  enforced.
+- `impr rules FILE...` checks each file against its own Authenticode
+  signature before making rules, and refuses a file changed after signing
+  (exit 4); it took the signer from the file without checking the hash. It
+  also warns for a signature with no timestamp.
+- `impr rules FILE...` reads an Artifact Signing certificate profile's own EKU
+  from the files and pins it, refuses the generic Artifact Signing EKU
+  `1.3.6.1.4.1.311.97.1.0` (it matches every customer under the CA) and an
+  EKU the certificate lacks. A `--request` with the generic EKU still renders,
+  with a note.
+
+### Changed
+
+- `impr doctor` prints `impr: doctor found N problem(s)` on stderr when it
+  exits 5, and `impr profile validate` prints `impr: N profile(s) are not
+  valid` when it exits 1, as every other failure says why on stderr.
+- Docs: the deploy recipe names the files impr writes
+  (`wdac-supplemental.xml`, not `wdac.xml`) and carries the PowerShell
+  `DEPLOY.md` steps (AppIDSvc, event IDs, CiTool and the older-Windows copy,
+  the supplemental-policy option); stale lines in the rules, menu and
+  migration pages and the README are corrected. Two guards now fail on a doc
+  naming a policy file impr does not write, or an option impr refuses.
+- `impr rules --scope` takes the PowerShell toolkit's four scopes with their
+  meanings: `product` (the default) now allows any file of the product,
+  `file` allows the product's listed binaries at any version, and `version`
+  adds `--file-version`. In 0.1.0 `product` wrote what `file` writes now and
+  `file` was refused, so rules made with `--scope product` in 0.1.0 match
+  `--scope file` now. A `--request` gains an optional `scope`; without it a
+  request renders as before.
+- `impr doctor` exits 5 (unavailable) when it finds problems; it exited 1,
+  the usage code, so a caller could not tell a host that is not ready from a
+  mistyped command.
+
 ## [0.1.0] - 2026-11-17
 
 ### Added

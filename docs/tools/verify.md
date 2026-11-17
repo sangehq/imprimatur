@@ -28,7 +28,7 @@ Each file is checked by its kind: a PE or `.msi` as Windows, a Mach-O, `.dmg` or
 
 | Platform | Check |
 | --- | --- |
-| Windows | the signer certificate in the file's own Authenticode signature has the pinned thumbprint and/or exact subject, and a timestamp; `signtool verify /pa` (Windows) or `osslsigncode verify` succeeds. A `test` profile also accepts a signature whose only fault is an untrusted root |
+| Windows | the signer certificate in the file's own Authenticode signature has the pinned thumbprint and/or exact subject, and a timestamp; `signtool verify /pa` (Windows) or `osslsigncode verify` succeeds. A `test` profile pinned by thumbprint also accepts a signature whose only fault is an untrusted root; pinned by subject alone, it does not |
 | macOS | `codesign --verify --deep --strict`; `TeamIdentifier` is the pinned team and an `Authority` line is the pinned identity; `spctl -a -t exec` when the run was notarised |
 | gpg | a `VALIDSIG` status line from the pinned fingerprint |
 | minisign | the signature's key id is the pinned one, and `minisign -V` passes with the profile's public key |

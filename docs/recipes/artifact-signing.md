@@ -23,6 +23,10 @@ impr profile add acme-release --scope company --owner acme --purpose release \
   (`AZURE_CLIENT_ID`, `AZURE_FEDERATED_TOKEN_FILE`) needs no `az`.
 - **The pin.** Artifact Signing issues short-lived certificates, so pin the exact `subject`, not a
   thumbprint.
+- **Allow rules.** [`impr rules`](../tools/rules.md#from-signed-files) pins your certificate profile's own
+  EKU and the CA below the root, never the generic Artifact Signing EKU. Keep the certificate profile: a
+  new one has a new EKU, and every rule pinned to the old one stops matching. Give `impr rules` builds
+  signed on different days if you want to see that they share one CA.
 - **Several certificates.** To use Artifact Signing for some files and another certificate for others,
   list `signers` ([profile](../tools/profile.md#several-certificates)).
 

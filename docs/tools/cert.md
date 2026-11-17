@@ -5,6 +5,7 @@ and when it expires, where that can be read.
 
 ```bash
 impr cert list [--json]
+impr cert show [--json]          # cert list, plus how to trust a test certificate impr made
 ```
 
 ```json
@@ -31,6 +32,11 @@ sange raises its expiry triage items from this list.
 
 ## Windows store expiry
 
+`cert show` prints what `cert list` prints (its `--json` is the same document) and, for each test
+certificate `impr cert create` made, the `certutil` lines that trust it on a Windows test machine. It
+prints them only when the `.cer` beside the key is the certificate the profile pins by thumbprint;
+otherwise it says the file does not match.
+
 For a `cert-store` or `certum` certificate on Windows, `cert list` asks `certutil` to export the pinned
 certificate and reads its real expiry from the exported file. A declared `notAfter` is used only when the
 store cannot be read.
@@ -46,6 +52,11 @@ impr cert create --name ci-test --subject "CN=Acme CI test" --days 90 --json
 - **Where the files go.** `<config>/test-certs/`:
   - `<name>.pem` holds the certificate and its private key, owner-only (0600).
   - `<name>.cer` is the public certificate.
+- **Back up the `.pem`.** It is the only copy of the private key. A new `impr cert create` makes a new
+  certificate with a new thumbprint, so every machine that trusts the old one needs the new `.cer`, and
+  files signed with the old one still verify only against the old pin. Keep the `.pem` in a password
+  manager or an encrypted backup, never in a repository (`.gitignore` here ignores `*.pem`, `*.pfx`,
+  `*.cer` and the other key and certificate files, and a test fails if one is tracked).
 - **The profile.** A profile of the same name, scope `personal` and purpose `test`. It uses the `pfx`
   backend with `certRef: file://…/<name>.pem` and the certificate's thumbprint pinned. It signs through
   osslsigncode on any host, and can never sign a release.

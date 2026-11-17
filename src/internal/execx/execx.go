@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -21,6 +22,7 @@ import (
 // Allowed is every tool imprimatur may run, and why.
 var Allowed = map[string]string{
 	"signtool":     "Authenticode signing and verification on Windows (Windows SDK)",
+	"lipo":         "impr build --archives: join the macOS amd64 and arm64 builds into a universal binary (lipo -create only)",
 	"osslsigncode": "Authenticode signing with a .pfx and verification on any host",
 	"certutil":     "whether a pinned certificate is in the Windows certificate store",
 	"codesign":     "Apple code signing and its verification",
@@ -46,6 +48,7 @@ var gitForms = [][]string{
 	{"rev-parse", "HEAD"},
 	{"rev-parse", "HEAD^{tree}"},
 	{"remote", "get-url", "origin"},
+	{"describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"}, // a build's snapshot version
 	{"-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=no"},
 }
 
@@ -109,6 +112,9 @@ func Check(c Cmd) error {
 	if c.Tool == "git" && !slices.ContainsFunc(gitForms, func(f []string) bool { return slices.Equal(f, c.Args) }) {
 		return fmt.Errorf("git %s: %w (only %d exact forms)", strings.Join(c.Args, " "), ErrNotAllowed, len(gitForms))
 	}
+	if c.Tool == "lipo" && (len(c.Args) != 5 || c.Args[0] != "-create" || c.Args[1] != "-output") {
+		return fmt.Errorf("lipo %s: %w (only lipo -create -output OUT A B)", strings.Join(c.Args, " "), ErrNotAllowed)
+	}
 	if c.Tool == "az" && !slices.Equal(c.Args, []string{"account", "show", "--output", "none"}) {
 		return fmt.Errorf("az %s: %w (only az account show)", strings.Join(c.Args, " "), ErrNotAllowed)
 	}
@@ -167,6 +173,7 @@ var toolEnv = map[string][]string{
 	"az":          {"AZURE_CONFIG_DIR"},
 	"powershell":  {"PSModulePath"},
 	"openssl":     {},
+	"lipo":        {"DEVELOPER_DIR"},
 }
 
 // ChildEnv filters environ down to baseEnv and the tool's own names, then
@@ -220,6 +227,12 @@ func (o OS) LookPath(tool string) (string, error) {
 		return p.Path, nil
 	}
 	p, err := exec.LookPath(tool)
+	if err != nil && tool == "signtool" && runtime.GOOS == "windows" {
+		// The Windows SDK does not put signtool on PATH (O-130).
+		if k := signtoolInKits(kitsBin(), runtime.GOARCH); k != "" {
+			return k, nil
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", tool, ErrNotFound)
 	}

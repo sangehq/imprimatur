@@ -152,9 +152,17 @@ func (a *Authenticode) signArgs() ([]string, error) {
 	return nil, contract.New(contract.Usage, "%q is not a signtool backend", a.Spec.Backend)
 }
 
+// timestamps are the servers tried in turn: the profile's timestamp, which
+// may list several separated by commas (ID-22), else the backend's defaults.
 func (a *Authenticode) timestamps() []string {
-	if a.Spec.Timestamp != "" {
-		return []string{a.Spec.Timestamp}
+	var list []string
+	for _, ts := range strings.Split(a.Spec.Timestamp, ",") {
+		if ts = strings.TrimSpace(ts); ts != "" {
+			list = append(list, ts)
+		}
+	}
+	if len(list) > 0 {
+		return list
 	}
 	return defaultTimestamps[a.Spec.Backend]
 }
@@ -191,6 +199,9 @@ func (a *Authenticode) Sign(ctx context.Context, art Artifact, p profile.Profile
 			failures = append(failures, "with "+ts+": "+firstLine(r.Output()))
 		}
 		if used == "" {
+			if why := signtoolReason(strings.Join(failures, "\n"), a.Spec.Thumbprint); why != "" {
+				return Signature{}, contract.New(contract.SignFailed, "signtool could not sign %s: %s", art.Rel, why).WithDetails(failures...)
+			}
 			return Signature{}, contract.New(contract.SignFailed, "signtool could not sign %s", art.Rel).WithDetails(failures...).
 				WithFix("check the certificate is available (Certum: SimplySign Desktop logged in; Artifact Signing: az login)",
 					"if every timestamp server failed, check the network or name one: --set platforms.windows.timestamp=<url>")
@@ -250,8 +261,8 @@ func (a *Authenticode) signPFX(ctx context.Context, art Artifact) (string, error
 }
 
 // Verify checks the file is validly signed (the platform tool) by exactly the
-// pinned certificate, with a timestamp. A test profile also accepts a
-// signature whose only fault is an untrusted test root.
+// pinned certificate, with a timestamp. A test profile pinned by thumbprint
+// also accepts a signature whose only fault is an untrusted test root.
 func (a *Authenticode) Verify(ctx context.Context, art Artifact, p profile.Profile) error {
 	_, err := a.check(ctx, art, p)
 	return err
@@ -288,6 +299,12 @@ func (a *Authenticode) check(ctx context.Context, art Artifact, p profile.Profil
 		untrustedRoot := untrustedRootOnly(out)
 		if !p.HasPurpose(profile.PurposeTest) || !untrustedRoot {
 			return "", contract.New(contract.VerifyFailed, "the signature on %s did not verify", art.Rel).WithDetails(firstLine(out))
+		}
+		// The allowance stands on the pin: a subject is a name anyone can put
+		// in a self-signed certificate (old security finding 2).
+		if a.Spec.Thumbprint == "" {
+			return "", contract.New(contract.VerifyFailed, "%s chains to an untrusted test root, which a test profile accepts only when its certificate is pinned by thumbprint", art.Rel).
+				WithFix("impr profile edit NAME --set platforms.windows.thumbprint=" + s.Thumbprint)
 		}
 	}
 	return s.Subject, nil
@@ -462,4 +479,19 @@ func (a *Authenticode) storeNotAfter(ctx context.Context) *time.Time {
 func sha1Hex(b []byte) string {
 	s := sha1.Sum(b) //nolint:gosec // G401: a certificate thumbprint is a SHA-1 identifier, not a security check
 	return hex.EncodeToString(s[:])
+}
+
+// signtoolReason explains the signtool failures the PowerShell toolkit
+// explained (O-127), or "" for any other.
+func signtoolReason(out, thumb string) string {
+	low := strings.ToLower(out)
+	switch {
+	case strings.Contains(low, "private key"):
+		return "the certificate " + strings.ToUpper(thumb) + " is in the store but has no private key here " +
+			"(a Certum card needs SimplySign Desktop logged in; a certificate imported from a .cer has no key; re-import the .pfx)"
+	case strings.Contains(low, "no certificates were found"):
+		return "there is no certificate with thumbprint " + strings.ToUpper(thumb) + " in the current user's store " +
+			"(check Cert:\\CurrentUser\\My, or pin the thumbprint of the certificate that is there)"
+	}
+	return ""
 }

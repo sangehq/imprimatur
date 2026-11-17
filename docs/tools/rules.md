@@ -13,14 +13,18 @@ does not know are ignored, since shapes only gain fields:
 ```json
 {
   "contract": 1,
-  "manifestDigest": "sha256:<hex>", "commit": "<sha>", "version": "v0.1.0", "fileVersion": "0.1.0.0",
+  "manifestDigest": "sha256:<hex>", "commit": "<sha>", "version": "v0.1.0", "fileVersion": "0.1.0.0", "scope": "version",
   "publisher": {"subject": "O=ACME LTD, L=LONDON, C=GB", "leafCn": "Acme Ltd", "issuerName": "Acme Issuing CA",
-                "issuerTbs": "<hex TBS hash of the CA below the root>", "eku": "1.3.6.1.4.1.311.97.1.0", "product": "tool"},
+                "issuerTbs": "<hex TBS hash of the CA below the root>", "eku": "1.3.6.1.4.1.311.97.990309390.766961637.919164696.192717234", "product": "tool"},
   "files": [{"path": "build/windows/tool.exe", "sha256": "<hex>", "collection": "Exe", "binaryName": "tool.exe"}],
   "options": {"name": "tool", "enforce": false, "basePolicyId": "{GUID}", "appLocker": true, "wdac": true,
               "userOrGroupSid": "S-1-1-0", "binaryNames": {}}
 }
 ```
+
+`scope` is optional: `publisher`, `product`, `file` or `version`, as under [From signed files](#from-signed-files).
+Without it, a request with no `product` gets publisher rules and one with a `product` gets `version` rules
+(`file` when `fileVersion` is empty), which is what every request before `scope` existed meant.
 
 ## From signed files
 
@@ -29,15 +33,41 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   --file-version 1.2.0.0 --base-policy {6b2a1c3d-0000-4000-8000-00000000abcd} --out-dir policies
 ```
 
+- **Which files.** The files named on the command line; with none, the Windows binaries (`.exe`, `.dll`)
+  of `build/build-manifest.json`, or of `--manifest FILE`. Files and `--manifest` together are refused.
+- **Names and versions from the files.** A rule names each binary by the `OriginalFilename` in its version
+  information when it has one (so the amd64 and arm64 builds of one program make one rule), else by its
+  file name. `--scope version` without `--file-version` takes the lowest `FileVersion` among the files.
+  `--name` defaults to the product, for every scope but `publisher`.
 - **What it reads.** Instead of a `--request`, impr reads each named `.exe` or `.dll`'s Authenticode
-  signature. It takes the publisher's subject and the leaf's common name. It also takes the issuing CA,
-  pinned by its TBS hash, computed with the same hash as the CA certificate's own signature.
-- **One publisher.** Every file must share one publisher and issuing CA, which is one set of rules.
-- **Scopes.**
+  signature. It takes the publisher name in AppLocker's form (the subject's `O`, `L`, `S` and `C`,
+  upper-cased, without the `CN`: `O=ACME LTD, L=LONDON, C=GB`) and the leaf's common name. It also takes the certificate WDAC
+  pins: the highest one below the root that the signature carries, as WDAC's Publisher level does (for a
+  chain root → PCA → issuing CA → leaf, the PCA, which outlives the issuing CAs Artifact Signing rotates).
+  It is pinned by its TBS hash, computed with the same hash as that certificate's own signature.
+- **Integrity first.** Each file is checked against its own signature before any rule is made: the
+  file's Authenticode hash must equal the signed one, and the leaf's key must have made the signature.
+  A file changed after signing is refused with exit 4, so it is never allow-listed. This checks
+  integrity, not trust: whether Windows trusts the certificate is what the rules' pins decide.
+- **Timestamp.** A signature without a timestamp stops being valid when its certificate expires; impr
+  warns for each such file.
+- **Artifact Signing EKU.** For an Artifact Signing certificate, impr reads the certificate profile's own
+  EKU (under `1.3.6.1.4.1.311.97`) from the file and pins it, so the rule matches your profile and no
+  other customer of the service. `--eku` overrides it, but the generic Artifact Signing EKU
+  `1.3.6.1.4.1.311.97.1.0` is refused, and so is an EKU the certificate does not carry. A `--request`
+  carrying the generic EKU still renders, with a note saying how wide it is.
+- **One publisher.** Every file must share one publisher subject, one certificate below the root (the
+  PCA) and one certificate profile EKU, which is one set of rules. The issuing CAs between the PCA and the
+  leaf may differ: builds signed on different days under Artifact Signing's rotating CAs belong together.
+- **Scopes.** The same four as the PowerShell toolkit; none is a hash rule.
   - `publisher` allows anything that publisher signs.
-  - `product` (the default) allows the named product's binaries.
-  - `version` allows the named product at `--file-version` or newer.
-  - `file` (hash rules) is refused: a hash rule breaks with every build.
+  - `product` (the default) allows any file of the named product, any version (AppLocker
+    `ProductName=PRODUCT BinaryName=*`; WDAC `ProductName`).
+  - `file` allows the named product's listed binaries, any version (`BinaryName=TOOL.EXE`, low `0.0.0.0`;
+    WDAC `FileName`).
+  - `version` is `file` at `--file-version` or newer.
+
+  Before 2026-11-17 `product` wrote what `file` writes now, and `file` was refused.
 - **WDAC needs a base policy.** A WDAC supplemental policy is rendered only with `--base-policy`, the base
   policy's `{GUID}`. Without one, the output is AppLocker only, and impr says so.
 - **Product name.** Without `--product`, impr reads the ProductName from the files' own version information
@@ -84,9 +114,13 @@ XML is printed on stdout; `--out-dir` also writes `applocker.xml` and
   `Script`, `Dll`) and binary name, for that publisher and product, at
   `fileVersion` or newer; WDAC file attributes with the same names and minimum
   version. Without it: anything the publisher signs.
-- AppLocker collections are `AuditOnly` unless `options.enforce`.
+- AppLocker collections are `AuditOnly` unless `options.enforce`. A WDAC supplemental policy takes its
+  mode from its base policy, so `enforce` does not change it; a note says so.
+- The WDAC `PolicyID` is derived from the base policy, publisher, leaf, product and name (or taken from
+  `policyId`), so each build of one product replaces the same supplemental policy.
 - WDAC is always a supplemental policy of `basePolicyId`, its signer pinned by
-  the issuing CA's TBS hash, the leaf's common name and, when given, the EKU.
+  the TBS hash of the certificate below the root (`issuerTbs`), the leaf's common name and, when given,
+  the EKU.
 - No file-hash rules, no base policy, and no randomness: rule and policy ids
   are derived from the inputs, so the same request renders the same bytes.
 

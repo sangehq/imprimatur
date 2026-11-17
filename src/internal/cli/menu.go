@@ -19,6 +19,8 @@ var menuEntries = []struct {
 	{"d", "doctor: profiles and what this host can sign", []string{"doctor"}},
 	{"p", "signing profiles", []string{"profile", "list"}},
 	{"c", "certificates and keys, with expiry", []string{"cert", "list"}},
+	{"b", "build a Go module into build/", nil},
+	{"r", "release: build, sign and verify (asks for yes)", nil},
 	{"s", "sign a build manifest", nil},
 	{"v", "verify a signed manifest", nil},
 	{"e", "recent events", []string{"events", "tail", "--limit", "20"}},
@@ -26,6 +28,7 @@ var menuEntries = []struct {
 	{"w", "webhooks", []string{"webhooks", "list"}},
 	{"k", "hooks", []string{"hooks", "list"}},
 	{"i", "where impr and its files are", []string{"path"}},
+	{"n", "install impr into ~/.local/bin", []string{"install"}},
 	{"h", "help", []string{"help"}},
 	{"q", "quit", nil},
 }
@@ -63,6 +66,10 @@ func (a *App) menu(ctx context.Context) int {
 				a.menuSign(ctx, ask)
 			case e.key == "v":
 				a.menuVerify(ctx, ask)
+			case e.key == "b":
+				a.menuBuild(ctx, ask)
+			case e.key == "r":
+				a.menuRelease(ctx, ask)
 			}
 		}
 		if !found {
@@ -146,4 +153,76 @@ func (a *App) menuVerify(ctx context.Context, ask func(string) (string, bool)) {
 		root = "."
 	}
 	a.say("menu      exit %d", a.Run(ctx, []string{"verify", "--signed", signed, "--profile", name, "--root", root, "--strict"}))
+}
+
+// menuBuild asks for the repository and version and runs impr build (ID-18).
+func (a *App) menuBuild(ctx context.Context, ask func(string) (string, bool)) {
+	root, version, ok := a.menuRootVersion(ask)
+	if !ok {
+		return
+	}
+	args := []string{"build", "--repo-root", root}
+	if version != "" {
+		args = append(args, version)
+	}
+	a.say("menu      exit %d", a.Run(ctx, args))
+}
+
+// menuRelease walks through one release: repository, version, profile,
+// purpose and platforms, then an explicit "yes" (ID-18). It runs impr
+// release, which never tags, pushes or publishes.
+func (a *App) menuRelease(ctx context.Context, ask func(string) (string, bool)) {
+	root, version, ok := a.menuRootVersion(ask)
+	if !ok {
+		return
+	}
+	def := ""
+	if s, err := a.store(); err == nil {
+		if idx, _, err := s.LoadIndex(); err == nil {
+			def = idx.Default
+		}
+	}
+	name, ok := ask(fmt.Sprintf("signing profile [%s]: ", def))
+	if !ok {
+		return
+	}
+	if name == "" {
+		name = def
+	}
+	if !profile.ValidName(name) {
+		a.say("menu      %q is not a profile name", name)
+		return
+	}
+	purpose, ok := ask("purpose (release, test or internal): ")
+	if !ok || (purpose != "release" && purpose != "test" && purpose != "internal") {
+		a.say("menu      a purpose is required; nothing was released")
+		return
+	}
+	platforms, ok := ask("platforms [the profile's]: ")
+	if !ok {
+		return
+	}
+	a.say("menu      build %s at %s, then sign with %s for %s and verify?", root, orDefault(version, "a snapshot version"), name, purpose)
+	if yes, ok := ask("type yes to release: "); !ok || yes != "yes" {
+		a.say("menu      nothing was released")
+		return
+	}
+	args := []string{"release", "--repo-root", root, "--profile", name, "--purpose", purpose}
+	if platforms != "" {
+		args = append(args, "--platforms", platforms)
+	}
+	if version != "" {
+		args = append(args, version)
+	}
+	a.say("menu      exit %d", a.Run(ctx, args))
+}
+
+func (a *App) menuRootVersion(ask func(string) (string, bool)) (root, version string, ok bool) {
+	if root, ok = ask("repository [.]: "); !ok {
+		return "", "", false
+	}
+	if version, ok = ask("version [the latest v* tag + -snapshot]: "); !ok {
+		return "", "", false
+	}
+	return orDefault(root, "."), version, true
 }

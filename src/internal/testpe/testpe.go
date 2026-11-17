@@ -8,6 +8,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"debug/pe"
@@ -24,6 +25,36 @@ import (
 type CA struct {
 	Cert *x509.Certificate
 	key  *ecdsa.PrivateKey
+	// above are the certificates above Cert, nearest first; a signature
+	// carries them after Cert.
+	above []*x509.Certificate
+}
+
+// NewIntermediate makes a CA issued by parent.
+func NewIntermediate(t *testing.T, cn string, parent CA) CA {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
+	tpl := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: cn}, NotBefore: time.Now().Add(-time.Hour),
+		NotAfter: time.Now().Add(24 * time.Hour), IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	der, err := x509.CreateCertificate(rand.Reader, tpl, parent.Cert, &key.PublicKey, parent.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := x509.ParseCertificate(der)
+	return CA{Cert: c, key: key, above: append([]*x509.Certificate{parent.Cert}, parent.above...)}
+}
+
+// WithoutRoot is ca whose signatures leave out the self-signed root, as
+// real Authenticode signatures usually do.
+func (ca CA) WithoutRoot() CA {
+	if n := len(ca.above); n > 0 && bytes.Equal(ca.above[n-1].RawSubject, ca.above[n-1].RawIssuer) {
+		ca.above = ca.above[:n-1]
+	}
+	return ca
 }
 
 // NewCA makes a self-signed CA.
@@ -53,8 +84,33 @@ type signerInfo struct {
 	Version         int
 	IssuerAndSerial issuerAndSerial
 	DigestAlgorithm asn1.RawValue
+	AuthAttrs       asn1.RawValue
 	DigestEncAlg    asn1.RawValue
 	EncryptedDigest []byte
+	UnauthAttrs     asn1.RawValue `asn1:"optional"`
+}
+
+// Options shape a test signature.
+type Options struct {
+	// EKUs are extended key usages the leaf carries beside code signing (an
+	// Artifact Signing certificate carries its profile's).
+	EKUs []asn1.ObjectIdentifier
+	// Timestamped adds an RFC 3161 timestamp attribute (its token is not a
+	// real one: impr only reads that it is there).
+	Timestamped bool
+}
+
+// imageHash is the Authenticode SHA-256 of a PE file whose certificate
+// table will be appended at its end: every byte but the checksum and the
+// certificate table's directory entry. testpe computes it on its own, so the
+// verifier in backend is checked against an independent implementation.
+func imageHash(b []byte) []byte {
+	opt := int(binary.LittleEndian.Uint32(b[0x3c:])) + 24
+	h := sha256.New()
+	h.Write(b[:opt+64])
+	h.Write(b[opt+68 : opt+144])
+	h.Write(b[opt+152:])
+	return h.Sum(nil)
 }
 
 type signedData struct {
@@ -67,7 +123,7 @@ type signedData struct {
 
 // signature is a PKCS#7 SignedData naming a leaf with the given subject,
 // issued by ca, with both certificates, as a PE certificate table carries.
-func signature(t *testing.T, subject pkix.Name, ca CA) ([]byte, *x509.Certificate) {
+func signature(t *testing.T, subject pkix.Name, ca CA, o Options, image []byte) ([]byte, *x509.Certificate) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -75,7 +131,7 @@ func signature(t *testing.T, subject pkix.Name, ca CA) ([]byte, *x509.Certificat
 	}
 	serial, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
 	tpl := &x509.Certificate{SerialNumber: serial, Subject: subject, NotBefore: time.Now().Add(-time.Hour),
-		NotAfter: time.Now().Add(24 * time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}}
+		NotAfter: time.Now().Add(24 * time.Hour), ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, UnknownExtKeyUsage: o.EKUs}
 	der, err := x509.CreateCertificate(rand.Reader, tpl, ca.Cert, &key.PublicKey, ca.key)
 	if err != nil {
 		t.Fatal(err)
@@ -88,12 +144,52 @@ func signature(t *testing.T, subject pkix.Name, ca CA) ([]byte, *x509.Certificat
 		}
 		return b
 	}
-	alg := must(pkix.AlgorithmIdentifier{Algorithm: asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}})
+	sha := pkix.AlgorithmIdentifier{Algorithm: asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}}
+	alg := must(sha)
+	// SpcIndirectDataContent: the image's digest.
+	spc := must(struct {
+		Data struct{ T asn1.ObjectIdentifier }
+		MD   struct {
+			A pkix.AlgorithmIdentifier
+			D []byte
+		}
+	}{struct{ T asn1.ObjectIdentifier }{asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 1, 15}}, struct {
+		A pkix.AlgorithmIdentifier
+		D []byte
+	}{sha, imageHash(image)}})
+	var spcVal asn1.RawValue
+	if _, err := asn1.Unmarshal(spc, &spcVal); err != nil {
+		t.Fatal(err)
+	}
+	spcOID := asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 1, 4}
+	content := must(struct {
+		T asn1.ObjectIdentifier
+		C asn1.RawValue
+	}{spcOID, asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: spc}})
+	attr := func(oid asn1.ObjectIdentifier, v any) []byte {
+		return must(struct {
+			T asn1.ObjectIdentifier
+			V asn1.RawValue
+		}{oid, asn1.RawValue{Tag: asn1.TagSet, IsCompound: true, Bytes: must(v)}})
+	}
+	md := sha256.Sum256(spcVal.Bytes) // over the content's value, Authenticode's rule
+	attrs := append(attr(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}, spcOID), attr(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}, md[:])...)
+	signed := sha256.Sum256(must(asn1.RawValue{Tag: asn1.TagSet, IsCompound: true, Bytes: attrs}))
+	sig, err := ecdsa.SignASN1(rand.Reader, key, signed[:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecAlg := must(pkix.AlgorithmIdentifier{Algorithm: asn1.ObjectIdentifier{1, 2, 840, 10045, 4, 3, 2}})
 	si := signerInfo{Version: 1, IssuerAndSerial: issuerAndSerial{Issuer: asn1.RawValue{FullBytes: leaf.RawIssuer}, Serial: leaf.SerialNumber},
-		DigestAlgorithm: asn1.RawValue{FullBytes: alg}, DigestEncAlg: asn1.RawValue{FullBytes: alg}, EncryptedDigest: []byte{1, 2, 3}}
+		DigestAlgorithm: asn1.RawValue{FullBytes: alg}, AuthAttrs: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: attrs},
+		DigestEncAlg: asn1.RawValue{FullBytes: ecAlg}, EncryptedDigest: sig}
+	if o.Timestamped {
+		si.UnauthAttrs = asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 1, IsCompound: true,
+			Bytes: attr(asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 3, 3, 1}, asn1.RawValue{Tag: asn1.TagSequence, IsCompound: true})}
+	}
 	sd := signedData{Version: 1, DigestAlgorithms: asn1.RawValue{Tag: asn1.TagSet, IsCompound: true, Bytes: alg},
-		ContentInfo:  asn1.RawValue{FullBytes: must(struct{ T asn1.ObjectIdentifier }{asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 2, 1, 4}})},
-		Certificates: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: append(append([]byte{}, leaf.Raw...), ca.Cert.Raw...)},
+		ContentInfo:  asn1.RawValue{FullBytes: content},
+		Certificates: asn1.RawValue{Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: chainBytes(leaf, ca)},
 		SignerInfos:  []signerInfo{si}}
 	pkcs7 := must(struct {
 		T asn1.ObjectIdentifier
@@ -102,11 +198,18 @@ func signature(t *testing.T, subject pkix.Name, ca CA) ([]byte, *x509.Certificat
 	return pkcs7, leaf
 }
 
+func chainBytes(leaf *x509.Certificate, ca CA) []byte {
+	b := append(append([]byte{}, leaf.Raw...), ca.Cert.Raw...)
+	for _, c := range ca.above {
+		b = append(b, c.Raw...)
+	}
+	return b
+}
+
 // SignFile attaches such a signature to an existing PE32+ file (a real Go
 // build, say), so tests can read signer and version information together.
 func SignFile(t *testing.T, path string, subject pkix.Name, ca CA) *x509.Certificate {
 	t.Helper()
-	pkcs7, leaf := signature(t, subject, ca)
 	b, err := os.ReadFile(path) //nolint:gosec // G304: a test file the caller made
 	if err != nil {
 		t.Fatal(err)
@@ -114,6 +217,7 @@ func SignFile(t *testing.T, path string, subject pkix.Name, ca CA) *x509.Certifi
 	for len(b)%8 != 0 {
 		b = append(b, 0)
 	}
+	pkcs7, leaf := signature(t, subject, ca, Options{}, b)
 	at := len(b)
 	win := make([]byte, 8)
 	binary.LittleEndian.PutUint32(win[0:], uint32(8+len(pkcs7))) //nolint:gosec // G115: a small test blob
@@ -138,7 +242,12 @@ func SignFile(t *testing.T, path string, subject pkix.Name, ca CA) *x509.Certifi
 // the path and the leaf.
 func Signed(t *testing.T, dir, name string, subject pkix.Name, ca CA) (string, *x509.Certificate) {
 	t.Helper()
-	pkcs7, leaf := signature(t, subject, ca)
+	return SignedWith(t, dir, name, subject, ca, Options{})
+}
+
+// SignedWith is Signed shaped by o.
+func SignedWith(t *testing.T, dir, name string, subject pkix.Name, ca CA, o Options) (string, *x509.Certificate) {
+	t.Helper()
 	var buf bytes.Buffer
 	dos := make([]byte, 64)
 	copy(dos, "MZ")
@@ -147,18 +256,21 @@ func Signed(t *testing.T, dir, name string, subject pkix.Name, ca CA) (string, *
 	buf.WriteString("PE\x00\x00")
 	fh := pe.FileHeader{Machine: pe.IMAGE_FILE_MACHINE_AMD64, SizeOfOptionalHeader: 240, Characteristics: 0x22}
 	oh := pe.OptionalHeader64{Magic: 0x20b, NumberOfRvaAndSizes: 16}
-	at := uint32(buf.Len() + binary.Size(fh) + binary.Size(oh)) //nolint:gosec // G115: a small test file
+	_ = binary.Write(&buf, binary.LittleEndian, fh)
+	_ = binary.Write(&buf, binary.LittleEndian, oh)
+	b := buf.Bytes()
+	pkcs7, leaf := signature(t, subject, ca, o, b)
+	at := len(b)
 	win := make([]byte, 8)
 	binary.LittleEndian.PutUint32(win[0:], uint32(8+len(pkcs7))) //nolint:gosec // G115: a small test blob
 	binary.LittleEndian.PutUint16(win[4:], 0x0200)
 	binary.LittleEndian.PutUint16(win[6:], 2)
-	oh.DataDirectory[4] = pe.DataDirectory{VirtualAddress: at, Size: uint32(8 + len(pkcs7))} //nolint:gosec // G115: a small test blob
-	_ = binary.Write(&buf, binary.LittleEndian, fh)
-	_ = binary.Write(&buf, binary.LittleEndian, oh)
-	buf.Write(win)
-	buf.Write(pkcs7)
+	dd := int(binary.LittleEndian.Uint32(b[0x3c:])) + 24 + 144    // DataDirectory[4], the certificate table
+	binary.LittleEndian.PutUint32(b[dd:], uint32(at))             //nolint:gosec // G115: a small test file
+	binary.LittleEndian.PutUint32(b[dd+4:], uint32(8+len(pkcs7))) //nolint:gosec // G115: a small test blob
+	b = append(append(b, win...), pkcs7...)
 	path := filepath.Join(dir, name)
-	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+	if err := os.WriteFile(path, b, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	return path, leaf

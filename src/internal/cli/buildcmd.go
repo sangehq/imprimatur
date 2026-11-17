@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	gobuild "github.com/sangehq/imprimatur/src/internal/build"
 	"github.com/sangehq/imprimatur/src/internal/contract"
@@ -13,7 +16,7 @@ import (
 var buildFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "repo-root": stringFlag, "module": stringFlag, "main": stringFlag,
 	"binary": stringFlag, "version": stringFlag, "version-var": stringFlag, "targets": listFlag, "clean": boolFlag,
 	"allow-dirty": boolFlag, "profile": stringFlag, "purpose": stringFlag, "repo": stringFlag, "platforms": listFlag,
-	"product": stringFlag, "company": stringFlag, "description": stringFlag, "copyright": stringFlag, "icon": stringFlag, "no-winres": boolFlag}
+	"product": stringFlag, "company": stringFlag, "description": stringFlag, "copyright": stringFlag, "icon": stringFlag, "no-winres": boolFlag, "archives": boolFlag}
 
 // BuildResult is `impr build --json`.
 type BuildResult struct {
@@ -22,15 +25,38 @@ type BuildResult struct {
 	Manifest     gobuild.Manifest `json:"manifest"`
 }
 
+// ReleaseResult is `impr release --json`: one document holding each step's
+// own result. Step names the step that failed.
+type ReleaseResult struct {
+	Contract int             `json:"contract"`
+	OK       bool            `json:"ok"`
+	Step     string          `json:"step,omitempty"`
+	Build    BuildResult     `json:"build"`
+	Sign     json.RawMessage `json:"sign,omitempty"`
+	Verify   json.RawMessage `json:"verify,omitempty"`
+}
+
 // buildOptions turns flags into build options, with the estate defaults:
 // the module in src/ when it has a go.mod, the only command under cmd/,
 // targets from build/targets.txt, else this host.
 func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
-	root, err := filepath.Abs(orDefault(p.str("repo-root"), "."))
+	cwd, err := os.Getwd()
 	if err != nil {
 		return gobuild.Options{}, err
 	}
+	// From any folder inside the repository (O-19): the root is the nearest
+	// folder above holding .git, and the module the nearest go.mod below it.
+	root := p.str("repo-root")
+	if root == "" {
+		root = orDefault(findUp(cwd, ".git", ""), cwd)
+	}
+	if root, err = filepath.Abs(root); err != nil {
+		return gobuild.Options{}, err
+	}
 	mod := p.str("module")
+	if mod == "" && !p.has("repo-root") {
+		mod = findUp(cwd, "go.mod", root)
+	}
 	if mod == "" {
 		mod = "."
 		if _, err := os.Stat(filepath.Join(root, "src", "go.mod")); err == nil {
@@ -44,7 +70,12 @@ func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
 	if main == "" {
 		cmds, _ := filepath.Glob(filepath.Join(mod, "cmd", "*", "main.go"))
 		if len(cmds) != 1 {
-			return gobuild.Options{}, contract.New(contract.Usage, "--main is required: found %d commands under %s/cmd", len(cmds), mod)
+			var names []string
+			for _, c := range cmds {
+				names = append(names, "--main ./cmd/"+filepath.Base(filepath.Dir(c)))
+			}
+			return gobuild.Options{}, contract.New(contract.Usage, "--main is required: found %d commands under %s/cmd", len(cmds), mod).
+				WithFix(names...)
 		}
 		main = "./cmd/" + filepath.Base(filepath.Dir(cmds[0]))
 	}
@@ -68,8 +99,57 @@ func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
 		wr = &gobuild.WinRes{Product: p.str("product"), Company: p.str("company"), Description: p.str("description"),
 			Copyright: p.str("copyright"), Icon: p.str("icon")}
 	}
-	return gobuild.Options{RepoRoot: root, ModuleDir: mod, Main: main, Binary: p.str("binary"), Version: p.str("version"),
-		VersionVar: p.str("version-var"), Targets: targets, Clean: p.on("clean"), AllowDirty: p.on("allow-dirty"), WinRes: wr}, nil
+	version, err := versionArg(p)
+	if err != nil {
+		return gobuild.Options{}, err
+	}
+	return gobuild.Options{RepoRoot: root, ModuleDir: mod, Main: main, Binary: p.str("binary"), Version: version,
+		VersionVar: p.str("version-var"), Targets: targets, Clean: p.on("clean"), AllowDirty: p.on("allow-dirty"), WinRes: wr,
+		Universal: p.on("archives")}, nil
+}
+
+// archive writes build/archives/ (ID-12) and says what it wrote.
+func (a *App) archive(root string, m gobuild.Manifest, note string) error {
+	names, err := gobuild.Archive(root, m)
+	if err != nil {
+		return err
+	}
+	a.say("archives  %d archive(s) and checksums.txt in build/%s (%s)", len(names), gobuild.ArchiveDir, note)
+	return nil
+}
+
+// versionArg is the version from --version or the one positional VERSION
+// (O-14, O-22): both may be given only when they agree.
+func versionArg(p parsed) (string, error) {
+	v := p.str("version")
+	switch {
+	case len(p.pos) > 1:
+		return "", contract.New(contract.Usage, "one VERSION at most (got %s)", strings.Join(p.pos, " "))
+	case len(p.pos) == 1 && v != "" && v != p.pos[0]:
+		return "", contract.New(contract.Usage, "VERSION %s and --version %s disagree", p.pos[0], v)
+	case len(p.pos) == 1:
+		v = p.pos[0]
+	}
+	return v, nil
+}
+
+// releaseOnly are options impr release reads and impr build refuses: build
+// only builds, and signing is release's job.
+var releaseOnly = []string{"profile", "purpose", "repo", "platforms"}
+
+// findUp is the nearest folder from dir upward that holds name, stopping
+// at stop (inclusive) when it is set; "" when there is none.
+func findUp(dir, name, stop string) string {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir || (stop != "" && dir == stop) {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 func orDefault(v, d string) string {
@@ -84,6 +164,12 @@ func cmdBuild(ctx context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	for _, f := range releaseOnly {
+		if p.has(f) {
+			return 0, contract.New(contract.Usage, "impr build only builds; --%s is for impr release", f).
+				WithFix("impr release --profile NAME --purpose P [build options]")
+		}
+	}
 	o, err := a.buildOptions(p)
 	if err != nil {
 		return 0, err
@@ -91,6 +177,11 @@ func cmdBuild(ctx context.Context, a *App, args []string) (int, error) {
 	path, m, err := gobuild.Builder{Runner: a.Runner, Log: a.say}.Build(ctx, o)
 	if err != nil {
 		return 0, err
+	}
+	if p.on("archives") {
+		if err := a.archive(o.RepoRoot, m, "unsigned: impr release archives the signed files"); err != nil {
+			return 0, err
+		}
 	}
 	if p.on("json") {
 		a.json(BuildResult{Contract: contract.Version, ManifestPath: path, Manifest: m})
@@ -135,19 +226,57 @@ func cmdRelease(ctx context.Context, a *App, args []string) (int, error) {
 	for _, pl := range p.list("platforms") {
 		sign = append(sign, "--platforms", pl)
 	}
-	if p.on("json") {
-		sign = append(sign, "--json")
-	}
-	if code := a.Run(ctx, sign); code != 0 {
-		return code, nil
-	}
 	verify := []string{"verify", "--signed", filepath.Join(filepath.Dir(path), "impr-manifest.json"), "--manifest", path,
 		"--profile", p.str("profile"), "--root", o.RepoRoot, "--strict"}
-	if p.on("json") {
-		verify = append(verify, "--json")
+	if !p.on("json") {
+		if code := a.Run(ctx, sign); code != 0 {
+			return code, nil
+		}
+		code := a.Run(ctx, verify)
+		if code == 0 && p.on("archives") {
+			if err := a.archive(o.RepoRoot, m, "signed"); err != nil {
+				return 0, err
+			}
+		}
+		if code == 0 {
+			a.say("release   built, signed and verified %d file(s); nothing was tagged, pushed or published", len(m.Artifacts))
+		}
+		return code, nil
 	}
-	code := a.Run(ctx, verify)
+	// One document on stdout (O-150): each step writes its own into a
+	// buffer, and the release result carries them.
+	r := ReleaseResult{Contract: contract.Version, Build: BuildResult{Contract: contract.Version, ManifestPath: path, Manifest: m}}
+	step := func(name string, args []string) int {
+		var out bytes.Buffer
+		sub := *a
+		sub.Stdout = &out
+		code := sub.Run(ctx, append(args, "--json"))
+		doc := json.RawMessage(bytes.TrimSpace(out.Bytes()))
+		if !json.Valid(doc) {
+			doc = nil
+		}
+		if name == "sign" {
+			r.Sign = doc
+		} else {
+			r.Verify = doc
+		}
+		if code != 0 {
+			r.Step = name
+		}
+		return code
+	}
+	code := step("sign", sign)
 	if code == 0 {
+		code = step("verify", verify)
+	}
+	r.OK = code == 0
+	if r.OK && p.on("archives") {
+		if err := a.archive(o.RepoRoot, m, "signed"); err != nil {
+			return 0, err
+		}
+	}
+	a.json(r)
+	if r.OK {
 		a.say("release   built, signed and verified %d file(s); nothing was tagged, pushed or published", len(m.Artifacts))
 	}
 	return code, nil

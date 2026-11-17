@@ -40,6 +40,9 @@ func cmdConfig(ctx context.Context, a *App, args []string) (int, error) {
 	if len(p.pos) > 0 {
 		sub = p.pos[0]
 	}
+	if sub == "list" { // the PowerShell toolkit's word (ID-16)
+		sub = "show"
+	}
 	d, err := a.dirs()
 	if err != nil {
 		return 0, contract.Wrap(contract.Unavailable, err, "locate the imprimatur config")
@@ -121,12 +124,14 @@ func layerPath(d paths.Dirs, profile string) (string, error) {
 // configuration and puts the file back as it was if the result is invalid or
 // touches a locked key.
 func (a *App) configEdit(ctx context.Context, d paths.Dirs, sub string, p parsed) (int, error) {
-	want := 3
-	if sub == "unset" {
-		want = 2
-	}
-	if len(p.pos) != want {
+	if (sub == "unset" && len(p.pos) != 2) || (sub == "set" && len(p.pos) < 3) {
 		return 0, contract.New(contract.Usage, "impr config set KEY VALUE | unset KEY [--profile NAME]")
+	}
+	// The value's words are joined, as the PowerShell toolkit did (ID-16):
+	// a JSON list split by the shell still arrives whole.
+	value := strings.Join(p.pos[min(2, len(p.pos)):], " ")
+	if sub == "set" && strings.TrimSpace(value) == "" {
+		return 0, contract.New(contract.Usage, "config set %s needs a value; to remove the key: impr config unset %s", p.pos[1], p.pos[1])
 	}
 	key := p.pos[1]
 	if key == "locked" || strings.HasPrefix(key, "locked.") {
@@ -150,8 +155,8 @@ func (a *App) configEdit(ctx context.Context, d paths.Dirs, sub string, p parsed
 	before, _ := os.ReadFile(path) //nolint:gosec // G304: the layer being edited
 	if sub == "set" {
 		var v any
-		if err := json.Unmarshal([]byte(p.pos[2]), &v); err != nil {
-			v = p.pos[2] // not JSON: a plain string
+		if err := json.Unmarshal([]byte(value), &v); err != nil {
+			v = value // not JSON: a plain string
 		}
 		if err := config.Set(m, key, v); err != nil {
 			return 0, contract.Wrap(contract.Usage, err, "cannot set %s", key)
