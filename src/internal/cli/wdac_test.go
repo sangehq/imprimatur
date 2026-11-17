@@ -82,3 +82,23 @@ func TestRulesCheckTheSignatureAndTheTimestamp(t *testing.T) {
 		t.Fatalf("a tampered file: exit %d, want 4\n%s\n%s", code, out, e)
 	}
 }
+
+// Builds signed on different days under Artifact Signing carry different
+// issuing CAs below one PCA. They are one publisher to WDAC, which pins the
+// PCA, so impr makes one set of rules from them; a different PCA is refused.
+func TestRulesAcceptRotatedIssuingCAsUnderOnePCA(t *testing.T) {
+	h := newHarness(t)
+	sub := pkix.Name{CommonName: "Acme Ltd", Organization: []string{"Acme Ltd"}, Country: []string{"US"}}
+	root := testpe.NewCA(t, "Root")
+	pca := testpe.NewIntermediate(t, "Acme Code Signing PCA", root)
+	day1, _ := testpe.Signed(t, t.TempDir(), "tool.exe", sub, testpe.NewIntermediate(t, "EOC CA 01", pca).WithoutRoot())
+	day2, _ := testpe.Signed(t, t.TempDir(), "tool.exe", sub, testpe.NewIntermediate(t, "EOC CA 02", pca).WithoutRoot())
+	code, out, e := h.impr("rules", day1, day2, "--product", "Acme Tool", "--base-policy", testBasePolicy, "--json")
+	pcaTBS := sha256.Sum256(pca.Cert.RawTBSCertificate)
+	if code != 0 || !strings.Contains(strings.ToUpper(out), strings.ToUpper(hex.EncodeToString(pcaTBS[:]))) {
+		t.Fatalf("two issuing CAs under one PCA: %d\n%s\n%s", code, out, e)
+	}
+	other := testpe.NewIntermediate(t, "Other PCA", root)
+	day3, _ := testpe.Signed(t, t.TempDir(), "tool.exe", sub, testpe.NewIntermediate(t, "EOC CA 03", other).WithoutRoot())
+	h.exits(1, "rules", day1, day3, "--product", "Acme Tool", "--base-policy", testBasePolicy)
+}

@@ -50,8 +50,9 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   other customer of the service. `--eku` overrides it, but the generic Artifact Signing EKU
   `1.3.6.1.4.1.311.97.1.0` is refused, and so is an EKU the certificate does not carry. A `--request`
   carrying the generic EKU still renders, with a note saying how wide it is.
-- **One publisher.** Every file must share one publisher, issuing CA and certificate profile EKU, which is
-  one set of rules.
+- **One publisher.** Every file must share one publisher subject, one certificate below the root (the
+  PCA) and one certificate profile EKU, which is one set of rules. The issuing CAs between the PCA and the
+  leaf may differ: builds signed on different days under Artifact Signing's rotating CAs belong together.
 - **Scopes.** The same four as the PowerShell toolkit; none is a hash rule.
   - `publisher` allows anything that publisher signs.
   - `product` (the default) allows any file of the named product, any version (AppLocker

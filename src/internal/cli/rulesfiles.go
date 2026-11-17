@@ -96,12 +96,16 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		if !s.Timestamped {
 			a.say("rules     %s: its signature has no timestamp, so it stops being valid when the certificate expires; sign with a timestamp server", f)
 		}
-		// Rules pin the publisher's subject and its issuing CA, so files signed
-		// by a renewed certificate of the same publisher and CA belong together.
+		// Rules pin the publisher's subject and the certificate below the root,
+		// so files signed by renewed certificates under the same PCA belong
+		// together.
 		if signer == nil {
 			signer = &s
-		} else if s.Subject != signer.Subject || !bytes.Equal(s.Leaf.RawIssuer, signer.Leaf.RawIssuer) {
-			return rules.Request{}, contract.New(contract.Usage, "%s is signed by %s, not %s like the other files; make one set of rules per publisher", f, s.Subject, signer.Subject)
+		} else if s.Subject != signer.Subject || !bytes.Equal(s.PCA.Raw, signer.PCA.Raw) {
+			// One publisher to WDAC is one subject under one pinned PCA; the
+			// issuing CAs below it may differ (Artifact Signing rotates them).
+			return rules.Request{}, contract.New(contract.Usage, "%s is signed by %s under %s, not %s under %s like the other files; make one set of rules per publisher",
+				f, s.Subject, s.PCA.Subject.CommonName, signer.Subject, signer.PCA.Subject.CommonName)
 		}
 		if s.ProfileEKU != signer.ProfileEKU {
 			return rules.Request{}, contract.New(contract.Usage, "%s is signed under Artifact Signing certificate profile EKU %q, not %q like the other files; make one set of rules per certificate profile",

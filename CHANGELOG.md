@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this architecture first, then x64) when it is not on `PATH`, as the
   PowerShell toolkit did; a normal SDK install reported Windows signing as
   unavailable.
+- `impr rules FILE...` makes one set of rules from files whose issuing CAs
+  differ under one PCA (Artifact Signing rotates them); it refused them as
+  different publishers.
 - `impr sign` names, in `uncovered` (result and signed manifest), every file
   no requested platform covers, and logs each; such files were left out
   silently (old bug 11). The exit code is unchanged.
@@ -76,6 +79,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Docs: the deploy recipe names the files impr writes
+  (`wdac-supplemental.xml`, not `wdac.xml`) and carries the PowerShell
+  `DEPLOY.md` steps (AppIDSvc, event IDs, CiTool and the older-Windows copy,
+  the supplemental-policy option); stale lines in the rules, menu and
+  migration pages and the README are corrected. Two guards now fail on a doc
+  naming a policy file impr does not write, or an option impr refuses.
 - `impr rules --scope` takes the PowerShell toolkit's four scopes with their
   meanings: `product` (the default) now allows any file of the product,
   `file` allows the product's listed binaries at any version, and `version`

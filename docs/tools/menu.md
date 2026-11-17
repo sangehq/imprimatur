@@ -39,8 +39,8 @@ line.
 The menu opens only when stdin is a terminal and `CI` is unset. Otherwise (a pipe, CI, or sange calling impr)
 `impr` with no arguments prints the usage text and exits 1, as before.
 
-The PowerShell toolkit's build, release and init entries are not in the menu, because the Go impr has no such
-commands yet.
+The PowerShell toolkit's build, release and init entries are not in the menu yet. [`impr build`](build.md)
+and [`impr release`](release.md) exist as commands; project setup (init) moved to sange.
 
 ---
 
