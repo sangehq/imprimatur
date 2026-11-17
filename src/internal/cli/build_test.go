@@ -144,15 +144,7 @@ func TestReleasePositionalVersion(t *testing.T) {
 		t.Skip("needs ssh-keygen")
 	}
 	h := newHarness(t)
-	key := filepath.Join(t.TempDir(), "k")
-	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
-		t.Fatalf("%v %s", err, out)
-	}
-	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
-	h.env["IMPR_K"] = key
-	h.ok("profile", "add", "p", "--scope", "personal", "--owner", "me", "--purpose", "internal",
-		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
-		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+	internalSSHProfile(t, h, "p")
 	h.ok("release", "--repo-root", repo, "--targets", runtime.GOOS+"/"+runtime.GOARCH, "--profile", "p",
 		"--purpose", "internal", "--platforms", "checksums", "v1.5.0")
 	b, err := os.ReadFile(filepath.Join(repo, "build", "build-manifest.json"))
@@ -161,5 +153,48 @@ func TestReleasePositionalVersion(t *testing.T) {
 	}
 	if got := runHello(t, repo); got != "v1.5.0" {
 		t.Fatalf("binary says %q", got)
+	}
+}
+
+// internalSSHProfile adds an internal profile that signs checksums with a new SSH key.
+func internalSSHProfile(t *testing.T, h *harness, name string) {
+	t.Helper()
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("needs ssh-keygen")
+	}
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	fpOut, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", name, "--scope", "personal", "--owner", "me", "--purpose", "internal",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fpOut))[1])
+}
+
+// O-150, old bug 3: `impr release --json` prints exactly one document, with
+// the build, sign and verify results inside it, on success and on failure.
+func TestReleaseJSONIsOneDocument(t *testing.T) {
+	repo := goRepo(t)
+	h := newHarness(t)
+	internalSSHProfile(t, h, "p")
+	host := runtime.GOOS + "/" + runtime.GOARCH
+	out := h.exits(0, "release", "--repo-root", repo, "--targets", host, "--profile", "p", "--purpose", "internal",
+		"--platforms", "checksums", "--json")
+	var r ReleaseResult
+	if err := json.Unmarshal([]byte(out), &r); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	if r.Contract != 1 || !r.OK || r.Build.Manifest.Schema != "sange.build-manifest/v1" || len(r.Sign) == 0 || len(r.Verify) == 0 {
+		t.Fatalf("release result: %s", out)
+	}
+	// A test-purpose run with an internal profile fails at sign: still one
+	// document, naming the step.
+	out = h.exits(3, "release", "--repo-root", repo, "--targets", host, "--profile", "p", "--purpose", "release",
+		"--platforms", "checksums", "--json")
+	var f ReleaseResult
+	if err := json.Unmarshal([]byte(out), &f); err != nil || f.OK || f.Step != "sign" || len(f.Sign) == 0 || len(f.Verify) != 0 {
+		t.Fatalf("failed release result: %v %s", err, out)
 	}
 }

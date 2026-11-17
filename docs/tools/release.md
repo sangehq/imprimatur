@@ -7,6 +7,7 @@
 ```bash
 impr release --profile acme-release --purpose release
 impr release --profile dev --purpose internal --platforms checksums --targets linux/amd64
+impr release v1.4.0 --profile acme-release --purpose release      # VERSION, as in impr build
 ```
 
 `impr release` runs, in order:
@@ -17,6 +18,15 @@ impr release --profile dev --purpose internal --platforms checksums --targets li
 3. `impr verify --signed build/impr-manifest.json --manifest build/build-manifest.json --strict`.
 
 It stops at the first failure and uses that step's exit code.
+
+With `--json`, stdout holds exactly one document:
+
+```json
+{"contract": 1, "ok": true, "build": {…impr build --json…}, "sign": {…impr sign --json…}, "verify": {…impr verify --json…}}
+```
+
+On a failure `ok` is false, `step` names the step that failed (`sign` or `verify`), and the steps after
+it are absent. A build failure prints the ordinary error document.
 
 ## What it never does
 

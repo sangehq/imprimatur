@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,6 +23,17 @@ type BuildResult struct {
 	Contract     int              `json:"contract"`
 	ManifestPath string           `json:"manifestPath"`
 	Manifest     gobuild.Manifest `json:"manifest"`
+}
+
+// ReleaseResult is `impr release --json`: one document holding each step's
+// own result. Step names the step that failed.
+type ReleaseResult struct {
+	Contract int             `json:"contract"`
+	OK       bool            `json:"ok"`
+	Step     string          `json:"step,omitempty"`
+	Build    BuildResult     `json:"build"`
+	Sign     json.RawMessage `json:"sign,omitempty"`
+	Verify   json.RawMessage `json:"verify,omitempty"`
 }
 
 // buildOptions turns flags into build options, with the estate defaults:
@@ -165,19 +178,47 @@ func cmdRelease(ctx context.Context, a *App, args []string) (int, error) {
 	for _, pl := range p.list("platforms") {
 		sign = append(sign, "--platforms", pl)
 	}
-	if p.on("json") {
-		sign = append(sign, "--json")
-	}
-	if code := a.Run(ctx, sign); code != 0 {
-		return code, nil
-	}
 	verify := []string{"verify", "--signed", filepath.Join(filepath.Dir(path), "impr-manifest.json"), "--manifest", path,
 		"--profile", p.str("profile"), "--root", o.RepoRoot, "--strict"}
-	if p.on("json") {
-		verify = append(verify, "--json")
+	if !p.on("json") {
+		if code := a.Run(ctx, sign); code != 0 {
+			return code, nil
+		}
+		code := a.Run(ctx, verify)
+		if code == 0 {
+			a.say("release   built, signed and verified %d file(s); nothing was tagged, pushed or published", len(m.Artifacts))
+		}
+		return code, nil
 	}
-	code := a.Run(ctx, verify)
+	// One document on stdout (O-150): each step writes its own into a
+	// buffer, and the release result carries them.
+	r := ReleaseResult{Contract: contract.Version, Build: BuildResult{Contract: contract.Version, ManifestPath: path, Manifest: m}}
+	step := func(name string, args []string) int {
+		var out bytes.Buffer
+		sub := *a
+		sub.Stdout = &out
+		code := sub.Run(ctx, append(args, "--json"))
+		doc := json.RawMessage(bytes.TrimSpace(out.Bytes()))
+		if !json.Valid(doc) {
+			doc = nil
+		}
+		if name == "sign" {
+			r.Sign = doc
+		} else {
+			r.Verify = doc
+		}
+		if code != 0 {
+			r.Step = name
+		}
+		return code
+	}
+	code := step("sign", sign)
 	if code == 0 {
+		code = step("verify", verify)
+	}
+	r.OK = code == 0
+	a.json(r)
+	if r.OK {
 		a.say("release   built, signed and verified %d file(s); nothing was tagged, pushed or published", len(m.Artifacts))
 	}
 	return code, nil

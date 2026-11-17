@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `v0.0.0-snapshot` with a warning, as the PowerShell release did.
 - `impr build` refuses `--profile`, `--purpose`, `--platforms` and `--repo`
   instead of ignoring them; they belong to `impr release`.
+- `impr release --json` prints one document holding the build, sign and verify
+  results, and `step` on a failure; it printed two documents.
 
 ## [0.1.0] - 2026-11-17
 
