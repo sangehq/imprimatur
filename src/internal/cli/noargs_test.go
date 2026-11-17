@@ -54,3 +54,16 @@ func TestProfileEditExportNameTheDefault(t *testing.T) {
 		t.Errorf("a named export printed the default note: %s", e)
 	}
 }
+
+// Old security finding 14: the PATH command impr prints on Windows reads and
+// writes the user PATH only, unexpanded, so it neither copies the machine
+// PATH into the user's nor turns %VAR% entries into fixed text.
+func TestInstallPrintsAUserOnlyPathCommand(t *testing.T) {
+	h := newHarness(t)
+	h.os = "windows"
+	dir := t.TempDir()
+	_, _, e := h.impr("install", "--dir", dir)
+	if strings.Contains(e, "$env:Path") || !strings.Contains(e, "DoNotExpandEnvironmentNames") || !strings.Contains(e, "ExpandString") {
+		t.Fatalf("the PATH command is not user-only and unexpanded:\n%s", e)
+	}
+}

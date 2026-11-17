@@ -128,7 +128,12 @@ func cmdInstall(_ context.Context, a *App, args []string) (int, error) {
 	if !a.onPath(dir) {
 		if a.GOOS == "windows" {
 			a.say("install   %s is not on PATH; add it in Settings > Environment variables, or run:", dir)
-			a.say(`          [Environment]::SetEnvironmentVariable('Path', $env:Path + ';%s', 'User')`, dir)
+			// The user PATH alone, read unexpanded and written back as
+			// REG_EXPAND_SZ: $env:Path would copy the machine PATH into the
+			// user's and fix every %VAR% entry (old security finding 14).
+			a.say(`          $p = (Get-Item HKCU:\Environment).GetValue('Path', '', 'DoNotExpandEnvironmentNames'); `+
+				`Set-ItemProperty HKCU:\Environment Path ($p.TrimEnd(';') + ';%s') -Type ExpandString`, dir)
+			a.say("          then open a new terminal (sign out and in if it does not see it)")
 		} else {
 			a.say("install   %s is not on PATH; add to your shell profile: export PATH=\"%s:$PATH\"", dir, dir)
 		}
