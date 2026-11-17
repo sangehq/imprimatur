@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr cert show` (`cert list` plus the `certutil` lines that trust a test
+  certificate impr made, only when its `.cer` matches the pinned
+  thumbprint), `impr config list` (the same as `show`), and `impr config set`
+  joining the words of its value, as in the PowerShell toolkit; an empty
+  value is refused.
 - `impr CMD --help` says what the command does and names its docs page; a
   mistyped command or option gets the nearest name ("did you mean"); and
   `--no-color` is accepted anywhere, as in the PowerShell toolkit (impr prints

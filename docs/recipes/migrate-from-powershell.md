@@ -47,6 +47,10 @@ Each old spelling still works as an alias of the Go name (design ID-13):
 
 ## Dropped by decision
 
+- `impr config KEY=VALUE` (the 1.4 form) and the per-key descriptions of `config list`: the old keys
+  no longer exist (ID-16). `impr config list` is `impr config show`; `impr cert show` is `cert list` plus
+  the trust steps.
+
 - Short value options (`-p DIR`, `-t LIST`, `-o DIR`, …) and the 1.4 PowerShell style (`-Version 1.2.0`,
   `-Project X`): use the long options (ID-15). `-h` still works. `--no-color` is accepted and changes
   nothing.

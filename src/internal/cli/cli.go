@@ -569,7 +569,7 @@ Usage:
   impr doctor [--json]
   impr profile list|show|add|edit|rm|import|export|validate|default|capabilities|import-legacy ... [--json]
   impr profile bundle install BUNDLE.json [--sig FILE] | list [--json] | verify [--json]
-  impr cert list [--json]
+  impr cert list|show [--json]
   impr cert create [--name NAME] [--subject CN] [--days N] [--json]
   impr cert install-check --print [--for systemd|launchd|task] [--exe PATH]
   impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
@@ -587,7 +587,7 @@ Usage:
   impr events tail [--type GLOB] [--limit N] [--json] | verify [--json] | types [--json]
   impr hooks list [--json] | pin FILE | test NAME
   impr webhooks list [--json] | secret | retry [--all] | deliveries [--json]
-  impr config path|show|validate [--json] | get KEY | set KEY VALUE [--profile NAME] | unset KEY [--profile NAME]
+  impr config path|show|list|validate [--json] | get KEY | set KEY VALUE [--profile NAME] | unset KEY [--profile NAME]
   impr config profile list [--json] | create NAME | use NAME | use --none | rm NAME
   impr tools list [--json] | pin NAME
   impr events replay --to WEBHOOK [--since 24h|TIME] [--type GLOB]... [--limit N] [--dry-run] [--force] [--json]

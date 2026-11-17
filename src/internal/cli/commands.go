@@ -2,13 +2,17 @@ package cli
 
 import (
 	"context"
+	"crypto/sha1" //nolint:gosec // G505: a certificate thumbprint is a SHA-1 identifier
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/sangehq/imprimatur/src/internal/backend"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/execx"
+	"github.com/sangehq/imprimatur/src/internal/profile"
 	"github.com/sangehq/imprimatur/src/internal/rules"
 	"github.com/sangehq/imprimatur/src/internal/signing"
 )
@@ -208,8 +212,8 @@ func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if len(p.pos) != 1 || p.pos[0] != "list" {
-		return 0, contract.New(contract.Usage, "impr cert list | impr cert create").WithFix("impr cert list --json")
+	if len(p.pos) != 1 || (p.pos[0] != "list" && p.pos[0] != "show") {
+		return 0, contract.New(contract.Usage, "impr cert list | show | create").WithFix("impr cert list --json")
 	}
 	svc, err := a.service()
 	if err != nil {
@@ -234,8 +238,35 @@ func cmdCert(ctx context.Context, a *App, args []string) (int, error) {
 			state = "present"
 		}
 		a.say("%-10s %s: %s, %s (%s)", c.Platform, c.Profile, state, exp, c.Source)
+		if p.pos[0] == "show" {
+			a.trustSteps(c)
+		}
 	}
 	return 0, nil
+}
+
+// trustSteps prints, for impr cert show (ID-16, O-69), how to trust a test
+// certificate impr cert create made, but only when the .cer beside it is the
+// certificate the profile pins (old security finding 1).
+func (a *App) trustSteps(c backend.CertEntry) {
+	if c.Platform != profile.Windows || c.Thumbprint == "" {
+		return
+	}
+	d, err := a.dirs()
+	if err != nil {
+		return
+	}
+	cer := filepath.Join(d.Config, "test-certs", c.Profile+".cer")
+	der, err := os.ReadFile(cer) //nolint:gosec // G304: the public certificate impr cert create wrote
+	if err != nil {
+		return
+	}
+	sum := sha1.Sum(der) //nolint:gosec // G401: the thumbprint Windows shows and impr pins
+	if !strings.EqualFold(hex.EncodeToString(sum[:]), c.Thumbprint) {
+		a.say("           %s does not match the pinned thumbprint %s; do not trust it", cer, c.Thumbprint)
+		return
+	}
+	a.say("           to trust it on a Windows test machine: certutil -user -addstore Root %s && certutil -user -addstore TrustedPublisher %s", cer, cer)
 }
 
 var signFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "manifest": stringFlag, "commit": stringFlag, "tree": stringFlag,

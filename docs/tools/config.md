@@ -74,6 +74,7 @@ The system config can lock dotted keys:
 ```bash
 impr config path                      # every layer, and whether it is present
 impr config show --json               # the effective configuration, its layers and locked keys
+impr config list                      # the same as show
 impr config get server.roots
 impr config set server.roots '["/Users/me/builds"]'
 impr config unset server.listen
@@ -87,7 +88,9 @@ impr config profile list --json
 impr config profile rm ci              # refused while it is active
 ```
 
-- **Values.** A `set` value is parsed as JSON when it is JSON, and kept as a string otherwise.
+- **Values.** A `set` value is parsed as JSON when it is JSON, and kept as a string otherwise. Its words
+  are joined with spaces first, so `impr config set server.roots ["/a", "/b"]` works unquoted. An empty
+  value is refused; `unset` removes a key.
 - **Safe edits.** A change is written, the configuration is reloaded, and the file is put back as it was
   if the result does not load.
 - **Events.** Changes are recorded as `config.changed` in the [event log](events.md).

@@ -5,6 +5,7 @@ and when it expires, where that can be read.
 
 ```bash
 impr cert list [--json]
+impr cert show [--json]          # cert list, plus how to trust a test certificate impr made
 ```
 
 ```json
@@ -30,6 +31,11 @@ impr cert list [--json]
 sange raises its expiry triage items from this list.
 
 ## Windows store expiry
+
+`cert show` prints what `cert list` prints (its `--json` is the same document) and, for each test
+certificate `impr cert create` made, the `certutil` lines that trust it on a Windows test machine. It
+prints them only when the `.cer` beside the key is the certificate the profile pins by thumbprint;
+otherwise it says the file does not match.
 
 For a `cert-store` or `certum` certificate on Windows, `cert list` asks `certutil` to export the pinned
 certificate and reads its real expiry from the exported file. A declared `notAfter` is used only when the
