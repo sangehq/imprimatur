@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   this architecture first, then x64) when it is not on `PATH`, as the
   PowerShell toolkit did; a normal SDK install reported Windows signing as
   unavailable.
+- A `test` profile accepts an untrusted test root only when its Windows
+  certificate is pinned by thumbprint; a subject alone is a name anyone can
+  put in a self-signed certificate (old security finding 2). Profiles made by
+  `impr cert create` pin the thumbprint already.
 - `impr completion` takes `pwsh` for PowerShell, refuses a second shell
   instead of ignoring it, and completes a one-letter alias (`impr s --pro…`)
   like the command it stands for, as the docs said it did.

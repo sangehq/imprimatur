@@ -250,8 +250,8 @@ func (a *Authenticode) signPFX(ctx context.Context, art Artifact) (string, error
 }
 
 // Verify checks the file is validly signed (the platform tool) by exactly the
-// pinned certificate, with a timestamp. A test profile also accepts a
-// signature whose only fault is an untrusted test root.
+// pinned certificate, with a timestamp. A test profile pinned by thumbprint
+// also accepts a signature whose only fault is an untrusted test root.
 func (a *Authenticode) Verify(ctx context.Context, art Artifact, p profile.Profile) error {
 	_, err := a.check(ctx, art, p)
 	return err
@@ -288,6 +288,12 @@ func (a *Authenticode) check(ctx context.Context, art Artifact, p profile.Profil
 		untrustedRoot := untrustedRootOnly(out)
 		if !p.HasPurpose(profile.PurposeTest) || !untrustedRoot {
 			return "", contract.New(contract.VerifyFailed, "the signature on %s did not verify", art.Rel).WithDetails(firstLine(out))
+		}
+		// The allowance stands on the pin: a subject is a name anyone can put
+		// in a self-signed certificate (old security finding 2).
+		if a.Spec.Thumbprint == "" {
+			return "", contract.New(contract.VerifyFailed, "%s chains to an untrusted test root, which a test profile accepts only when its certificate is pinned by thumbprint", art.Rel).
+				WithFix("impr profile edit NAME --set platforms.windows.thumbprint=" + s.Thumbprint)
 		}
 	}
 	return s.Subject, nil

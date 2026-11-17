@@ -779,3 +779,21 @@ func TestOsslKeyArgsSplitsAPEMBundle(t *testing.T) {
 		t.Fatal("the key file was left behind")
 	}
 }
+
+// Old security finding 2: the untrusted-root allowance of a test profile is
+// taken only when the certificate is pinned by thumbprint. A subject alone
+// is a name anyone can put in a self-signed certificate.
+func TestAuthenticodeUntrustedRootNeedsAThumbprintPin(t *testing.T) {
+	path, _ := signedPE(t, t.TempDir(), pkix.Name{CommonName: "Test"}, true)
+	f := execx.NewFake("osslsigncode")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		return execx.Result{ExitCode: 1, Stderr: []byte("unable to get local issuer certificate")}
+	}
+	spec := profile.WindowsSpec{Kind: "authenticode", Backend: profile.BackendPFX, CertRef: "env://PFX", Subject: "CN=Test"}
+	a := &Authenticode{H: fakeHost("linux", f, nil), Spec: spec}
+	err := a.Verify(context.Background(), Artifact{Path: path, Rel: "tool.exe"}, winProfile(spec, profile.PurposeTest))
+	wantCode(t, err, contract.VerifyFailed)
+	if !strings.Contains(err.Error(), "thumbprint") {
+		t.Fatalf("the refusal does not say a thumbprint is needed: %v", err)
+	}
+}
