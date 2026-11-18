@@ -35,6 +35,9 @@ The system config can lock dotted keys:
 - **Nothing below can set a locked key.** If the user config or a profile sets one, or replaces its parent
   object, the configuration does not load. A command that would introduce such a change is refused and
   rolled back.
+- **Keys are case-sensitive, in every layer.** A key spelled any way but the documented one
+  (`allowsign`, `SERVER`, or with a look-alike letter) is refused and the configuration does not load,
+  so another spelling cannot set a locked key behind the lock.
 - **Only the system config may lock.**
 - **Locking `activeProfile`** also refuses `IMPR_CONFIG_PROFILE`.
 

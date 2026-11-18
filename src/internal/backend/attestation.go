@@ -353,6 +353,14 @@ func (a *Attestation) Verify(ctx context.Context, art Artifact, p profile.Profil
 		if ext["commit"] != bl.Commit || ext["tree"] != bl.Tree {
 			return contract.New(contract.VerifyFailed, "%s attests commit %s, not the signed build's %s", name, ext["commit"], bl.Commit)
 		}
+		// The same commit and tree from another build manifest or another
+		// repository is another build (security review I-16).
+		if got := st.Predicate.BuildDefinition.InternalParameters["buildManifestDigest"]; bl.ManifestDigest != "" && got != bl.ManifestDigest {
+			return contract.New(contract.VerifyFailed, "%s attests build manifest %s, not the signed build's %s", name, got, bl.ManifestDigest)
+		}
+		if bl.Repo != "" && profile.RepoIdentity(ext["repository"]) != profile.RepoIdentity(bl.Repo) {
+			return contract.New(contract.VerifyFailed, "%s attests repository %q, not the signed build's %q", name, ext["repository"], bl.Repo)
+		}
 	}
 	return nil
 }

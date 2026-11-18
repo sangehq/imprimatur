@@ -22,6 +22,9 @@ explains the common ones.
   `allowedRepos`, or `--repo` is missing. `impr profile show NAME` lists the allowed repositories.
 - **"differs from the build manifest".** A file changed after the build. Rebuild, then sign the new build
   manifest.
+- **"changed after it was checked".** Something wrote to a binary while impr was signing it. impr signs a
+  private copy of the bytes it checked and refuses when they no longer match; find the writer (a watcher,
+  a second build), then sign again.
 - **"needs N approval(s) and has 0 valid".** The profile requires approval and `approvals.enforce` is on.
   An approver runs `impr approve`; see [two-person release](recipes/two-person-release.md).
 - **"no terminal to ask".** The profile's approval is `confirm`, which only a person at a terminal can

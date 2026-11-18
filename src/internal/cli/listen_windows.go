@@ -100,52 +100,71 @@ func (l *pipeListener) instance(first bool) (windows.Handle, error) {
 }
 
 // Accept waits for a client on the pending instance, then makes the next
-// one, so a client never finds the pipe missing between connections.
+// one, so a client never finds the pipe missing between connections. A
+// client that connected and left before Accept ran (ERROR_NO_DATA) is
+// dropped and Accept waits again: returning that error stopped the server,
+// so any local client could take impr serve down (found on Windows
+// 2026-11-17).
 func (l *pipeListener) Accept() (net.Conn, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.next == 0 {
-		h, err := l.instance(false)
+	for {
+		if l.next == 0 {
+			h, err := l.instance(false)
+			if err != nil {
+				return nil, err
+			}
+			l.next = h
+		}
+		h := l.next
+		err := l.connect(h)
+		if errors.Is(err, windows.ERROR_NO_DATA) {
+			_ = windows.DisconnectNamedPipe(h)
+			_ = windows.CloseHandle(h)
+			l.next = 0
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}
-		l.next = h
+		l.next = 0
+		if nh, err := l.instance(false); err == nil {
+			l.next = nh
+		}
+		// The handle is overlapped, so os.NewFile hands it to the runtime's I/O
+		// completion port: reads and writes run concurrently, and deadlines work.
+		return pipeConn{File: os.NewFile(uintptr(h), l.path), addr: pipeAddr(l.path)}, nil
 	}
-	h := l.next
+}
+
+// connect waits for a client on instance h, or for Close.
+func (l *pipeListener) connect(h windows.Handle) error {
 	ev, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() { _ = windows.CloseHandle(ev) }()
 	ov := &windows.Overlapped{HEvent: ev}
 	err = windows.ConnectNamedPipe(h, ov)
 	switch {
 	case err == nil, errors.Is(err, windows.ERROR_PIPE_CONNECTED):
+		return nil
 	case errors.Is(err, windows.ERROR_IO_PENDING):
 		w, werr := windows.WaitForMultipleObjects([]windows.Handle{ev, l.stop}, false, windows.INFINITE)
 		if werr != nil {
-			return nil, werr
+			return werr
 		}
 		if w != windows.WAIT_OBJECT_0 {
 			_ = windows.CancelIoEx(h, ov)
 			var n uint32
 			_ = windows.GetOverlappedResult(h, ov, &n, true)
-			return nil, net.ErrClosed
+			return net.ErrClosed
 		}
 		var n uint32
-		if err := windows.GetOverlappedResult(h, ov, &n, false); err != nil {
-			return nil, err
-		}
+		return windows.GetOverlappedResult(h, ov, &n, false)
 	default:
-		return nil, err
+		return err
 	}
-	l.next = 0
-	if nh, err := l.instance(false); err == nil {
-		l.next = nh
-	}
-	// The handle is overlapped, so os.NewFile hands it to the runtime's I/O
-	// completion port: reads and writes run concurrently, and deadlines work.
-	return pipeConn{File: os.NewFile(uintptr(h), l.path), addr: pipeAddr(l.path)}, nil
 }
 
 // Close stops Accept and closes the pending instance.

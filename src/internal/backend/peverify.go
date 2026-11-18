@@ -49,6 +49,14 @@ func VerifyAuthenticode(path string) error {
 	if err != nil {
 		return err
 	}
+	return VerifyAuthenticodeBytes(b)
+}
+
+// VerifyAuthenticodeBytes is VerifyAuthenticode over a file already read. The
+// signer whose key is checked comes from the same bytes that are hashed, so a
+// file changed between two reads cannot pair one file's signer with
+// another's image (security review, I-15).
+func VerifyAuthenticodeBytes(b []byte) error {
 	f, err := pe.NewFile(bytes.NewReader(b))
 	if err != nil {
 		return fmt.Errorf("not a PE file: %w", err)
@@ -68,7 +76,7 @@ func VerifyAuthenticode(path string) error {
 	if dir.Size < 8 || start < dirOff+8 || end > len(b) {
 		return errNotSigned
 	}
-	s, err := ReadPESigner(path)
+	s, err := ReadPESignerBytes(b)
 	if err != nil {
 		return err
 	}

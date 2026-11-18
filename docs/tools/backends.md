@@ -14,7 +14,7 @@ type. Each runs only allow-listed tools, by absolute path, with no shell.
 | checksums | `minisign` | any | `minisign` | key id |
 | checksums | `ssh` | any | `ssh-keygen -Y` | key fingerprint (`SHA256:...`) |
 | containers | `cosign` key / keyless | any | `cosign sign-blob`, `verify-blob` | public-key sha256 / identity and issuer |
-| attestations | `in-toto` | wherever its signer works | the checksum key's tool, or `cosign` | the signer's pin, the checksum file's entries, and the commit and tree |
+| attestations | `in-toto` | wherever its signer works | the checksum key's tool, or `cosign` | the signer's pin, the checksum file's entries, and with `--signed` the commit, tree, build manifest digest and repository |
 
 ## in-toto attestations
 
@@ -74,9 +74,13 @@ envelope holding an in-toto Statement v1.
   `entitlements` is relative to `--root`. The identity must already be in a
   keychain (on a runner, the sign-macos workflow imports it).
 - With `notary`, the signed files are zipped with `ditto` and submitted once
-  with `xcrun notarytool submit --wait`, using the `.p8` key from `apiKeyRef`
-  and `keyId` and `issuer` (literal or `env://`). `.dmg` and `.pkg` files are
-  stapled; a bare Mach-O cannot carry a ticket and is not.
+  with `xcrun notarytool submit --wait`. The credentials are either
+  `keychainProfile`, a name notarytool stored in the login keychain
+  (`xcrun notarytool store-credentials NAME`), so impr never handles the key,
+  or the `.p8` key from `apiKeyRef` with `keyId` and `issuer` (literal or
+  `env://`), written 0600 in a private folder for the one notarytool call (it
+  takes the key only as a file: it refuses a pipe). Name one, not both. `.dmg`
+  and `.pkg` files are stapled; a bare Mach-O cannot carry a ticket and is not.
 
 ## Artifact Signing sign-in
 

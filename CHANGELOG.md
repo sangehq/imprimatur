@@ -7,6 +7,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- A Windows or macOS certificate whose expiry this host cannot read fails a
+  `--strict` sign and warns otherwise; `platforms.<os>.notAfter` declares it,
+  and Artifact Signing's short-lived certificates are exempt (owner decision
+  D-S2, I-20).
+- An in-toto attestation verified against a signed record must name that
+  record's build manifest digest and repository too, not only its commit and
+  tree; a loose `impr verify SHA256SUMS` says the attested build was not
+  compared (security review, I-16).
+- `impr completion install` and `uninstall` replace or remove only a
+  completion file impr generated, and never through a link; any other file at
+  the path stops the run before anything changes. `impr uninstall` no longer
+  follows a link there either (security review).
+- `impr serve install-unit` and `impr cert install-check` refuse a path with
+  a control character: a line break in `--exe` or a server root printed a
+  second directive into the unit (security review).
+- `impr rules` reads each signed file once and takes its signer, signature
+  check, sha256 and version information from those bytes; a file changed
+  between reads could pair one file's signer with another's image (security
+  review, I-15).
+- Outbound webhooks refuse the reserved IPv4 ranges (`0.0.0.0/8`,
+  `192.0.0.0/24`, `198.18.0.0/15`, `240.0.0.0/4`), check the IPv4 address
+  inside a NAT64, 6to4 or IPv4-compatible address as itself, and refuse
+  Teredo and local-use NAT64: `64:ff9b::a9fe:a9fe` reached the cloud metadata
+  address on a NAT64 network (security review, I-09).
+- Build manifests, signed records and the replay ledger over 16 MiB, and
+  approvals or their signatures over 64 KiB, are refused before they are read
+  into memory (security review, I-14).
+- Approvers listed under two names with one key are a configuration problem,
+  and an approval signed by a key already counted does not count again: one
+  person could meet `approvals.required: 2` alone (security review, I-02).
+- The event log takes an exclusive lock while it appends, so writers in
+  several processes (`impr serve` and a CLI run) no longer fork its hash
+  chain, which `impr events verify` then reported as an edited log
+  (security review R9).
+- `impr serve`'s inbound replay ledger fails closed: a ledger it cannot read,
+  or a delivery it cannot record, answers 503 instead of loading as empty or
+  passing unrecorded, and it writes through its own temporary file. GitHub
+  delivery ids are remembered for 400 days instead of 7, since GitHub signs
+  no timestamp (security review R8).
+- A release signed in a git work tree is bound to it: `--commit` must be in
+  the checkout with `--tree` as its tree, and `--repo` must be one of its
+  remotes, so a signer cannot record a commit or an allowed repository the
+  build did not come from. A release outside a git work tree is refused,
+  since nothing could tie it to its source (owner decision D-S1). `impr build` counts untracked files outside `build/` as
+  uncommitted changes: an untracked `.go` file was compiled into a binary
+  recorded as the commit (security review R7). Loose `impr sign FILE` keeps
+  counting tracked files only.
+- `impr rules` from a build manifest resolves each file inside the build's
+  root and checks it against the signed record beside it (same build, signed,
+  same sha256), and pins the signer to the record's profile; `--profile NAME`
+  names one explicitly, for named files too. A committed binary signed by
+  someone else's certificate got allow rules (security review R6). Without a
+  record, rules are refused unless `--without-signed-record` opts out, which
+  `--strict` still refuses (owner decision D-S3).
+- A profile an installed bundle names is checked against that bundle even when
+  its file was edited to `"managed": false` or another owner; the check used
+  to be skipped. `impr profile bundle install` refuses a bundle issued before
+  the installed one, so a replaced key cannot be rolled back in (security
+  review R5).
+- `impr verify --signed` resolves every path in the signed record under
+  `--root`; an absolute path in a committed record took verify to any file
+  the process could read, and passed it. `impr sign` refuses a build manifest
+  outside `--root`, so it never writes such a record. `impr serve` checks
+  `server.roots` on resolved paths too, so a symbolic link inside a root
+  cannot move it (security review R4).
+- `impr build` and `impr release` refuse a `LICENSE` or `README.md` that is
+  a symbolic link (an archive would have carried its target, a private key
+  say) and a `build/`, `build/{os}/` or `build/archives/` folder that is one
+  (the build wrote, and `--clean` deleted, outside the repository). Security
+  review R3.
+- `impr sign` signs the bytes it checked: each binary is copied into a
+  private folder beside it, the copy is hashed against the checked digest,
+  signed, and moved back. A file swapped between the check and the signing
+  tool is refused (security review R2). Artifact paths resolve through
+  symbolic links, so the signed file replaces the file, not a link to it.
+- Configuration keys are case-sensitive in every layer: a user config or
+  configuration profile could set a locked key by spelling it differently
+  (`allowsign`, `SERVER`, `ſ` for `s`), because JSON decoding matched it while
+  the lock check did not (security review R1).
+- `impr doctor` notes a release-purpose profile that can sign while
+  `approvals.enforce` is off, and an audit trail that is not anchored off the
+  machine (threat-model residuals 1 and 2). Notes never make doctor fail.
+- `impr serve` on Windows no longer stops when a client connects to its named
+  pipe and leaves before the server accepts it (`ERROR_NO_DATA`); any local
+  client could take the server down. Found and checked on Windows 11 ARM64:
+  the named-pipe test fails on the old code and passes now.
+- `impr rules` allow rules apply to `BUILTIN\Users` (S-1-5-32-545) by
+  default instead of Everyone, which also covers anonymous and service
+  identities (old security finding 15); `--sid` and a request's
+  `userOrGroupSid` still choose, and a note names the user. `impr rules test`
+  tests as `BUILTIN\Users` by default. Checked on Windows: Users allowed,
+  Everyone denied.
+- A macOS profile's `notary.keychainProfile` names credentials notarytool
+  stored in the login keychain, so impr never resolves, writes or passes the
+  App Store Connect key (old security finding 7). `apiKeyRef` stays for CI;
+  a profile names exactly one. notarytool refuses a pipe for `--key`
+  (measured), so the key file route remains 0600 in a private folder.
+- `impr rules test` runs its PowerShell script inline (`-EncodedCommand`)
+  instead of from a temporary file with `-ExecutionPolicy Bypass`, and passes
+  the policy, user and files as environment variables, never as code (old
+  security finding 16). It also fails when Windows answers for fewer files than
+  were named; an empty answer read as "allowed".
+
 ### Added
 
 - End-to-end tests (`src/internal/e2e`) build `impr` and run it as a person

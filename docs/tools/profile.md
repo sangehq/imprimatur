@@ -106,10 +106,12 @@ edit, a profile that claims to be the company's.
   nothing is installed.
 - **Install.** `impr profile bundle install acme.json` writes each profile as `managed`, and keeps the
   bundle and its signature under `<config>/bundles/`. A personal profile with the same name is never
-  replaced. Installing a newer bundle from the same owner replaces that owner's managed profiles.
+  replaced. Installing a newer bundle from the same owner replaces that owner's managed profiles; a bundle
+  issued before the installed one (`issuedAt`) is refused, so profiles cannot be rolled back.
 - **Checked on every use.** Before a managed profile signs or verifies, impr re-verifies the stored bundle
   and compares the profile with it. A profile edited by hand, or a bundle edited after installation, stops
-  with exit 4.
+  with exit 4. A profile an installed bundle names is checked even when its file says `"managed": false`
+  or names another owner.
 
 ## What is refused
 

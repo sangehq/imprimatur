@@ -54,15 +54,28 @@ func (b Builder) universal(ctx context.Context, outRoot, binary string, built ma
 // README.md when they exist, and checksums.txt lists every archive by its
 // bare name (ID-12).
 func Archive(repoRoot string, m Manifest) ([]string, error) {
+	if err := NoLinks(repoRoot, "build", "build/"+ArchiveDir); err != nil {
+		return nil, err
+	}
+	// A committed LICENSE or README.md that is a link would pack its target,
+	// a private key say, into every archive (security review R3).
+	var extras []string
+	for _, f := range []string{"LICENSE", "README.md"} {
+		st, err := os.Lstat(filepath.Join(repoRoot, f))
+		if err != nil {
+			continue
+		}
+		if st.Mode()&os.ModeSymlink != 0 {
+			return nil, contract.New(contract.Usage, "%s is a symbolic link; impr does not pack a link's target into a release archive", f).
+				WithFix("commit " + f + " as a regular file")
+		}
+		if st.Mode().IsRegular() {
+			extras = append(extras, f)
+		}
+	}
 	dir := filepath.Join(repoRoot, "build", ArchiveDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec // G301: build output others read
 		return nil, err
-	}
-	var extras []string
-	for _, f := range []string{"LICENSE", "README.md"} {
-		if st, err := os.Stat(filepath.Join(repoRoot, f)); err == nil && st.Mode().IsRegular() {
-			extras = append(extras, f)
-		}
 	}
 	var names, lines []string
 	for _, a := range m.Artifacts {
@@ -149,4 +162,21 @@ func zipOf(files []string) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+// NoLinks refuses when any of the repository-relative paths that exist is a
+// symbolic link, so impr never writes, packs or deletes through one into a
+// folder outside the repository (security review R3).
+func NoLinks(repoRoot string, rels ...string) error {
+	for _, rel := range rels {
+		st, err := os.Lstat(filepath.Join(repoRoot, filepath.FromSlash(rel)))
+		if err != nil {
+			continue
+		}
+		if st.Mode()&os.ModeSymlink != 0 {
+			return contract.New(contract.Usage, "%s is a symbolic link; impr writes build output only inside the repository", rel).
+				WithFix("remove the link and let impr create " + rel + " as a folder")
+		}
+	}
+	return nil
 }

@@ -48,8 +48,49 @@ type Service struct {
 	// is no person to ask (the REST server, CI, a pipe), so confirm-mode
 	// approval is refused.
 	Confirm func(prompt, want string) bool
+	// Git reads the checkout at root: the tree of commit ("" when the
+	// checkout does not have it) and the remotes' URLs. An error means root
+	// is not a git work tree. nil checks nothing (security review R7).
+	Git func(ctx context.Context, root, commit string) (GitState, error)
 	// BackendFor builds a backend; nil uses backend.For. Tests replace it.
 	BackendFor func(h backend.Host, p profile.Profile, platform string) (backend.Backend, error)
+}
+
+// GitState is what the checkout says about a release's commit.
+type GitState struct {
+	Tree    string   // the commit's tree, or "" when the checkout lacks it
+	Remotes []string // every remote's URL
+}
+
+// checkBinding ties a release's commit, tree and repository to the checkout
+// at root, so a signer cannot record a commit or an allowed repository the
+// build did not come from (security review R7).
+func (s *Service) checkBinding(ctx context.Context, root string, o SignOptions) error {
+	if s.Git == nil {
+		return nil
+	}
+	st, err := s.Git(ctx, root, o.Commit)
+	if err != nil {
+		// Nothing could tie the release to its source, so it is refused
+		// (owner decision D-S1, ID-28).
+		return contract.New(contract.SignFailed, "%s is not a git work tree, so the release's commit, tree and repository cannot be checked; nothing was signed", root).
+			WithDetails(err.Error()).WithFix("sign the release in the checkout the build came from (--root)")
+	}
+	if st.Tree == "" {
+		return contract.New(contract.SignFailed, "commit %s is not in the checkout at %s; nothing was signed", o.Commit, root).
+			WithFix("git fetch, or sign in the checkout the build came from")
+	}
+	if st.Tree != o.Tree {
+		return contract.New(contract.SignFailed, "commit %s has tree %s in the checkout, not --tree %s; nothing was signed", o.Commit, st.Tree, o.Tree)
+	}
+	want := profile.RepoIdentity(o.Repo)
+	for _, r := range st.Remotes {
+		if profile.RepoIdentity(r) == want {
+			return nil
+		}
+	}
+	return contract.New(contract.SignFailed, "%s is not a remote of the checkout at %s; nothing was signed", repoLabel(o.Repo), root).
+		WithDetails(st.Remotes...).WithFix("git remote -v")
 }
 
 func (s *Service) backendFor(p profile.Profile, platform string) (backend.Backend, error) {
@@ -96,7 +137,7 @@ func (s *Service) LoadProfile(name string, code contract.Code) (profile.Profile,
 		return profile.Profile{}, contract.New(code, "signing profile %s is not valid", p.Name).WithDetails(ps.Strings()...).
 			WithFix("impr profile validate "+p.Name, "impr profile edit "+p.Name+" --set KEY=VALUE")
 	}
-	if s.ManagedCheck != nil && p.Managed {
+	if s.ManagedCheck != nil { // it decides which profiles are managed (security review R5)
 		if err := s.ManagedCheck(p); err != nil {
 			return profile.Profile{}, contract.Wrap(code, err, "managed profile %s cannot be trusted", p.Name)
 		}
@@ -298,6 +339,11 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 		return Result{}, contract.New(contract.Usage, "--repo is required to sign a release").
 			WithDetails("A release profile signs only the repositories in its allowedRepos.")
 	}
+	if purpose == profile.PurposeRelease {
+		if err := s.checkBinding(ctx, root, o); err != nil {
+			return Result{}, err
+		}
+	}
 	var approvals []RecordedApproval
 	if needApproval {
 		if approvals, err = s.approve(ctx, p, o, bm); err != nil {
@@ -316,6 +362,14 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 			return Result{}, contract.New(contract.Usage, "signing profile %s has no %s configuration", p.Name, pl).
 				WithFix("impr profile edit " + p.Name + " --set platforms." + pl + ".kind=...")
 		}
+	}
+
+	// The signed record and the checksum file are written beside the build
+	// manifest and named relative to the root, so it must be under the root
+	// (security review R4).
+	if filepath.IsAbs(artifact.RelToRoot(root, filepath.Join(bm.Dir, ManifestFile))) {
+		return Result{}, contract.New(contract.SignFailed, "the build manifest is outside the signing root %s; nothing was signed", root).
+			WithFix("sign a build manifest inside --root")
 	}
 
 	// Every file is checked before anything is signed.
@@ -400,7 +454,7 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 			if err := backend.Preflight(ctx, be, u.prof); err != nil {
 				return Result{}, err
 			}
-			if err := s.certificateUsable(ctx, be, u.prof, pl); err != nil {
+			if err := s.certificateUsable(ctx, be, u.prof, pl, o.Strict); err != nil {
 				return Result{}, err
 			}
 			plan = append(plan, w)
@@ -422,7 +476,7 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 			continue
 		}
 		for _, f := range w.files {
-			sig, err := w.be.Sign(ctx, f, w.prof)
+			sig, err := signChecked(ctx, w.be, f, w.prof, inputs[f.Rel])
 			if err != nil {
 				return Result{}, err
 			}
@@ -473,6 +527,10 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 			return Result{}, err
 		}
 		sumsRel := artifact.RelToRoot(root, sumsPath)
+		if filepath.IsAbs(sumsRel) {
+			return Result{}, contract.New(contract.SignFailed, "the build manifest is outside the signing root %s; nothing was signed", root).
+				WithFix("sign a build manifest inside --root")
+		}
 		sumsSHA, err := artifact.SHA256(sumsPath)
 		if err != nil {
 			return Result{}, err
@@ -489,7 +547,11 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 				if err != nil {
 					return Result{}, err
 				}
-				m.Outputs = append(m.Outputs, SignedArtifact{Path: artifact.RelToRoot(root, out.Path), OutputSHA256: sum,
+				outRel := artifact.RelToRoot(root, out.Path)
+				if filepath.IsAbs(outRel) {
+					return Result{}, contract.New(contract.SignFailed, "%s was written outside the signing root %s", out.Path, root)
+				}
+				m.Outputs = append(m.Outputs, SignedArtifact{Path: outRel, OutputSHA256: sum,
 					Platform: w.platform, Kind: out.Kind, Signer: sig.Signer})
 			}
 			s.logf("sign      %s  %s, %s", sumsRel, sig.Kind, sig.Signer)
@@ -523,11 +585,23 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 
 // certificateUsable refuses an expired certificate or one this host does not
 // have, before anything is signed.
-func (s *Service) certificateUsable(ctx context.Context, be backend.Backend, p profile.Profile, pl string) error {
+func (s *Service) certificateUsable(ctx context.Context, be backend.Backend, p profile.Profile, pl string, strict bool) error {
 	e := be.Certificate(ctx, p)
 	if e.NotAfter != nil && !s.Host.Now().Before(*e.NotAfter) {
 		return contract.New(contract.SignFailed, "the %s certificate of profile %s expired on %s; nothing was signed", pl, p.Name, e.NotAfter.Format("2006-01-02")).
 			WithFix("renew it, then re-pin the profile: impr profile edit " + p.Name + " --set platforms." + pl + "...")
+	}
+	// A Windows or macOS certificate whose expiry this host cannot read could
+	// already have expired: a strict run refuses it, any other warns (owner
+	// decision D-S2, ID-29). Artifact Signing issues short-lived certificates
+	// per signature, so it has no expiry to know.
+	azure := pl == profile.Windows && p.Platforms.Windows != nil && p.Platforms.Windows.Backend == profile.BackendAzure
+	if e.NotAfter == nil && (pl == profile.Windows || pl == profile.MacOS) && !azure {
+		if strict {
+			return contract.New(contract.SignFailed, "the expiry of the %s certificate of profile %s cannot be read on this host; a strict run refuses it, and nothing was signed", pl, p.Name).
+				WithFix("declare it: impr profile edit " + p.Name + " --set platforms." + pl + ".notAfter=YYYY-MM-DDT00:00:00Z")
+		}
+		s.logf("sign      the expiry of the %s certificate of profile %s cannot be read on this host; declare platforms.%s.notAfter, or --strict refuses it", pl, p.Name, pl)
 	}
 	switch e.Source {
 	case "store", "keychain", "gpg", "file":
@@ -587,4 +661,59 @@ func unsupportedFormat(rel string, k artifact.Kind, platforms []string) error {
 			WithFix("sign the .pkg with productsign, or leave macos out of --platforms for this manifest")
 	}
 	return nil
+}
+
+// signChecked signs the bytes impr checked, not whatever the path holds when
+// the signing tool opens it (security review R2). The file is copied into a
+// private folder beside it, under the same name (codesign derives the
+// identifier from it), the copy is hashed against the checked digest, signed,
+// and moved back over the original. A file changed after the check is refused.
+func signChecked(ctx context.Context, be backend.Backend, f backend.Artifact, p profile.Profile, want string) (backend.Signature, error) {
+	dir, err := os.MkdirTemp(filepath.Dir(f.Path), ".impr-sign-")
+	if err != nil {
+		return backend.Signature{}, contract.Wrap(contract.SignFailed, err, "%s: cannot stage it for signing", f.Rel)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	staged := filepath.Join(dir, filepath.Base(f.Path))
+	if err := copyFile(f.Path, staged); err != nil {
+		return backend.Signature{}, contract.Wrap(contract.SignFailed, err, "%s: cannot stage it for signing", f.Rel)
+	}
+	sum, err := artifact.SHA256(staged)
+	if err != nil {
+		return backend.Signature{}, contract.Wrap(contract.SignFailed, err, "%s: cannot hash the staged copy", f.Rel)
+	}
+	if sum != want {
+		return backend.Signature{}, contract.New(contract.SignFailed, "%s changed after it was checked; nothing was signed", f.Rel).
+			WithDetails("checked "+want, "now     "+sum).WithFix("find what writes to the build output while impr signs, then sign again")
+	}
+	sig, err := be.Sign(ctx, backend.Artifact{Path: staged, Rel: f.Rel}, p)
+	if err != nil {
+		return backend.Signature{}, err
+	}
+	if err := os.Rename(staged, f.Path); err != nil {
+		return backend.Signature{}, contract.Wrap(contract.SignFailed, err, "%s: cannot put the signed file in place", f.Rel)
+	}
+	return sig, nil
+}
+
+// copyFile copies src to a new file dst with src's permission bits.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src) //nolint:gosec // G304: an artifact resolved under the signing root
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	st, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, st.Mode().Perm()) //nolint:gosec // G304: a fresh file in impr's own staging folder
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }

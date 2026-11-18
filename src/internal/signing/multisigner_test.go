@@ -36,13 +36,16 @@ type fakeWin struct {
 	mu     *sync.Mutex
 	signed map[string]string // rel -> thumbprint
 	thumb  string
+	// notAfter is the certificate's expiry; nil means this host cannot read
+	// it, which a strict run refuses (ID-29).
+	notAfter *time.Time
 }
 
 func (f *fakeWin) Capability(backend.Host) backend.Capability {
 	return backend.Capability{Platform: profile.Windows, Sign: true, Verify: true, Supported: true}
 }
 func (f *fakeWin) Certificate(context.Context, profile.Profile) backend.CertEntry {
-	return backend.CertEntry{Platform: profile.Windows, Thumbprint: f.thumb, Present: true, Source: "declared"}
+	return backend.CertEntry{Platform: profile.Windows, Thumbprint: f.thumb, Present: true, Source: "declared", NotAfter: f.notAfter}
 }
 func (f *fakeWin) Sign(_ context.Context, a backend.Artifact, _ profile.Profile) (backend.Signature, error) {
 	f.mu.Lock()
@@ -58,6 +61,9 @@ func (f *fakeWin) Verify(_ context.Context, a backend.Artifact, _ profile.Profil
 	}
 	return nil
 }
+
+// testExpiry is the fake certificates' expiry, after the fixed clock.
+var testExpiry = time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
 
 const tA, tB = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
 
@@ -101,7 +107,7 @@ func setupMulti(t *testing.T, files map[string]uint16) (*Service, map[string]str
 	svc := &Service{Host: backend.Host{GOOS: "windows", Now: func() time.Time { return time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC) }},
 		Store: store, Version: "test",
 		BackendFor: func(_ backend.Host, p profile.Profile, platform string) (backend.Backend, error) {
-			return &fakeWin{mu: mu, signed: signed, thumb: p.Platforms.Windows.Thumbprint}, nil
+			return &fakeWin{mu: mu, signed: signed, thumb: p.Platforms.Windows.Thumbprint, notAfter: &testExpiry}, nil
 		}}
 	return svc, signed, root, manifest
 }

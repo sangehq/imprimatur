@@ -22,9 +22,10 @@ const (
 )
 
 // ghReplayWindow is how long a GitHub delivery id is remembered. GitHub
-// signs no timestamp, so the ledger is the only replay defence; a week
-// outlasts GitHub's own redelivery window.
-const ghReplayWindow = 7 * 24 * time.Hour
+// signs no timestamp, so the ledger is the only replay defence, and a
+// captured delivery replays once its id is forgotten: 400 days outlasts a
+// yearly secret rotation (security review R8). An id is a few dozen bytes.
+const ghReplayWindow = 400 * 24 * time.Hour
 
 // minGitHubSecret is the shortest GitHub webhook secret impr accepts.
 const minGitHubSecret = 16
@@ -77,7 +78,10 @@ func (s *server) inboundGitHub(w http.ResponseWriter, r *http.Request, ep *confi
 		return
 	}
 	// Claimed only after verification, so a forger cannot burn ids.
-	if !s.replay.claim(ep.Name+"/gh/"+delivery, ghReplayWindow) {
+	if fresh, err := s.replay.claim(ep.Name+"/gh/"+delivery, ghReplayWindow); err != nil {
+		writeErr(w, http.StatusServiceUnavailable, contract.Unavailable, "the replay ledger is unavailable, so the delivery was refused")
+		return
+	} else if !fresh {
 		writeErr(w, http.StatusConflict, contract.Usage, "delivery %s was already processed", delivery)
 		return
 	}

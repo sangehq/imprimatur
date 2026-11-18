@@ -15,10 +15,10 @@ impr sign --manifest FILE --commit SHA --tree ID --profile NAME --purpose releas
 | `--commit`, `--tree` | must equal the manifest's. Required |
 | `--profile` | the profile; without it, the default you chose. Never anything else |
 | `--purpose` | required; must be one of the profile's purposes. A test profile never signs `release` |
-| `--repo` | the push target, checked against `allowedRepos`. Required for `release` |
+| `--repo` | the push target, checked against `allowedRepos`. Required for `release`; it must also be one of the checkout's remotes, and `--commit` must be in the checkout with `--tree` as its tree. A release outside a git work tree is refused |
 | `--platforms` | which of the profile's platforms to sign; default all of them |
 | `--root` | the directory manifest paths are relative to; default the current directory |
-| `--strict` | a platform this host cannot sign is an error (exit 5), not a skip (exit 2) |
+| `--strict` | a platform this host cannot sign is an error (exit 5), not a skip (exit 2); a Windows or macOS certificate whose expiry this host cannot read is refused (exit 3), not a warning. Declare it with `platforms.<os>.notAfter`; Artifact Signing is exempt |
 | `--approval` | an approval from [`impr approve`](approve.md), with its `.sig` beside it; repeat for several approvers |
 
 impr refuses files named on the command line: it signs build-manifest entries

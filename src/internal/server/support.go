@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sangehq/imprimatur/src/internal/capped"
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/webhook"
 )
@@ -66,26 +69,40 @@ func verifySig(h http.Header, body []byte, keys [][]byte, public []ed25519.Publi
 }
 
 // ledger records inbound delivery ids already processed, persisted so a
-// restart does not reopen the replay window (sange G-10).
+// restart does not reopen the replay window (sange G-10). It fails closed: a
+// ledger it cannot read, or a claim it cannot write, refuses the delivery
+// (security review R8).
 type ledger struct {
-	path string
-	now  func() time.Time
-	mu   sync.Mutex
-	seen map[string]time.Time // id -> expiry
+	path   string
+	now    func() time.Time
+	mu     sync.Mutex
+	seen   map[string]time.Time // id -> expiry
+	broken error                // the ledger on disk could not be read
 }
 
 func newLedger(path string, now func() time.Time) *ledger {
 	l := &ledger{path: path, now: now, seen: map[string]time.Time{}}
-	if b, err := os.ReadFile(path); err == nil { //nolint:gosec // G304: impr's own state file
-		_ = json.Unmarshal(b, &l.seen)
+	b, err := capped.ReadFile(path, capped.Manifest)
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(b, &l.seen); err != nil {
+			l.broken = fmt.Errorf("the replay ledger %s cannot be read: %w", path, err)
+		}
+	case !os.IsNotExist(err):
+		l.broken = fmt.Errorf("the replay ledger %s cannot be read: %w", path, err)
 	}
 	return l
 }
 
-// claim records id until now+keep and reports whether it was new.
-func (l *ledger) claim(id string, keep time.Duration) bool {
+// claim records id until now+keep and reports whether it was new. An error
+// means the delivery must be refused: the ledger cannot say it is new, or
+// cannot remember it.
+func (l *ledger) claim(id string, keep time.Duration) (bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if l.broken != nil {
+		return false, l.broken
+	}
 	now := l.now()
 	for k, exp := range l.seen {
 		if now.After(exp) {
@@ -93,16 +110,44 @@ func (l *ledger) claim(id string, keep time.Duration) bool {
 		}
 	}
 	if _, dup := l.seen[id]; dup {
-		return false
+		return false, nil
 	}
 	l.seen[id] = now.Add(keep)
-	if b, err := json.Marshal(l.seen); err == nil && l.path != "" {
-		if err := os.MkdirAll(filepath.Dir(l.path), 0o700); err == nil {
-			tmp := l.path + ".tmp"
-			if os.WriteFile(tmp, b, 0o600) == nil {
-				_ = os.Rename(tmp, l.path)
-			}
-		}
+	if l.path == "" {
+		return true, nil
 	}
-	return true
+	if err := l.persist(); err != nil {
+		delete(l.seen, id)
+		return false, err
+	}
+	return true, nil
+}
+
+// persist writes the ledger through a temporary file of its own, then renames
+// it into place.
+func (l *ledger) persist() error {
+	b, err := json.Marshal(l.seen)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(l.path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("the replay ledger cannot be written: %w", err)
+	}
+	f, err := os.CreateTemp(dir, ".replay-*.tmp")
+	if err != nil {
+		return fmt.Errorf("the replay ledger cannot be written: %w", err)
+	}
+	tmp := f.Name()
+	_, werr := f.Write(b)
+	cerr := f.Close()
+	if werr != nil || cerr != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("the replay ledger cannot be written: %w", errors.Join(werr, cerr))
+	}
+	if err := os.Rename(tmp, l.path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("the replay ledger cannot be written: %w", err)
+	}
+	return nil
 }

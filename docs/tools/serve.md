@@ -112,7 +112,9 @@ Instead of `signed`, it can take `"files": ["build/windows/tool.exe"]`. `POST /v
 ## Running it as a service
 
 `impr serve install-unit --print` prints a unit that keeps `impr serve` running for you, and how to
-install it. impr installs nothing itself: where and how a service runs is your decision.
+install it. impr installs nothing itself: where and how a service runs is your decision. A path holding
+a control character (a line break would start a new directive) is refused, here and in
+`impr cert install-check`.
 
 ```bash
 impr serve install-unit --print                  # the unit for this OS
@@ -189,8 +191,9 @@ data: {"specversion":"1.0","id":"6f0c…","type":"com.simtabi.sange.imprimatur.s
   - Bodies are strict JSON (unknown fields are refused), one object, at most 1 MiB.
   - A request carries paths and names, never artifacts.
 - **Roots.**
-  - `root` must be under one of `server.roots`, and every path must stay inside it. The command checks
-    every artifact path against the root and symlinks again.
+  - `root` must be under one of `server.roots`, and every path must stay inside it, both as written and
+    with symbolic links resolved, so a link inside a root cannot point the request elsewhere. The
+    command checks every artifact path against the root and symlinks again.
   - With no roots configured, verify and sign refuse.
 - **Arguments.** The server builds each command's arguments only from validated fields. File names go
   after `--`, so a name like `--json` can never act as an option.
@@ -221,7 +224,8 @@ Other apps can call `POST /v1/hooks/{name}` with a Standard Webhooks delivery, s
   `previousPublicKey`) to the sender's `whpk_` key, in place of or beside `secretRef`. A public key is not
   secret, so it is written in the config rather than referenced. A `v1` entry is checked only against
   secrets and a `v1a` entry only against public keys.
-- **Replays.** A `webhook-id` already processed answers 409. The ledger survives restarts.
+- **Replays.** A `webhook-id` already processed answers 409. The ledger survives restarts, and fails
+  closed: when it cannot be read or written, a delivery answers 503 rather than passing as new.
 - **Actions.**
   - `allow` lists the actions the endpoint accepts: `verify`, `doctor`, `cert.list` or `profile.list`.
   - Signing is never an inbound action.
@@ -242,8 +246,9 @@ the GitHub webhook, at least 16 characters.
 
 - **Signature.** `X-Hub-Signature-256` must match the HMAC-SHA256 of the body. Every failure is the
   same 401.
-- **Replays.** GitHub signs no timestamp, so the delivery id (`X-GitHub-Delivery`) is remembered for 7
-  days and a repeat answers 409.
+- **Replays.** GitHub signs no timestamp, so the delivery id (`X-GitHub-Delivery`) is remembered for 400
+  days and a repeat answers 409. Rotate the endpoint's secret at least yearly, so a delivery captured
+  before then no longer verifies once its id is forgotten.
 - **`ping`** is always answered with `{"result": "pong"}`.
 - **Which events.** `githubEvents` limits the endpoint to those event names; others answer
   `{"result": "ignored"}`. Empty accepts every event.

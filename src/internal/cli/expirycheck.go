@@ -78,6 +78,9 @@ func cmdCertInstallCheck(_ context.Context, a *App, args []string) (int, error) 
 		return 0, contract.Wrap(contract.Unavailable, err, "locate the imprimatur config")
 	}
 	u := Unit{Exe: exe, Config: d.Config, State: d.State}
+	if err := u.check(); err != nil {
+		return 0, err
+	}
 	switch kind {
 	case "systemd":
 		_, _ = fmt.Fprint(a.Stdout, SystemdCheck(u))

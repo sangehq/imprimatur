@@ -94,6 +94,20 @@ func ReadPESigner(path string) (PESigner, error) {
 		return PESigner{}, err
 	}
 	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return PESigner{}, err
+	}
+	return readPESigner(f, st.Size())
+}
+
+// ReadPESignerBytes is ReadPESigner over a file already read, so a caller can
+// take the signer, the signature check and the hash from one read.
+func ReadPESignerBytes(b []byte) (PESigner, error) {
+	return readPESigner(bytes.NewReader(b), int64(len(b)))
+}
+
+func readPESigner(f io.ReaderAt, size int64) (PESigner, error) {
 	pf, err := pe.NewFile(f)
 	if err != nil {
 		return PESigner{}, fmt.Errorf("not a PE file: %w", err)
@@ -114,12 +128,8 @@ func ReadPESigner(path string) (PESigner, error) {
 	}
 	// The size comes from the file itself, so bound it by the file's real
 	// size and by a ceiling no Authenticode table reaches, before allocating.
-	st, err := f.Stat()
-	if err != nil {
-		return PESigner{}, err
-	}
-	if int64(dir.VirtualAddress)+int64(dir.Size) > st.Size() || dir.Size > maxCertTable {
-		return PESigner{}, fmt.Errorf("the certificate table (%d bytes at %d) does not fit the file (%d bytes)", dir.Size, dir.VirtualAddress, st.Size())
+	if int64(dir.VirtualAddress)+int64(dir.Size) > size || dir.Size > maxCertTable {
+		return PESigner{}, fmt.Errorf("the certificate table (%d bytes at %d) does not fit the file (%d bytes)", dir.Size, dir.VirtualAddress, size)
 	}
 	buf := make([]byte, dir.Size)
 	if _, err := f.ReadAt(buf, int64(dir.VirtualAddress)); err != nil && !errors.Is(err, io.EOF) {

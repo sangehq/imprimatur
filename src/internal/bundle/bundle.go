@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -151,6 +152,16 @@ func Install(ctx context.Context, r execx.Runner, s profile.Store, configDir str
 		}
 	}
 	dir := filepath.Join(configDir, Dir)
+	// A bundle older than the one installed would roll the owner's profiles
+	// back, to a key since replaced say (security review R5).
+	if cur, err := os.ReadFile(filepath.Join(dir, b.Owner+".json")); err == nil { //nolint:gosec // G304: impr's own bundle copy
+		var installed Bundle
+		if json.Unmarshal(cur, &installed) == nil && b.IssuedAt.Before(installed.IssuedAt) {
+			return Bundle{}, nil, contract.New(contract.Usage, "this %s bundle (issued %s) is older than the one installed (issued %s); nothing was installed",
+				b.Owner, b.IssuedAt.UTC().Format(time.RFC3339), installed.IssuedAt.UTC().Format(time.RFC3339)).
+				WithFix("ask " + b.Owner + "'s signing administrator for the current bundle")
+		}
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Bundle{}, nil, err
 	}
@@ -171,12 +182,25 @@ func Install(ctx context.Context, r execx.Runner, s profile.Store, configDir str
 }
 
 // Check confirms a managed profile is exactly what its owner's installed,
-// signed bundle says. An unmanaged profile passes.
+// signed bundle says. A profile an installed bundle names is managed whatever
+// its file says, so clearing "managed" or changing the owner by hand does not
+// skip the check (security review R5). Any other profile passes.
 func Check(ctx context.Context, r execx.Runner, configDir string, p profile.Profile, trusted []TrustedKey) error {
-	if !p.Managed {
+	owner := strings.ToLower(p.Owner)
+	inst, err := Installed(configDir)
+	if err != nil {
+		return contract.Wrap(contract.VerifyFailed, err, "cannot read the installed bundles")
+	}
+	named := false
+	for o, names := range inst {
+		if slices.Contains(names, p.Name) {
+			owner, named = o, true
+			break
+		}
+	}
+	if !p.Managed && !named {
 		return nil
 	}
-	owner := strings.ToLower(p.Owner)
 	dir := filepath.Join(configDir, Dir)
 	data, err := os.ReadFile(filepath.Join(dir, owner+".json")) //nolint:gosec // G304: impr's own bundle copy
 	if err != nil {

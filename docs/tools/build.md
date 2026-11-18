@@ -54,6 +54,10 @@ has them. Names carry no version, as the estate build layout requires, and entri
 timestamp, so the same files make the same archive. `impr build --archives` packs the files as built
 (unsigned); [`impr release --archives`](release.md) packs them after signing and verifying.
 
+A `LICENSE` or `README.md` committed as a symbolic link is refused rather than followed, and so is a
+`build/`, `build/{os}/` or `build/archives/` folder that is a link: impr writes, packs and deletes only
+inside the repository. `--clean` skips a linked `build/{os}/` of an OS it is not building.
+
 ## Windows version information
 
 Every Windows binary gets version information, an application manifest and, optionally, an icon. These
@@ -100,8 +104,9 @@ impr build --version v1.4.2 --product "Acme Tool" --company "Acme Ltd" --copyrig
   so impr checks every binary for the version's bytes: a version you gave that is not in the binary
   fails the build and names the variable; a snapshot version that is not stamped only warns.
 - **Paths.** `--main` must be a path inside the module.
-- **Uncommitted changes.** A work tree with uncommitted changes to tracked files is refused, because its
-  binaries would not match the commit the manifest names. `--allow-dirty` builds anyway and records
+- **Uncommitted changes.** A work tree with uncommitted changes is refused, because its binaries would not
+  match the commit the manifest names. Untracked files count (an untracked `.go` file is compiled in);
+  impr's own output under `build/` does not. `--allow-dirty` builds anyway and records
   `dirty: true`; [`impr release`](release.md) never allows it.
 - **`--clean`.** It removes only this binary's earlier files under `build/{os}/`, never anything else.
 - **Never tags, pushes or publishes.**

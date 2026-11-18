@@ -14,6 +14,7 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/backend"
 	gobuild "github.com/sangehq/imprimatur/src/internal/build"
+	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/profile"
@@ -385,16 +386,32 @@ func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
 	case len(p.pos) > 0 && p.str("manifest") != "":
 		return 0, contract.New(contract.Usage, "name signed files or --manifest, not both")
 	case len(p.pos) > 0:
-		if req, err = rulesFromFiles(a, p); err != nil {
+		if req, err = rulesFromFiles(a, p, nil); err != nil {
 			return 0, err
 		}
 	case p.str("request") == "" && (p.str("manifest") != "" || regularFile(defaultBuildManifest)):
 		// No files named: the Windows files of the build manifest (ID-20), as
 		// the PowerShell rules read every .exe of the build folder.
-		if p.pos, err = windowsFilesOf(orDefault(p.str("manifest"), defaultBuildManifest)); err != nil {
+		var want map[string]string
+		var recProfile string
+		if p.pos, want, recProfile, err = windowsFilesOf(a, orDefault(p.str("manifest"), defaultBuildManifest), p.on("without-signed-record"), p.on("strict")); err != nil {
 			return 0, err
 		}
-		if req, err = rulesFromFiles(a, p); err != nil {
+		if p.str("profile") == "" && recProfile != "" {
+			// The record's profile pins the signer when this machine has it;
+			// --strict needs it.
+			if st, err := a.store(); err == nil {
+				if _, ok, _ := st.Get(recProfile); ok {
+					p.strs["profile"] = recProfile
+				} else if p.on("strict") {
+					return 0, contract.New(contract.VerifyFailed, "the signed record names profile %s, which this machine does not have, so the signer cannot be checked", recProfile).
+						WithFix("impr rules --profile NAME")
+				} else {
+					a.say("rules     the signed record names profile %s, which this machine does not have: the signer is not checked", recProfile)
+				}
+			}
+		}
+		if req, err = rulesFromFiles(a, p, want); err != nil {
 			return 0, err
 		}
 	case p.str("request") == "":
@@ -478,6 +495,25 @@ func (a *App) doctorNotes(ctx context.Context, svc *signing.Service, tools []Too
 	profiles, err := svc.Store.List()
 	if err != nil {
 		return notes
+	}
+	// Threat-model residuals 1 and 2 (ID-26): said, never failed on, since
+	// sange enforces approvals and anchors for the hosts it drives.
+	cfg := config.Config{}
+	if d, err := a.dirs(); err == nil {
+		if eff, err := a.effective(d); err == nil {
+			cfg = eff.Config
+		}
+	}
+	for _, p := range profiles {
+		if p.HasPurpose(profile.PurposeRelease) && !cfg.Approvals.Enforce {
+			notes = append(notes, "profile "+p.Name+" can sign releases while approvals.enforce is off: one person can sign a release "+
+				"(fine when sange drives impr and enforces approvals; otherwise set approvals.enforce and lock it)")
+			break
+		}
+	}
+	if !cfg.Audit.Anchor.Enabled {
+		notes = append(notes, "audit.anchor is off: the audit trail and event log detect edits, but not a full rewrite on this machine "+
+			"(turn on audit.anchor.enabled with a webhook that receives audit.head)")
 	}
 	azure, gpgKeys := false, map[string]bool{}
 	for _, p := range profiles {

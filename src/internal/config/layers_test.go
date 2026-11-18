@@ -72,6 +72,12 @@ func TestLocks(t *testing.T) {
 		"profile sets schema":                 {profile: `{"schema":"x"}`},
 		"profile picks another profile":       {profile: `{"activeProfile":"other"}`},
 		"user changes a locked activeProfile": {user: `{"activeProfile":"p"}`},
+		// Security review R1: Go's JSON decoding matches field names without
+		// regard to case (and folds ſ to s), so another spelling of a locked
+		// key must not slip past the byte-exact lock check.
+		"user spells the locked key in lower case": {user: `{"server":{"allowsign":true}}`},
+		"user spells the parent in upper case":     {user: `{"SERVER":{"allowSign":true}}`},
+		"profile spells it with a long s":          {profile: "{\"\u017Ferver\":{\"allowSign\":true}}"},
 	}
 	for name, c := range cases {
 		d := newDirs(t)

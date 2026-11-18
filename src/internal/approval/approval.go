@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/bundle"
+	"github.com/sangehq/imprimatur/src/internal/capped"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/execx"
 )
@@ -76,12 +77,23 @@ func (p Policy) Need() int {
 	return p.Required
 }
 
+// keyOf is an approver's public key, trimmed, or "" for an unknown name.
+func (p Policy) keyOf(name string) string {
+	for _, a := range p.Approvers {
+		if a.Name == name {
+			return strings.TrimSpace(a.PublicKey)
+		}
+	}
+	return ""
+}
+
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
 
 // Problems reports what is wrong with a policy.
 func (p Policy) Problems() []string {
 	var out []string
 	seen := map[string]bool{}
+	seenKey := map[string]string{} // key -> the first approver with it
 	for i, a := range p.Approvers {
 		if !nameRe.MatchString(a.Name) {
 			out = append(out, fmt.Sprintf("approvals.approvers[%d].name must be lower-case letters, digits, . _ -", i))
@@ -90,6 +102,11 @@ func (p Policy) Problems() []string {
 			out = append(out, fmt.Sprintf("approvals.approvers[%d]: %s is listed twice", i, a.Name))
 		}
 		seen[a.Name] = true
+		if k := strings.TrimSpace(a.PublicKey); seenKey[k] != "" {
+			out = append(out, fmt.Sprintf("approvals.approvers[%d]: %s has the same key as %s; one person is one approver", i, a.Name, seenKey[k]))
+		} else {
+			seenKey[k] = a.Name
+		}
 		if !bundle.ValidPublicKey(a.PublicKey) {
 			out = append(out, fmt.Sprintf("approvals.approvers[%d].publicKey must be an SSH public key line, without a comment", i))
 		}
@@ -166,11 +183,11 @@ type File struct {
 
 // Read loads an approval and the signature beside it (path + ".sig").
 func Read(path string) (File, error) {
-	data, err := os.ReadFile(path) //nolint:gosec // G304: a path the operator named
+	data, err := capped.ReadFile(path, capped.Approval)
 	if err != nil {
 		return File{}, contract.Wrap(contract.Usage, err, "read approval %s", path)
 	}
-	sig, err := os.ReadFile(path + ".sig") //nolint:gosec // G304: its signature beside it
+	sig, err := capped.ReadFile(path+".sig", capped.Approval)
 	if err != nil {
 		return File{}, contract.Wrap(contract.Usage, err, "approval %s has no signature beside it", path)
 	}
@@ -204,6 +221,11 @@ func Check(ctx context.Context, r execx.Runner, pol Policy, run Run, now time.Ti
 		}
 		if slices.ContainsFunc(ok, func(x Accepted) bool { return x.Approver == a.Approver }) {
 			problems = append(problems, f.Name+": a second approval from "+a.Approver+" does not count twice")
+			continue
+		}
+		// One key is one person, whatever names it is listed under.
+		if k := pol.keyOf(a.Approver); slices.ContainsFunc(ok, func(x Accepted) bool { return pol.keyOf(x.Approver) == k }) {
+			problems = append(problems, f.Name+": "+a.Approver+" has the same key as an approval already counted; it does not count twice")
 			continue
 		}
 		ok = append(ok, Accepted{Approver: a.Approver, File: i})

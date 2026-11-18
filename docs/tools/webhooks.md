@@ -63,8 +63,10 @@ entry, so the receiver can switch at any point.
 - **https only.** Plain http is allowed only to a loopback address, and only with `allowPrivate`. A URL
   with user info or a fragment is refused.
 - **No private targets.** The address actually dialled is checked after DNS resolution, so a public name
-  that resolves to a private, loopback, link-local (cloud metadata), carrier-grade NAT or multicast
-  address is refused. `allowPrivate` lifts this check for one subscription.
+  that resolves to a private, loopback, link-local (cloud metadata), carrier-grade NAT, multicast or
+  reserved address is refused. An IPv4 address inside a NAT64, 6to4 or IPv4-compatible IPv6 address is
+  checked as itself, and Teredo and local-use NAT64 are refused. `allowPrivate` lifts this check for one
+  subscription.
 - **Limits.** Redirects are never followed, the timeout is 15 s, and an event over 256 KiB is not sent.
 - **Secrets never stored in config.** Secrets are only ever references. impr never writes one to disk.
 

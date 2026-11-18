@@ -28,7 +28,11 @@ Doctor also notes what the PowerShell doctor checked. A note never makes it fail
 - `go` or `git` is missing (`impr build` and `impr release` need them);
 - a certificate a profile uses has expired or expires within 30 days;
 - Azure is not signed in (`az account show`) while a profile uses Artifact Signing;
-- `gpg` has no secret key for a gpg checksum profile's `gpg-agent://` fingerprint.
+- `gpg` has no secret key for a gpg checksum profile's `gpg-agent://` fingerprint;
+- a release-purpose profile can sign while `approvals.enforce` is off (one person can sign a release;
+  fine when sange drives impr and enforces approvals);
+- `audit.anchor` is off, so the audit trail and event log detect edits but not a full rewrite on this
+  machine.
 
 `--json` lists them in `notes`; without it each is a `note` line.
 

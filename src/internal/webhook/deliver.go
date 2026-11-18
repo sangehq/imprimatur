@@ -82,12 +82,63 @@ func CheckURL(raw string, allowPrivate bool) (*url.URL, error) {
 
 // blocked reports addresses a webhook may not reach without AllowPrivate:
 // loopback, private, link-local (cloud metadata lives there), multicast,
-// unspecified, and the IPv4-mapped forms of all of them.
+// unspecified, carrier-grade NAT and the reserved IPv4 ranges, and the
+// IPv4-mapped forms of all of them. An IPv4 address carried inside NAT64,
+// 6to4 or an IPv4-compatible address is checked as itself, and Teredo, which
+// hides its address, and local-use NAT64 are blocked (security review I-09).
 func blocked(ip netip.Addr) bool {
 	ip = ip.Unmap()
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsMulticast() || ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() ||
-		netip.MustParsePrefix("100.64.0.0/10").Contains(ip) // carrier-grade NAT
+	if v4, ok := embeddedIPv4(ip); ok {
+		return blocked(v4)
+	}
+	if teredo.Contains(ip) || localNAT64.Contains(ip) {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() || ip.IsInterfaceLocalMulticast() {
+		return true
+	}
+	for _, p := range reservedV4 {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	reservedV4 = []netip.Prefix{
+		netip.MustParsePrefix("0.0.0.0/8"),     // "this network"
+		netip.MustParsePrefix("100.64.0.0/10"), // carrier-grade NAT
+		netip.MustParsePrefix("192.0.0.0/24"),  // IETF protocol assignments
+		netip.MustParsePrefix("198.18.0.0/15"), // benchmarking
+		netip.MustParsePrefix("240.0.0.0/4"),   // reserved, and broadcast
+	}
+	nat64      = []netip.Prefix{netip.MustParsePrefix("64:ff9b::/96")}
+	localNAT64 = netip.MustParsePrefix("64:ff9b:1::/48") // a site's own translator: never a public target
+	sixToFour  = netip.MustParsePrefix("2002::/16")
+	v4Compat   = netip.MustParsePrefix("::/96")
+	teredo     = netip.MustParsePrefix("2001::/32")
+)
+
+// embeddedIPv4 is the IPv4 address an IPv6 address carries, if any.
+func embeddedIPv4(ip netip.Addr) (netip.Addr, bool) {
+	if !ip.Is6() {
+		return netip.Addr{}, false
+	}
+	b := ip.As16()
+	for _, p := range nat64 {
+		if p.Contains(ip) {
+			return netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]}), true
+		}
+	}
+	if sixToFour.Contains(ip) {
+		return netip.AddrFrom4([4]byte{b[2], b[3], b[4], b[5]}), true
+	}
+	if v4Compat.Contains(ip) && !ip.IsUnspecified() && !ip.IsLoopback() {
+		return netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]}), true
+	}
+	return netip.Addr{}, false
 }
 
 // Client is an HTTP client for one subscription. The dialer checks the

@@ -146,3 +146,28 @@ func TestImportLegacySelfSignedDefaultSubject(t *testing.T) {
 		t.Fatalf("subject %q, purpose %v", p.Platforms.Windows.Subject, p.Purpose)
 	}
 }
+
+// Old security finding 7: a notary spec names either a key (apiKeyRef, for
+// CI) or a keychain profile (notarytool's stored credentials), not both and
+// not neither, and a keychain profile name is a plain word.
+func TestNotaryKeyOrKeychainProfile(t *testing.T) {
+	for _, c := range []struct {
+		n    NotarySpec
+		code string
+	}{
+		{NotarySpec{}, "platforms.macos.notary"},
+		{NotarySpec{APIKeyRef: "env://K", KeychainProfile: "acme"}, "platforms.macos.notary"},
+		{NotarySpec{KeychainProfile: "acme notary; rm"}, "platforms.macos.notary.keychainProfile"},
+	} {
+		p := releaseProfile(t)
+		p.Platforms.MacOS.Notary = &c.n
+		if got := codes(p.Validate()); !strings.Contains(got, c.code) {
+			t.Errorf("%+v: want %s, got %q", c.n, c.code, got)
+		}
+	}
+	p := releaseProfile(t)
+	p.Platforms.MacOS.Notary = &NotarySpec{KeychainProfile: "acme-notary"}
+	if ps := p.Validate(); len(ps) != 0 {
+		t.Fatalf("a keychain profile alone: %v", ps.Strings())
+	}
+}

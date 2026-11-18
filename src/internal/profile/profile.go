@@ -227,9 +227,14 @@ type MacOSSpec struct {
 // NotarySpec is the App Store Connect API key notarytool uses. KeyID and
 // Issuer may be literal identifiers or env:// references.
 type NotarySpec struct {
-	APIKeyRef string `json:"apiKeyRef"`
+	APIKeyRef string `json:"apiKeyRef,omitempty"`
 	Issuer    string `json:"issuer,omitempty"`
 	KeyID     string `json:"keyId,omitempty"`
+	// KeychainProfile names credentials notarytool stored in the login
+	// keychain (xcrun notarytool store-credentials NAME). With it impr never
+	// resolves, writes or passes the .p8 key (old security finding 7). It and
+	// APIKeyRef are exclusive.
+	KeychainProfile string `json:"keychainProfile,omitempty"`
 }
 
 // ChecksumSpec signs the checksum file.
@@ -268,6 +273,9 @@ type AttestationSpec struct {
 
 // RefSchemes are the reference schemes a profile may use for a credential.
 var RefSchemes = []string{"secret://", "env://", "keychain://", "cert-store://", "gpg-agent://", "file://"}
+
+// keychainProfileRe is a notarytool keychain profile name.
+var keychainProfileRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
 
 // passwordSchemes and keySchemes are the references that resolve to the
 // secret's value. keychain://, cert-store:// and gpg-agent:// resolve to the
@@ -442,9 +450,19 @@ func (p Profile) Validate() Problems {
 		ref("platforms.macos.certRef", m.CertRef, false)
 		ref("platforms.macos.passwordRef", m.PasswordRef, false)
 		ps.limitRef("platforms.macos.passwordRef", m.PasswordRef, passwordSchemes...)
-		if m.Notary != nil {
-			ref("platforms.macos.notary.apiKeyRef", m.Notary.APIKeyRef, true)
-			ps.limitRef("platforms.macos.notary.apiKeyRef", m.Notary.APIKeyRef, keySchemes...)
+		if n := m.Notary; n != nil {
+			// A key (apiKeyRef, for CI) or notarytool's stored keychain
+			// profile, exactly one (old security finding 7).
+			switch {
+			case n.APIKeyRef != "" && n.KeychainProfile != "":
+				ps.add("platforms.macos.notary", "name apiKeyRef or keychainProfile, not both")
+			case n.APIKeyRef == "" && n.KeychainProfile == "":
+				ps.add("platforms.macos.notary", "name the notary credentials: keychainProfile (xcrun notarytool store-credentials) or apiKeyRef")
+			case n.KeychainProfile != "" && !keychainProfileRe.MatchString(n.KeychainProfile):
+				ps.add("platforms.macos.notary.keychainProfile", "%q is not a keychain profile name (letters, digits, . _ -)", n.KeychainProfile)
+			}
+			ref("platforms.macos.notary.apiKeyRef", n.APIKeyRef, false)
+			ps.limitRef("platforms.macos.notary.apiKeyRef", n.APIKeyRef, keySchemes...)
 		}
 	}
 	if c := p.Platforms.Checksums; c != nil {

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/backend"
+	gobuild "github.com/sangehq/imprimatur/src/internal/build"
 	"github.com/sangehq/imprimatur/src/internal/bundle"
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
@@ -385,7 +386,16 @@ func (a *App) service() (*signing.Service, error) {
 		return bundle.Check(context.Background(), host.Runner, d.Config, p, trusted)
 	}
 	return &signing.Service{Host: host, Store: s, Version: version, Log: a.Stderr, Events: bus, Hooks: hk,
-		RequireFullGPG: cfg.Policy.RequireFullGPG(), Strict: cfg.Policy.Strict, ManagedCheck: check, Approvals: cfg.Approvals, Confirm: a.confirm()}, nil
+		RequireFullGPG: cfg.Policy.RequireFullGPG(), Strict: cfg.Policy.Strict, ManagedCheck: check, Approvals: cfg.Approvals, Confirm: a.confirm(),
+		Git: func(ctx context.Context, root, commit string) (signing.GitState, error) {
+			b := gobuild.Builder{Runner: host.Runner}
+			tree, err := b.CommitTree(ctx, root, commit)
+			if err != nil {
+				return signing.GitState{}, err
+			}
+			remotes, err := b.Remotes(ctx, root)
+			return signing.GitState{Tree: tree, Remotes: remotes}, err
+		}}, nil
 }
 
 // confirm asks the person at the terminal to type a value, or is nil when no
@@ -595,7 +605,7 @@ Usage:
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules test --policy applocker.xml [--user Everyone] FILE... [--json]   (Windows)
   impr rules (--request FILE | FILE... [--scope publisher|product|file|version] [--product NAME] [--file-version a.b.c.d]
-            [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID]) [--out-dir DIR] [--json] [--strict]
+            [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID] [--profile NAME] [--without-signed-record]) [--out-dir DIR] [--json] [--strict]
   impr build [VERSION] [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z] [--version-var PKG.VAR]
             [--targets os/arch,...] [--clean] [--allow-dirty] [--json]
   impr release [VERSION] --profile NAME --purpose release|test|internal [--repo URL] [--platforms ...] [build options] [--json]

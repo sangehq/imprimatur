@@ -21,6 +21,17 @@ identity verification must find.
    impr cert list                      # the certificate must be present and not expired
    ```
 
+   On a Mac you sign from, store the notary credentials in the login keychain once
+   instead, so impr never handles the `.p8` (the owner runs this, not an agent):
+
+   ```bash
+   xcrun notarytool store-credentials acme-notary --key AuthKey_ABC123.p8 --key-id ABC123 --issuer <issuer-id>
+   impr profile edit acme-mac --unset platforms.macos.notary \
+     --set platforms.macos.notary.keychainProfile=acme-notary
+   ```
+
+   CI keeps `apiKeyRef`, from a secret.
+
 3. Sign on a Mac:
 
    ```bash
