@@ -126,7 +126,9 @@ func TestRulesDefaultsFromTheBuild(t *testing.T) {
 			Path string `json:"path"`
 		} `json:"files"`
 	}
-	out := h.ok("rules", "--manifest", manifest, "--scope", "version", "--json")
+	// The files were signed by hand, not by impr sign, so there is no signed
+	// record: the opt-out says so (D-S3).
+	out := h.ok("rules", "--manifest", manifest, "--scope", "version", "--json", "--without-signed-record")
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatal(err)
 	}

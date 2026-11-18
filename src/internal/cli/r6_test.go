@@ -77,10 +77,15 @@ func TestRulesFromManifestCheckDigestsAndSigner(t *testing.T) {
 	writeRecord("acme", strings.Repeat("0", 64))
 	h.exits(4, "rules", "--manifest", manifest, "--json")
 
-	// No record: a note, and --strict refuses.
+	// No record: refused by default (owner decision D-S3, ID-30); the
+	// explicit opt-out renders with a note, and --strict still refuses.
 	if err := os.Remove(filepath.Join(repo, "build", signing.ManifestFile)); err != nil {
 		t.Fatal(err)
 	}
-	h.ok("rules", "--manifest", manifest, "--json")
-	h.exits(4, "rules", "--manifest", manifest, "--json", "--strict")
+	h.exits(4, "rules", "--manifest", manifest, "--json")
+	if _, _, errOut := h.impr("rules", "--manifest", manifest, "--json", "--without-signed-record"); !strings.Contains(errOut, "not checked") {
+		t.Fatalf("the opt-out says nothing: %s", errOut)
+	}
+	h.ok("rules", "--manifest", manifest, "--json", "--without-signed-record")
+	h.exits(4, "rules", "--manifest", manifest, "--json", "--strict", "--without-signed-record")
 }

@@ -25,7 +25,7 @@ import (
 var rulesFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "request": stringFlag, "out-dir": stringFlag,
 	"scope": stringFlag, "product": stringFlag, "file-version": stringFlag, "eku": stringFlag, "base-policy": stringFlag,
 	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag, "manifest": stringFlag,
-	"include-default-rules": boolFlag, "profile": stringFlag}
+	"include-default-rules": boolFlag, "profile": stringFlag, "without-signed-record": boolFlag}
 
 // ruleEKU is the EKU a WDAC rule pins (O-181). For an Artifact Signing
 // certificate it is the certificate profile's own EKU, read from the file
@@ -245,8 +245,9 @@ func fourPart(v string) []int {
 // this build, and the digests it holds come back, so a file swapped after
 // signing is refused (security review R6); the record's profile is the
 // default --profile. Without a record nothing ties the files to a signing run,
-// which --strict refuses.
-func windowsFilesOf(a *App, manifest string, strict bool) ([]string, map[string]string, string, error) {
+// so it is refused unless the caller opts out (owner decision D-S3, ID-30);
+// --strict refuses even then.
+func windowsFilesOf(a *App, manifest string, optOut, strict bool) ([]string, map[string]string, string, error) {
 	bm, err := artifact.ReadManifest(manifest)
 	if err != nil {
 		return nil, nil, "", contract.Wrap(contract.Usage, err, "read the build manifest %s", manifest)
@@ -269,11 +270,11 @@ func windowsFilesOf(a *App, manifest string, strict bool) ([]string, map[string]
 	rec := filepath.Join(bm.Dir, signing.ManifestFile)
 	raw, err := os.ReadFile(rec) //nolint:gosec // G304: the signed record beside the build manifest
 	if err != nil {
-		if strict {
-			return nil, nil, "", contract.New(contract.VerifyFailed, "no signed record (%s) beside %s, so nothing ties these files to a signing run", signing.ManifestFile, manifest).
-				WithFix("impr sign, then impr rules", "name the files and --profile instead")
+		if !optOut || strict {
+			return nil, nil, "", contract.New(contract.VerifyFailed, "no signed record (%s) beside %s, so nothing ties these files to a signing run; no rules were written", signing.ManifestFile, manifest).
+				WithFix("impr sign, then impr rules", "name the files and --profile instead", "impr rules --without-signed-record (not with --strict)")
 		}
-		a.say("rules     no signed record beside %s: the files' digests are not checked against a signing run", manifest)
+		a.say("rules     --without-signed-record: the files' digests and signer are not checked against a signing run")
 		return files, nil, "", nil
 	}
 	var m signing.Manifest

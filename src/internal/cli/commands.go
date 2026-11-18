@@ -394,7 +394,7 @@ func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
 		// the PowerShell rules read every .exe of the build folder.
 		var want map[string]string
 		var recProfile string
-		if p.pos, want, recProfile, err = windowsFilesOf(a, orDefault(p.str("manifest"), defaultBuildManifest), p.on("strict")); err != nil {
+		if p.pos, want, recProfile, err = windowsFilesOf(a, orDefault(p.str("manifest"), defaultBuildManifest), p.on("without-signed-record"), p.on("strict")); err != nil {
 			return 0, err
 		}
 		if p.str("profile") == "" && recProfile != "" {

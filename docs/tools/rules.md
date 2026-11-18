@@ -38,8 +38,9 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
 - **Whose files.** From a build manifest, each path must resolve inside the build's root. When the signed
   record `impr sign` wrote (`impr-manifest.json`) sits beside it, it must belong to that build manifest,
   every Windows file must be one it signed, and each file's sha256 must be the one it recorded; its
-  profile is the default `--profile` when this machine has it. With no record a note says the digests
-  were not checked, and `--strict` refuses.
+  profile is the default `--profile` when this machine has it. With no record, rules are refused (exit 4):
+  rules for an unsigned build are rules for whoever signed the files. `--without-signed-record` renders
+  them anyway, with a note that nothing was checked against a signing run; `--strict` refuses even then.
 - **`--profile NAME`.** Each file's signing certificate must be one the profile's Windows configuration
   pins (its thumbprint and subject, or one of its signers'). A file signed by any other certificate gets
   no rules (exit 4).
