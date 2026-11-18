@@ -17,6 +17,8 @@ impr completion uninstall bash fish
 Several shells, or `all`, are installed or removed in one run; every shell named is checked before any
 file is written.
 
+- **Only impr's own files.** Install replaces, and uninstall removes, only a file impr generated (its first
+  lines say so). Any other file at the path, or a link, is left alone and the run changes nothing.
 - **Shell profiles are never edited.** impr writes only to the folders above, which bash-completion and fish
   load by themselves.
 - **zsh** needs one `fpath` line added to your profile, which impr prints rather than adding.

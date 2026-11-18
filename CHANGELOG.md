@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr completion install` and `uninstall` replace or remove only a
+  completion file impr generated, and never through a link; any other file at
+  the path stops the run before anything changes. `impr uninstall` no longer
+  follows a link there either (security review).
 - `impr serve install-unit` and `impr cert install-check` refuse a path with
   a control character: a line break in `--exe` or a server root printed a
   second directive into the unit (security review).
