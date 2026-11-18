@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr verify --signed` resolves every path in the signed record under
+  `--root`; an absolute path in a committed record took verify to any file
+  the process could read, and passed it. `impr sign` refuses a build manifest
+  outside `--root`, so it never writes such a record. `impr serve` checks
+  `server.roots` on resolved paths too, so a symbolic link inside a root
+  cannot move it (security review R4).
 - `impr build` and `impr release` refuse a `LICENSE` or `README.md` that is
   a symbolic link (an archive would have carried its target, a private key
   say) and a `build/`, `build/{os}/` or `build/archives/` folder that is one

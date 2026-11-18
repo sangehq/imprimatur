@@ -318,6 +318,14 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 		}
 	}
 
+	// The signed record and the checksum file are written beside the build
+	// manifest and named relative to the root, so it must be under the root
+	// (security review R4).
+	if filepath.IsAbs(artifact.RelToRoot(root, filepath.Join(bm.Dir, ManifestFile))) {
+		return Result{}, contract.New(contract.SignFailed, "the build manifest is outside the signing root %s; nothing was signed", root).
+			WithFix("sign a build manifest inside --root")
+	}
+
 	// Every file is checked before anything is signed.
 	files := map[string][]backend.Artifact{}
 	inputs := map[string]string{}
@@ -473,6 +481,10 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 			return Result{}, err
 		}
 		sumsRel := artifact.RelToRoot(root, sumsPath)
+		if filepath.IsAbs(sumsRel) {
+			return Result{}, contract.New(contract.SignFailed, "the build manifest is outside the signing root %s; nothing was signed", root).
+				WithFix("sign a build manifest inside --root")
+		}
 		sumsSHA, err := artifact.SHA256(sumsPath)
 		if err != nil {
 			return Result{}, err
@@ -489,7 +501,11 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 				if err != nil {
 					return Result{}, err
 				}
-				m.Outputs = append(m.Outputs, SignedArtifact{Path: artifact.RelToRoot(root, out.Path), OutputSHA256: sum,
+				outRel := artifact.RelToRoot(root, out.Path)
+				if filepath.IsAbs(outRel) {
+					return Result{}, contract.New(contract.SignFailed, "%s was written outside the signing root %s", out.Path, root)
+				}
+				m.Outputs = append(m.Outputs, SignedArtifact{Path: outRel, OutputSHA256: sum,
 					Platform: w.platform, Kind: out.Kind, Signer: sig.Signer})
 			}
 			s.logf("sign      %s  %s, %s", sumsRel, sig.Kind, sig.Signer)

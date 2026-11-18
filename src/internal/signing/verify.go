@@ -32,6 +32,7 @@ type item struct {
 	signerID            string         // the windows signer the record names
 	require             []string       // with --manifest: build-manifest files the checksum file must list
 	build               *backend.Build // the build the signed record names (in-toto checks it)
+	fromRecord          bool           // the path came from a signed record: it must resolve under --root
 }
 
 // Verify checks signed files against exactly one profile's pinned identity.
@@ -137,13 +138,13 @@ func (s *Service) verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 				WithDetails("An empty record proves nothing, so it never passes.")
 		}
 		for _, a := range m.Artifacts {
-			items = append(items, item{rel: a.Path, want: a.OutputSHA256, platform: a.Platform, notarized: a.Notarization != "", signerID: a.SignerID})
+			items = append(items, item{rel: a.Path, want: a.OutputSHA256, platform: a.Platform, notarized: a.Notarization != "", signerID: a.SignerID, fromRecord: true})
 		}
 		for _, out := range m.Outputs {
 			if out.Kind == "sha256sums" {
 				for _, pl := range []string{profile.Checksums, profile.Containers, profile.Attestations} {
 					if hasOutput(m.Outputs, pl) {
-						items = append(items, item{rel: out.Path, want: out.OutputSHA256, platform: pl, sums: true, require: require,
+						items = append(items, item{rel: out.Path, want: out.OutputSHA256, platform: pl, sums: true, require: require, fromRecord: true,
 							build: &backend.Build{Repo: m.Repo, Commit: m.Commit, Tree: m.Tree, ManifestDigest: m.BuildManifestDigest}})
 					}
 				}
@@ -211,7 +212,10 @@ func hasOutput(outs []SignedArtifact, platform string) bool {
 
 func (s *Service) verifyOne(ctx context.Context, root string, p profile.Profile, it item, v *Verified) error {
 	path := it.rel
-	if !filepath.IsAbs(path) {
+	// A signed record is repository content: an absolute path in it must not
+	// take verify outside --root (security review R4). Files named on the
+	// command line may be anywhere.
+	if it.fromRecord || !filepath.IsAbs(path) {
 		r, err := artifact.Resolve(root, it.rel)
 		if err != nil {
 			return contract.Wrap(contract.VerifyFailed, err, "cannot verify %s", it.rel)

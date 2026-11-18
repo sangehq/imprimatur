@@ -189,8 +189,9 @@ data: {"specversion":"1.0","id":"6f0c…","type":"com.simtabi.sange.imprimatur.s
   - Bodies are strict JSON (unknown fields are refused), one object, at most 1 MiB.
   - A request carries paths and names, never artifacts.
 - **Roots.**
-  - `root` must be under one of `server.roots`, and every path must stay inside it. The command checks
-    every artifact path against the root and symlinks again.
+  - `root` must be under one of `server.roots`, and every path must stay inside it, both as written and
+    with symbolic links resolved, so a link inside a root cannot point the request elsewhere. The
+    command checks every artifact path against the root and symlinks again.
   - With no roots configured, verify and sign refuse.
 - **Arguments.** The server builds each command's arguments only from validated fields. File names go
   after `--`, so a name like `--json` can never act as an option.

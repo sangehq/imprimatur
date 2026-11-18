@@ -17,6 +17,9 @@ impr verify FILE... --profile NAME [--root DIR] [--json] [--strict]
 - Every artifact must still have the digest recorded after signing, and verify
   on its platform. The `SHA256SUMS` the run wrote is checked with the checksum
   and cosign backends that signed it.
+- Every path in the record must resolve inside `--root`: a record is repository
+  content, so an absolute path or a link out of the root fails. `impr sign`
+  refuses a build manifest outside `--root` for the same reason.
 
 ## With files
 

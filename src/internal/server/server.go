@@ -298,17 +298,24 @@ func decode(r *http.Request, v any) error {
 }
 
 // inRoot resolves a configured root and a path under it. The root must be one
-// of server.roots (or under one); the path must stay inside the root. The
-// command re-checks every artifact path against --root and symlinks.
+// of server.roots (or under one); the path must stay inside the root. Both
+// checks run on the resolved path too, so a symbolic link inside a root cannot
+// move the root or a file outside it (security review R4). The command
+// re-checks every artifact path against --root and symlinks.
 func (s *server) inRoot(root, rel string) (string, string, error) {
 	clean := filepath.Clean(root)
+	if !filepath.IsAbs(root) {
+		return "", "", fmt.Errorf("root %q is not under a configured server.roots entry", root)
+	}
+	realRoot := resolveExisting(clean)
 	ok := false
 	for _, allowed := range s.o.Config.Server.Roots {
-		if r, err := filepath.Rel(filepath.Clean(allowed), clean); err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator)) {
+		a := filepath.Clean(allowed)
+		if within(a, clean) && within(resolveExisting(a), realRoot) {
 			ok = true
 		}
 	}
-	if !filepath.IsAbs(root) || !ok {
+	if !ok {
 		return "", "", fmt.Errorf("root %q is not under a configured server.roots entry", root)
 	}
 	if rel == "" {
@@ -320,7 +327,35 @@ func (s *server) inRoot(root, rel string) (string, string, error) {
 		strings.HasPrefix(filepath.ToSlash(filepath.Clean(rel)), "..") {
 		return "", "", fmt.Errorf("%q must be relative to the root and inside it", rel)
 	}
-	return clean, filepath.Join(clean, filepath.Clean(rel)), nil
+	full := filepath.Join(clean, filepath.Clean(rel))
+	if !within(realRoot, resolveExisting(full)) {
+		return "", "", fmt.Errorf("%q leaves the root through a symbolic link", rel)
+	}
+	return clean, full, nil
+}
+
+// within reports whether path is base or below it.
+func within(base, path string) bool {
+	r, err := filepath.Rel(base, path)
+	return err == nil && r != ".." && !strings.HasPrefix(r, ".."+string(filepath.Separator))
+}
+
+// resolveExisting resolves the symbolic links of the longest part of p that
+// exists and appends the rest, so a path not yet written is judged by the
+// folder it would be written in.
+func resolveExisting(p string) string {
+	rest := ""
+	for cur := p; ; {
+		if real, err := filepath.EvalSymlinks(cur); err == nil {
+			return filepath.Join(real, rest)
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			return p
+		}
+		rest = filepath.Join(filepath.Base(cur), rest)
+		cur = parent
+	}
 }
 
 func (s *server) verifyArgs(q VerifyRequest) ([]string, error) {
