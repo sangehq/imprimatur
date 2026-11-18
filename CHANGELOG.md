@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A Windows or macOS certificate whose expiry this host cannot read fails a
+  `--strict` sign and warns otherwise; `platforms.<os>.notAfter` declares it,
+  and Artifact Signing's short-lived certificates are exempt (owner decision
+  D-S2, I-20).
 - An in-toto attestation verified against a signed record must name that
   record's build manifest digest and repository too, not only its commit and
   tree; a loose `impr verify SHA256SUMS` says the attested build was not

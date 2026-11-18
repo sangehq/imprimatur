@@ -454,7 +454,7 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 			if err := backend.Preflight(ctx, be, u.prof); err != nil {
 				return Result{}, err
 			}
-			if err := s.certificateUsable(ctx, be, u.prof, pl); err != nil {
+			if err := s.certificateUsable(ctx, be, u.prof, pl, o.Strict); err != nil {
 				return Result{}, err
 			}
 			plan = append(plan, w)
@@ -585,11 +585,23 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 
 // certificateUsable refuses an expired certificate or one this host does not
 // have, before anything is signed.
-func (s *Service) certificateUsable(ctx context.Context, be backend.Backend, p profile.Profile, pl string) error {
+func (s *Service) certificateUsable(ctx context.Context, be backend.Backend, p profile.Profile, pl string, strict bool) error {
 	e := be.Certificate(ctx, p)
 	if e.NotAfter != nil && !s.Host.Now().Before(*e.NotAfter) {
 		return contract.New(contract.SignFailed, "the %s certificate of profile %s expired on %s; nothing was signed", pl, p.Name, e.NotAfter.Format("2006-01-02")).
 			WithFix("renew it, then re-pin the profile: impr profile edit " + p.Name + " --set platforms." + pl + "...")
+	}
+	// A Windows or macOS certificate whose expiry this host cannot read could
+	// already have expired: a strict run refuses it, any other warns (owner
+	// decision D-S2, ID-29). Artifact Signing issues short-lived certificates
+	// per signature, so it has no expiry to know.
+	azure := pl == profile.Windows && p.Platforms.Windows != nil && p.Platforms.Windows.Backend == profile.BackendAzure
+	if e.NotAfter == nil && (pl == profile.Windows || pl == profile.MacOS) && !azure {
+		if strict {
+			return contract.New(contract.SignFailed, "the expiry of the %s certificate of profile %s cannot be read on this host; a strict run refuses it, and nothing was signed", pl, p.Name).
+				WithFix("declare it: impr profile edit " + p.Name + " --set platforms." + pl + ".notAfter=YYYY-MM-DDT00:00:00Z")
+		}
+		s.logf("sign      the expiry of the %s certificate of profile %s cannot be read on this host; declare platforms.%s.notAfter, or --strict refuses it", pl, p.Name, pl)
 	}
 	switch e.Source {
 	case "store", "keychain", "gpg", "file":

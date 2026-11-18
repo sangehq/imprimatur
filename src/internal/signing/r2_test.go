@@ -38,7 +38,7 @@ func TestSignRefusesAFileChangedAfterItWasChecked(t *testing.T) {
 	rel := "build/windows/tool_amd64.exe"
 	svc, signed, root, manifest := setupMulti(t, map[string]uint16{rel: 0x8664})
 	evil := append(minimalPE(0x8664, "evil"), []byte("payload")...)
-	sw := &swapper{fakeWin: fakeWin{mu: &sync.Mutex{}, signed: signed, thumb: tA}, path: root + "/" + rel, evil: evil}
+	sw := &swapper{fakeWin: fakeWin{mu: &sync.Mutex{}, signed: signed, thumb: tA, notAfter: &testExpiry}, path: root + "/" + rel, evil: evil}
 	svc.BackendFor = func(backend.Host, profile.Profile, string) (backend.Backend, error) { return sw, nil }
 	_, err := svc.Sign(context.Background(), SignOptions{Root: root, Manifest: manifest, Commit: strings.Repeat("1", 40),
 		Tree: strings.Repeat("2", 40), Profile: "acme", Purpose: "internal", Platforms: []string{"windows"}, Strict: true})
