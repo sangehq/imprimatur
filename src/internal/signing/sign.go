@@ -96,7 +96,7 @@ func (s *Service) LoadProfile(name string, code contract.Code) (profile.Profile,
 		return profile.Profile{}, contract.New(code, "signing profile %s is not valid", p.Name).WithDetails(ps.Strings()...).
 			WithFix("impr profile validate "+p.Name, "impr profile edit "+p.Name+" --set KEY=VALUE")
 	}
-	if s.ManagedCheck != nil && p.Managed {
+	if s.ManagedCheck != nil { // it decides which profiles are managed (security review R5)
 		if err := s.ManagedCheck(p); err != nil {
 			return profile.Profile{}, contract.Wrap(code, err, "managed profile %s cannot be trusted", p.Name)
 		}

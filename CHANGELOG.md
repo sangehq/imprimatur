@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A profile an installed bundle names is checked against that bundle even when
+  its file was edited to `"managed": false` or another owner; the check used
+  to be skipped. `impr profile bundle install` refuses a bundle issued before
+  the installed one, so a replaced key cannot be rolled back in (security
+  review R5).
 - `impr verify --signed` resolves every path in the signed record under
   `--root`; an absolute path in a committed record took verify to any file
   the process could read, and passed it. `impr sign` refuses a build manifest
