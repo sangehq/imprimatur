@@ -532,7 +532,10 @@ func (s *server) inbound(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Claimed only after verification, so a forger cannot burn ids.
-	if !s.replay.claim(name+"/"+r.Header.Get("webhook-id"), 2*maxDur(tol, 5*time.Minute)) {
+	if fresh, err := s.replay.claim(name+"/"+r.Header.Get("webhook-id"), 2*maxDur(tol, 5*time.Minute)); err != nil {
+		writeErr(w, http.StatusServiceUnavailable, contract.Unavailable, "the replay ledger is unavailable, so the delivery was refused")
+		return
+	} else if !fresh {
 		writeErr(w, http.StatusConflict, contract.Usage, "delivery %s was already processed", r.Header.Get("webhook-id"))
 		return
 	}

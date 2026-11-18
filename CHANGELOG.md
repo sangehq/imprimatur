@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr serve`'s inbound replay ledger fails closed: a ledger it cannot read,
+  or a delivery it cannot record, answers 503 instead of loading as empty or
+  passing unrecorded, and it writes through its own temporary file. GitHub
+  delivery ids are remembered for 400 days instead of 7, since GitHub signs
+  no timestamp (security review R8).
 - A release signed in a git work tree is bound to it: `--commit` must be in
   the checkout with `--tree` as its tree, and `--repo` must be one of its
   remotes, so a signer cannot record a commit or an allowed repository the

@@ -222,7 +222,8 @@ Other apps can call `POST /v1/hooks/{name}` with a Standard Webhooks delivery, s
   `previousPublicKey`) to the sender's `whpk_` key, in place of or beside `secretRef`. A public key is not
   secret, so it is written in the config rather than referenced. A `v1` entry is checked only against
   secrets and a `v1a` entry only against public keys.
-- **Replays.** A `webhook-id` already processed answers 409. The ledger survives restarts.
+- **Replays.** A `webhook-id` already processed answers 409. The ledger survives restarts, and fails
+  closed: when it cannot be read or written, a delivery answers 503 rather than passing as new.
 - **Actions.**
   - `allow` lists the actions the endpoint accepts: `verify`, `doctor`, `cert.list` or `profile.list`.
   - Signing is never an inbound action.
@@ -243,8 +244,9 @@ the GitHub webhook, at least 16 characters.
 
 - **Signature.** `X-Hub-Signature-256` must match the HMAC-SHA256 of the body. Every failure is the
   same 401.
-- **Replays.** GitHub signs no timestamp, so the delivery id (`X-GitHub-Delivery`) is remembered for 7
-  days and a repeat answers 409.
+- **Replays.** GitHub signs no timestamp, so the delivery id (`X-GitHub-Delivery`) is remembered for 400
+  days and a repeat answers 409. Rotate the endpoint's secret at least yearly, so a delivery captured
+  before then no longer verifies once its id is forgotten.
 - **`ping`** is always answered with `{"result": "pong"}`.
 - **Which events.** `githubEvents` limits the endpoint to those event names; others answer
   `{"result": "ignored"}`. Empty accepts every event.
