@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr build` and `impr release` refuse a `LICENSE` or `README.md` that is
+  a symbolic link (an archive would have carried its target, a private key
+  say) and a `build/`, `build/{os}/` or `build/archives/` folder that is one
+  (the build wrote, and `--clean` deleted, outside the repository). Security
+  review R3.
 - `impr sign` signs the bytes it checked: each binary is copied into a
   private folder beside it, the copy is hashed against the checked digest,
   signed, and moved back. A file swapped between the check and the signing

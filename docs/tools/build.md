@@ -54,6 +54,10 @@ has them. Names carry no version, as the estate build layout requires, and entri
 timestamp, so the same files make the same archive. `impr build --archives` packs the files as built
 (unsigned); [`impr release --archives`](release.md) packs them after signing and verifying.
 
+A `LICENSE` or `README.md` committed as a symbolic link is refused rather than followed, and so is a
+`build/`, `build/{os}/` or `build/archives/` folder that is a link: impr writes, packs and deletes only
+inside the repository. `--clean` skips a linked `build/{os}/` of an OS it is not building.
+
 ## Windows version information
 
 Every Windows binary gets version information, an application manifest and, optionally, an icon. These

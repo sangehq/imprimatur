@@ -269,10 +269,20 @@ func (b Builder) Build(ctx context.Context, o Options) (string, Manifest, error)
 		o.Version = b.SnapshotVersion(ctx, o.RepoRoot)
 	}
 	outRoot := filepath.Join(o.RepoRoot, "build")
+	dirs := []string{"build"}
+	for _, t := range o.Targets {
+		dirs = append(dirs, "build/"+t.OSName())
+	}
+	if err := NoLinks(o.RepoRoot, dirs...); err != nil {
+		return "", Manifest{}, err
+	}
 	if o.Clean {
 		// Only this binary's own earlier files, only inside build/{os}/.
 		old, _ := filepath.Glob(filepath.Join(outRoot, "*", o.Binary+"_*"))
 		for _, p := range old {
+			if NoLinks(o.RepoRoot, filepath.ToSlash(filepath.Join("build", filepath.Base(filepath.Dir(p))))) != nil {
+				continue // a linked build/{os} of another target: never delete through it
+			}
 			if st, err := os.Lstat(p); err == nil && st.Mode().IsRegular() {
 				_ = os.Remove(p)
 			}
