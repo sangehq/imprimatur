@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr serve` on Windows no longer stops when a client connects to its named
+  pipe and leaves before the server accepts it (`ERROR_NO_DATA`); any local
+  client could take the server down. Found and checked on Windows 11 ARM64:
+  the named-pipe test fails on the old code and passes now.
 - `impr rules` allow rules apply to `BUILTIN\Users` (S-1-5-32-545) by
   default instead of Everyone, which also covers anonymous and service
   identities (old security finding 15); `--sid` and a request's

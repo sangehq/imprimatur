@@ -55,12 +55,9 @@ func TestNamedPipeServesOnlyItsOwner(t *testing.T) {
 		t.Fatal("a second listener took the pipe")
 	}
 
-	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") }),
-		ReadHeaderTimeout: 5 * time.Second}
-	served := make(chan error, 1)
-	go func() { served <- srv.Serve(ln) }()
-
-	// The DACL is protected and holds one entry: the current user.
+	// The DACL is protected and holds one entry: the current user. This
+	// client connects and leaves before the server accepts, which Accept
+	// must survive (ERROR_NO_DATA stopped impr serve until 2026-11-17).
 	c, err := dialPipe(path)
 	if err != nil {
 		t.Fatal(err)
@@ -85,6 +82,11 @@ func TestNamedPipeServesOnlyItsOwner(t *testing.T) {
 		t.Fatalf("pipe DACL %s grants %q, not the current user %s (%v)", sddl, trustee, user.User.Sid, err)
 	}
 	_ = c.Close()
+
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "ok") }),
+		ReadHeaderTimeout: 5 * time.Second}
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(ln) }()
 
 	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{
 		DialContext: func(context.Context, string, string) (net.Conn, error) { return dialPipe(path) }}}
