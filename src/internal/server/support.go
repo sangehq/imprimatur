@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sangehq/imprimatur/src/internal/capped"
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/webhook"
 )
@@ -81,7 +82,7 @@ type ledger struct {
 
 func newLedger(path string, now func() time.Time) *ledger {
 	l := &ledger{path: path, now: now, seen: map[string]time.Time{}}
-	b, err := os.ReadFile(path) //nolint:gosec // G304: impr's own state file
+	b, err := capped.ReadFile(path, capped.Manifest)
 	switch {
 	case err == nil:
 		if err := json.Unmarshal(b, &l.seen); err != nil {

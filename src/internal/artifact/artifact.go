@@ -17,6 +17,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/sangehq/imprimatur/src/internal/capped"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 )
 
@@ -55,7 +56,10 @@ func ReadManifest(path string) (Loaded, error) {
 	if err != nil {
 		return Loaded{}, err
 	}
-	b, err := os.ReadFile(abs) //nolint:gosec // G304: the build manifest the caller named
+	b, err := capped.ReadFile(abs, capped.Manifest)
+	if errors.Is(err, capped.ErrTooLarge) {
+		return Loaded{}, contract.Wrap(contract.Usage, err, "the build manifest %s is too large to be one", path)
+	}
 	if err != nil {
 		return Loaded{}, contract.Wrap(contract.Usage, err, "build manifest not found: %s", path).
 			WithDetails("--manifest names the build-manifest.json the build stage wrote.")

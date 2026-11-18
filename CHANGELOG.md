@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Build manifests, signed records and the replay ledger over 16 MiB, and
+  approvals or their signatures over 64 KiB, are refused before they are read
+  into memory (security review, I-14).
+- Approvers listed under two names with one key are a configuration problem,
+  and an approval signed by a key already counted does not count again: one
+  person could meet `approvals.required: 2` alone (security review, I-02).
 - The event log takes an exclusive lock while it appends, so writers in
   several processes (`impr serve` and a CLI run) no longer fork its hash
   chain, which `impr events verify` then reported as an edited log

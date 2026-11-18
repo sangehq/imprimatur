@@ -9,6 +9,7 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/artifact"
 	"github.com/sangehq/imprimatur/src/internal/backend"
+	"github.com/sangehq/imprimatur/src/internal/capped"
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/profile"
@@ -95,7 +96,7 @@ func (s *Service) verify(ctx context.Context, o VerifyOptions) (VerifyResult, er
 	var items []item
 	switch {
 	case o.Signed != "":
-		b, err := os.ReadFile(o.Signed)
+		b, err := capped.ReadFile(o.Signed, capped.Manifest)
 		if err != nil {
 			return VerifyResult{}, contract.Wrap(contract.Usage, err, "signed manifest not found: %s", o.Signed)
 		}
