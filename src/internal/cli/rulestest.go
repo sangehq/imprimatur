@@ -45,7 +45,8 @@ func cmdRulesTest(ctx context.Context, a *App, args []string) (int, error) {
 		return 0, contract.New(contract.Unavailable, "Test-AppLockerPolicy runs on Windows only").
 			WithFix("run impr rules test on the Windows machine the policy is for")
 	}
-	user := orDefault(p.str("user"), "Everyone")
+	// The group impr's allow rules name by default (ID-25).
+	user := orDefault(p.str("user"), `BUILTIN\Users`)
 	policy, err := filepath.Abs(p.str("policy"))
 	if err != nil {
 		return 0, err

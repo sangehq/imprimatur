@@ -118,7 +118,10 @@ func Render(req Request, renderer string) (Result, error) {
 		opt.AppLocker, opt.WDAC = true, true
 	}
 	if opt.UserOrGroupSID == "" {
-		opt.UserOrGroupSID = "S-1-1-0"
+		// BUILTIN\Users, not Everyone: signed-in users, without the
+		// anonymous and service identities Everyone also covers (ID-25,
+		// old security finding 15).
+		opt.UserOrGroupSID = sidUsers
 	}
 	if opt.Name == "" {
 		opt.Name = "imprimatur allow rules"
@@ -145,6 +148,13 @@ func Render(req Request, renderer string) (Result, error) {
 		res.Notes = append(res.Notes, "no product name: the rules allow anything this publisher signs")
 	}
 	res.Notes = append(res.Notes, "no file-hash rules; no base WDAC policy")
+	if opt.AppLocker {
+		who := opt.UserOrGroupSID
+		if who == sidUsers {
+			who = `BUILTIN\Users (S-1-5-32-545)`
+		}
+		res.Notes = append(res.Notes, "AppLocker allow rules apply to "+who)
+	}
 	if req.Publisher.EKU == "1.3.6.1.4.1.311.97.1.0" {
 		res.Notes = append(res.Notes, "eku 1.3.6.1.4.1.311.97.1.0 is the generic Artifact Signing EKU: the WDAC rule allows every Artifact Signing customer under the same CA whose certificate names the same publisher; pin the certificate profile's own EKU instead")
 	}
@@ -337,6 +347,7 @@ type alPathCond struct {
 const (
 	sidEveryone       = "S-1-1-0"
 	sidAdministrators = "S-1-5-32-544"
+	sidUsers          = "S-1-5-32-545"
 )
 
 // defaultRules are AppLocker's standard default rules for a collection, as

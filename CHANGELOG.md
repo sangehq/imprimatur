@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr rules` allow rules apply to `BUILTIN\Users` (S-1-5-32-545) by
+  default instead of Everyone, which also covers anonymous and service
+  identities (old security finding 15); `--sid` and a request's
+  `userOrGroupSid` still choose, and a note names the user. `impr rules test`
+  tests as `BUILTIN\Users` by default. Checked on Windows: Users allowed,
+  Everyone denied.
 - A macOS profile's `notary.keychainProfile` names credentials notarytool
   stored in the login keychain, so impr never resolves, writes or passes the
   App Store Connect key (old security finding 7). `apiKeyRef` stays for CI;

@@ -79,19 +79,20 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   itself, so add them unless the machine already has them. The Windows folder rule also allows the
   user-writable folders under it, such as `Windows\Temp`, a known AppLocker bypass, and the answer's notes
   say so.
-- **Same output as a request.** Everything else (AuditOnly unless `--enforce`, Everyone unless `--sid`) is
+- **Same output as a request.** Everything else (AuditOnly unless `--enforce`, `BUILTIN\Users` unless `--sid`) is
   exactly what a request produces.
 
 ## Test a policy on Windows
 
 ```powershell
-impr rules test --policy policies\applocker.xml --user Everyone build\windows\tool.exe build\windows\core.dll
+impr rules test --policy policies\applocker.xml build\windows\tool.exe build\windows\core.dll
 ```
 
 - **What it asks.** It asks Windows, through `Test-AppLockerPolicy`, whether the policy would allow each
-  file for that user (default `Everyone`), without deploying anything. It exits 4 when any file would be
+  file for that user (default `BUILTIN\Users`, the group impr's rules name; `--user` picks another),
+  without deploying anything. It exits 4 when any file would be
   denied, and 5 when Windows answers for fewer files than were named (a file never tested is never
-  reported as allowed). `--json`: `{"contract":1,"ok":true,"policy":"…","user":"Everyone","results":[{"path":"…","decision":"Allowed","rule":"…"}]}`.
+  reported as allowed). `--json`: `{"contract":1,"ok":true,"policy":"…","user":"BUILTIN\\Users","results":[{"path":"…","decision":"Allowed","rule":"…"}]}`.
 - **Windows only.** Elsewhere it exits 5.
 - **How PowerShell runs.** impr passes its own fixed script inline (`-EncodedCommand`), which execution
   policy does not govern, so there is no `-ExecutionPolicy Bypass` and no script file that could be
@@ -117,6 +118,9 @@ XML is printed on stdout; `--out-dir` also writes `applocker.xml` and
   `Script`, `Dll`) and binary name, for that publisher and product, at
   `fileVersion` or newer; WDAC file attributes with the same names and minimum
   version. Without it: anything the publisher signs.
+- Allow rules apply to `options.userOrGroupSid`, by default `BUILTIN\Users` (S-1-5-32-545): signed-in users,
+  not the anonymous and service identities `Everyone` also covers. A note names the user. AppLocker's
+  standard default rules (`--include-default-rules`) keep their usual Everyone and Administrators.
 - AppLocker collections are `AuditOnly` unless `options.enforce`. A WDAC supplemental policy takes its
   mode from its base policy, so `enforce` does not change it; a note says so.
 - The WDAC `PolicyID` is derived from the base policy, publisher, leaf, product and name (or taken from

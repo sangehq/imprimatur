@@ -108,3 +108,44 @@ func TestWDACPolicyIDStableAndEnforceNoted(t *testing.T) {
 		t.Fatalf("no note that --enforce does not reach WDAC: %v", res.Notes)
 	}
 }
+
+// Old security finding 15 (ID-25): impr's allow rules apply to BUILTIN\Users
+// by default, not Everyone (which also covers anonymous and service
+// identities); an explicit SID is kept, and the result names the user.
+func TestAllowRulesDefaultToBuiltinUsers(t *testing.T) {
+	allowSIDs := func(xml string) []string {
+		var sids []string
+		for _, line := range strings.Split(xml, "\n") {
+			if strings.Contains(line, "<FilePublisherRule") {
+				i := strings.Index(line, `UserOrGroupSid="`)
+				sids = append(sids, strings.SplitN(line[i+16:], `"`, 2)[0])
+			}
+		}
+		return sids
+	}
+	req := request(t)
+	req.Options.UserOrGroupSID = ""
+	res, err := Render(req, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sids := allowSIDs(res.AppLocker)
+	if len(sids) == 0 {
+		t.Fatalf("no allow rules found:\n%s", res.AppLocker)
+	}
+	for _, s := range sids {
+		if s != "S-1-5-32-545" {
+			t.Fatalf("an allow rule is for %s, want S-1-5-32-545", s)
+		}
+	}
+	if !strings.Contains(strings.Join(res.Notes, "\n"), `BUILTIN\Users`) {
+		t.Fatalf("no note naming the user: %v", res.Notes)
+	}
+	req.Options.UserOrGroupSID = "S-1-5-21-1-2-3-1001"
+	res, _ = Render(req, "test")
+	for _, s := range allowSIDs(res.AppLocker) {
+		if s != "S-1-5-21-1-2-3-1001" {
+			t.Fatalf("an explicit SID was not kept: %s", s)
+		}
+	}
+}

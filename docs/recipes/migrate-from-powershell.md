@@ -43,6 +43,7 @@ Each old spelling still works as an alias of the Go name (design ID-13):
 | `impr build VERSION` stamping `main.version` | the same; `--version-var` names another variable |
 | `impr build` signing with `--profile`, `--signer`, `--thumbprint` … | moved to `impr release --profile NAME --purpose P` |
 | `impr rules --scope file` (product + binary) | the same meaning (ID-11); `--scope product` is product only |
+| `impr rules` allow rules for Everyone | `BUILTIN\Users` by default (ID-25); `--sid S-1-1-0` keeps Everyone |
 | GoReleaser archives (`.tar.gz`, `.zip`) and the `macos-universal` binary | `impr build --archives` / `impr release --archives` (ID-12); archive names carry no version |
 
 ## Dropped by decision
