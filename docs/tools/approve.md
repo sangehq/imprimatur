@@ -52,7 +52,7 @@ A profile's `approval` field chooses how a run is approved:
 
 | `approval` | How |
 | --- | --- |
-| `signed` (default) | `approvals.required` valid approvals from distinct approvers, passed with `--approval` |
+| `signed` (default) | `approvals.required` valid approvals from distinct approvers (distinct keys: one key listed under two names is a configuration problem), passed with `--approval` |
 | `confirm` | the person signing types the commit's first 12 characters at a terminal |
 
 `confirm` needs a person at a terminal. A piped run, CI (`CI` set) and the REST API refuse it, and
