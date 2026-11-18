@@ -1,6 +1,7 @@
 package winres
 
 import (
+	"bytes"
 	"debug/pe"
 	"encoding/binary"
 	"unicode/utf16"
@@ -15,6 +16,19 @@ func ReadVersion(path string) (map[string]string, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	return versionOf(f)
+}
+
+// ReadVersionBytes is ReadVersion over a file already read.
+func ReadVersionBytes(b []byte) (map[string]string, error) {
+	f, err := pe.NewFile(bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	return versionOf(f)
+}
+
+func versionOf(f *pe.File) (map[string]string, error) {
 	sec := f.Section(".rsrc")
 	if sec == nil {
 		return map[string]string{}, nil

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr rules` reads each signed file once and takes its signer, signature
+  check, sha256 and version information from those bytes; a file changed
+  between reads could pair one file's signer with another's image (security
+  review, I-15).
 - Outbound webhooks refuse the reserved IPv4 ranges (`0.0.0.0/8`,
   `192.0.0.0/24`, `198.18.0.0/15`, `240.0.0.0/4`), check the IPv4 address
   inside a NAT64, 6to4 or IPv4-compatible address as itself, and refuse

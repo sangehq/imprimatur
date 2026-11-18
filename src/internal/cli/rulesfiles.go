@@ -91,12 +91,18 @@ func rulesFromFiles(a *App, p parsed, want map[string]string) (rules.Request, er
 		if ext != ".exe" && ext != ".dll" && ext != ".com" && ext != ".ocx" {
 			return rules.Request{}, contract.New(contract.Usage, "%s: impr reads signatures from PE files (.exe, .dll); list other files in a --request", f)
 		}
-		s, err := backend.ReadPESigner(abs)
+		// One read: the signer, the signature check, the digest and the
+		// version information all come from these bytes (security review, I-15).
+		data, err := os.ReadFile(abs) //nolint:gosec // G304: a signed file the operator named
+		if err != nil {
+			return rules.Request{}, contract.Wrap(contract.Usage, err, "read %s", f)
+		}
+		s, err := backend.ReadPESignerBytes(data)
 		if err != nil {
 			return rules.Request{}, contract.Wrap(contract.Usage, err, "%s carries no Authenticode signature impr can read", f)
 		}
 		// A file changed after signing is never allow-listed (O-173).
-		if err := backend.VerifyAuthenticode(abs); err != nil {
+		if err := backend.VerifyAuthenticodeBytes(data); err != nil {
 			return rules.Request{}, contract.Wrap(contract.VerifyFailed, err, "%s does not match its signature", f).
 				WithFix("rebuild and re-sign it; never write rules for a file that fails this check")
 		}
@@ -126,17 +132,15 @@ func rulesFromFiles(a *App, p parsed, want map[string]string) (rules.Request, er
 			return rules.Request{}, contract.New(contract.Usage, "%s is signed under Artifact Signing certificate profile EKU %q, not %q like the other files; make one set of rules per certificate profile",
 				f, s.ProfileEKU, signer.ProfileEKU)
 		}
-		sum, err := artifact.SHA256(abs)
-		if err != nil {
-			return rules.Request{}, err
-		}
+		digest := sha256.Sum256(data)
+		sum := hex.EncodeToString(digest[:])
 		if w, ok := want[abs]; ok && !strings.EqualFold(w, sum) {
 			return rules.Request{}, contract.New(contract.VerifyFailed, "%s is not the file the signed record lists; no rules were written", f).
 				WithDetails("signed record "+strings.ToLower(w), "on disk       "+sum)
 		}
 		// The version information the file carries (impr build embeds it):
 		// its ProductName, OriginalFilename and FileVersion.
-		v, verr := winres.ReadVersion(abs)
+		v, verr := winres.ReadVersionBytes(data)
 		if readProduct {
 			if verr != nil {
 				return rules.Request{}, contract.Wrap(contract.Usage, verr, "%s: its version information cannot be read", f)
