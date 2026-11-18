@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Outbound webhooks refuse the reserved IPv4 ranges (`0.0.0.0/8`,
+  `192.0.0.0/24`, `198.18.0.0/15`, `240.0.0.0/4`), check the IPv4 address
+  inside a NAT64, 6to4 or IPv4-compatible address as itself, and refuse
+  Teredo and local-use NAT64: `64:ff9b::a9fe:a9fe` reached the cloud metadata
+  address on a NAT64 network (security review, I-09).
 - Build manifests, signed records and the replay ledger over 16 MiB, and
   approvals or their signatures over 64 KiB, are refused before they are read
   into memory (security review, I-14).

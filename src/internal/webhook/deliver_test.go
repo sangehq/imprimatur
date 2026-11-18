@@ -111,7 +111,18 @@ func TestSSRFGuards(t *testing.T) {
 			t.Errorf("%s is not blocked", a)
 		}
 	}
-	if blocked(netip.MustParseAddr("93.184.216.34")) {
-		t.Error("a public address is blocked")
+	// Security review I-09: an IPv4 address embedded in NAT64, 6to4 or an
+	// IPv4-compatible address is checked as itself, and reserved IPv4 ranges
+	// and Teredo are blocked outright.
+	for _, a := range []string{"64:ff9b::a9fe:a9fe", "64:ff9b:1::a00:1", "2002:a9fe:a9fe::1", "2002:7f00:1::", "::7f00:1",
+		"0.1.2.3", "198.18.0.1", "198.19.255.255", "240.0.0.1", "255.255.255.255", "192.0.0.8", "2001:0:4136:e378::1"} {
+		if !blocked(netip.MustParseAddr(a)) {
+			t.Errorf("%s is not blocked", a)
+		}
+	}
+	for _, a := range []string{"93.184.216.34", "64:ff9b::5db8:d822", "2002:5db8:d822::1", "2606:4700::1111"} {
+		if blocked(netip.MustParseAddr(a)) {
+			t.Errorf("public address %s is blocked", a)
+		}
 	}
 }
