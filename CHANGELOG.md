@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Configuration keys are case-sensitive in every layer: a user config or
+  configuration profile could set a locked key by spelling it differently
+  (`allowsign`, `SERVER`, `ſ` for `s`), because JSON decoding matched it while
+  the lock check did not (security review R1).
 - `impr doctor` notes a release-purpose profile that can sign while
   `approvals.enforce` is off, and an audit trail that is not anchored off the
   machine (threat-model residuals 1 and 2). Notes never make doctor fail.

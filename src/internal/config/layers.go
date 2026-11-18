@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"runtime"
 	"slices"
@@ -190,6 +191,15 @@ func LoadEffective(s Sources) (Effective, error) {
 		prof = m
 		eff.Profile = name
 		eff.Layers = append(eff.Layers, Layer{Name: "profile:" + name, Path: p, Present: true})
+	}
+	// Every layer uses the exact key names (security review R1).
+	for _, l := range []struct {
+		name string
+		m    map[string]any
+	}{{"system config", sys}, {"user config", user}, {"configuration profile " + name, prof}} {
+		if err := exactKeys(l.m, reflect.TypeOf(Config{}), ""); err != nil {
+			return eff, fmt.Errorf("the %s: %w", l.name, err)
+		}
 	}
 	for _, lower := range []struct {
 		name string
