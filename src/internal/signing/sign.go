@@ -422,7 +422,7 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 			continue
 		}
 		for _, f := range w.files {
-			sig, err := w.be.Sign(ctx, f, w.prof)
+			sig, err := signChecked(ctx, w.be, f, w.prof, inputs[f.Rel])
 			if err != nil {
 				return Result{}, err
 			}
@@ -587,4 +587,59 @@ func unsupportedFormat(rel string, k artifact.Kind, platforms []string) error {
 			WithFix("sign the .pkg with productsign, or leave macos out of --platforms for this manifest")
 	}
 	return nil
+}
+
+// signChecked signs the bytes impr checked, not whatever the path holds when
+// the signing tool opens it (security review R2). The file is copied into a
+// private folder beside it, under the same name (codesign derives the
+// identifier from it), the copy is hashed against the checked digest, signed,
+// and moved back over the original. A file changed after the check is refused.
+func signChecked(ctx context.Context, be backend.Backend, f backend.Artifact, p profile.Profile, want string) (backend.Signature, error) {
+	dir, err := os.MkdirTemp(filepath.Dir(f.Path), ".impr-sign-")
+	if err != nil {
+		return backend.Signature{}, contract.Wrap(contract.SignFailed, err, "%s: cannot stage it for signing", f.Rel)
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	staged := filepath.Join(dir, filepath.Base(f.Path))
+	if err := copyFile(f.Path, staged); err != nil {
+		return backend.Signature{}, contract.Wrap(contract.SignFailed, err, "%s: cannot stage it for signing", f.Rel)
+	}
+	sum, err := artifact.SHA256(staged)
+	if err != nil {
+		return backend.Signature{}, contract.Wrap(contract.SignFailed, err, "%s: cannot hash the staged copy", f.Rel)
+	}
+	if sum != want {
+		return backend.Signature{}, contract.New(contract.SignFailed, "%s changed after it was checked; nothing was signed", f.Rel).
+			WithDetails("checked "+want, "now     "+sum).WithFix("find what writes to the build output while impr signs, then sign again")
+	}
+	sig, err := be.Sign(ctx, backend.Artifact{Path: staged, Rel: f.Rel}, p)
+	if err != nil {
+		return backend.Signature{}, err
+	}
+	if err := os.Rename(staged, f.Path); err != nil {
+		return backend.Signature{}, contract.Wrap(contract.SignFailed, err, "%s: cannot put the signed file in place", f.Rel)
+	}
+	return sig, nil
+}
+
+// copyFile copies src to a new file dst with src's permission bits.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src) //nolint:gosec // G304: an artifact resolved under the signing root
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	st, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, st.Mode().Perm()) //nolint:gosec // G304: a fresh file in impr's own staging folder
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }

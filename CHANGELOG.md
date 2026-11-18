@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr sign` signs the bytes it checked: each binary is copied into a
+  private folder beside it, the copy is hashed against the checked digest,
+  signed, and moved back. A file swapped between the check and the signing
+  tool is refused (security review R2). Artifact paths resolve through
+  symbolic links, so the signed file replaces the file, not a link to it.
 - Configuration keys are case-sensitive in every layer: a user config or
   configuration profile could set a locked key by spelling it differently
   (`allowsign`, `SERVER`, `ſ` for `s`), because JSON decoding matched it while

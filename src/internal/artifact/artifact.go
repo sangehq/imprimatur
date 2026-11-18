@@ -121,7 +121,8 @@ func Resolve(root, rel string) (string, error) {
 	if err != nil || !st.Mode().IsRegular() {
 		return "", contract.New(contract.SignFailed, "%s is not a regular file", rel)
 	}
-	return full, nil
+	// The resolved path, so a later rename replaces the file, not a link to it.
+	return real, nil
 }
 
 // SHA256 is the lower-case hex sha256 of a file.
