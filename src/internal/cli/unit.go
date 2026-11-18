@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
 )
@@ -19,6 +20,17 @@ type Unit struct {
 	Config string   // impr's config dir
 	State  string   // impr's state dir: logs, the socket, the event log
 	Roots  []string // server.roots: where signing writes impr-manifest.json
+}
+
+// check refuses a path holding a control character: a line break printed
+// into a unit starts a new directive (security review).
+func (u Unit) check() error {
+	for _, p := range append([]string{u.Exe, u.Config, u.State}, u.Roots...) {
+		if strings.ContainsFunc(p, unicode.IsControl) {
+			return contract.New(contract.Usage, "%q holds a control character, which a unit file cannot carry safely", p)
+		}
+	}
+	return nil
 }
 
 // cmdServeUnit prints a unit that keeps impr serve running for this user.
@@ -61,6 +73,9 @@ func cmdServeUnit(_ context.Context, a *App, args []string) (int, error) {
 		return 0, err
 	}
 	u := Unit{Exe: exe, Config: d.Config, State: d.State, Roots: cfg.Server.Roots}
+	if err := u.check(); err != nil {
+		return 0, err
+	}
 	var text, where, how string
 	switch kind {
 	case "systemd":

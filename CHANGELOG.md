@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr serve install-unit` and `impr cert install-check` refuse a path with
+  a control character: a line break in `--exe` or a server root printed a
+  second directive into the unit (security review).
 - `impr rules` reads each signed file once and takes its signer, signature
   check, sha256 and version information from those bytes; a file changed
   between reads could pair one file's signer with another's image (security

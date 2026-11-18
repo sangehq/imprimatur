@@ -112,7 +112,9 @@ Instead of `signed`, it can take `"files": ["build/windows/tool.exe"]`. `POST /v
 ## Running it as a service
 
 `impr serve install-unit --print` prints a unit that keeps `impr serve` running for you, and how to
-install it. impr installs nothing itself: where and how a service runs is your decision.
+install it. impr installs nothing itself: where and how a service runs is your decision. A path holding
+a control character (a line break would start a new directive) is refused, here and in
+`impr cert install-check`.
 
 ```bash
 impr serve install-unit --print                  # the unit for this OS
