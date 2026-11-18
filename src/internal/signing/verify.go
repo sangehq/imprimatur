@@ -264,6 +264,9 @@ func (s *Service) verifyOne(ctx context.Context, root string, p profile.Profile,
 	if c := be.Capability(s.Host); !c.Verify {
 		return contract.New(contract.Unavailable, "%s signatures cannot be verified on this host: %s", pl, c.Reason)
 	}
+	if pl == profile.Attestations && it.build == nil {
+		s.logf("verify    %s: without --signed, the attested build (commit, tree, build manifest, repository) is not compared with anything", it.rel)
+	}
 	art := backend.Artifact{Path: path, Rel: it.rel, Notarized: it.notarized, Build: it.build}
 	if err := be.Verify(ctx, art, p); err != nil {
 		return err

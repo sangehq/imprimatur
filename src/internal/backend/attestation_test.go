@@ -159,6 +159,25 @@ func TestInTotoRefuses(t *testing.T) {
 			t.Fatalf("want the commit mismatch, got %v", err)
 		}
 	})
+	// Security review I-16: the same commit and tree from another build
+	// manifest or repository is another build.
+	for _, field := range []string{"manifest", "repo"} {
+		t.Run("another build's "+field, func(t *testing.T) {
+			f := newIntoto(t)
+			if _, err := f.be.Sign(ctx, f.art, f.p); err != nil {
+				t.Fatal(err)
+			}
+			b := *f.art.Build
+			if field == "manifest" {
+				b.ManifestDigest = "sha256:" + randHex(t, 32)
+			} else {
+				b.Repo = "https://github.com/acme/other"
+			}
+			f.art.Build = &b
+			err := f.be.Verify(ctx, f.art, f.p)
+			wantCode(t, err, contract.VerifyFailed)
+		})
+	}
 	t.Run("another pinned key", func(t *testing.T) {
 		f := newIntoto(t)
 		if _, err := f.be.Sign(ctx, f.art, f.p); err != nil {

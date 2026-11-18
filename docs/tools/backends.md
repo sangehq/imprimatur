@@ -14,7 +14,7 @@ type. Each runs only allow-listed tools, by absolute path, with no shell.
 | checksums | `minisign` | any | `minisign` | key id |
 | checksums | `ssh` | any | `ssh-keygen -Y` | key fingerprint (`SHA256:...`) |
 | containers | `cosign` key / keyless | any | `cosign sign-blob`, `verify-blob` | public-key sha256 / identity and issuer |
-| attestations | `in-toto` | wherever its signer works | the checksum key's tool, or `cosign` | the signer's pin, the checksum file's entries, and the commit and tree |
+| attestations | `in-toto` | wherever its signer works | the checksum key's tool, or `cosign` | the signer's pin, the checksum file's entries, and with `--signed` the commit, tree, build manifest digest and repository |
 
 ## in-toto attestations
 
