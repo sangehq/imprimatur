@@ -29,6 +29,11 @@ func (l Log) Write(_ context.Context, ev Event) error {
 	if err := os.MkdirAll(l.Dir, 0o700); err != nil {
 		return err
 	}
+	unlock, err := l.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	prev, err := l.lastHash()
 	if err != nil {
 		return err

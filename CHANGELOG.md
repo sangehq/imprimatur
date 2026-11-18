@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- The event log takes an exclusive lock while it appends, so writers in
+  several processes (`impr serve` and a CLI run) no longer fork its hash
+  chain, which `impr events verify` then reported as an edited log
+  (security review R9).
 - `impr serve`'s inbound replay ledger fails closed: a ledger it cannot read,
   or a delivery it cannot record, answers 503 instead of loading as empty or
   passing unrecorded, and it writes through its own temporary file. GitHub

@@ -17,6 +17,9 @@ verification step it takes.
 - **Chain.** Each line carries `imprprev`, the sha256 of the line before it, and `<state>/events/head`
   holds the hash of the newest line. `impr events verify` uses both to detect an edited, removed or
   reordered line, the newest included.
+- **One writer at a time.** A writer holds an exclusive lock on `<state>/events/.lock` while it reads the
+  chain's head and appends, so `impr serve` and a CLI run writing at once keep one chain (on macOS, Linux,
+  the BSDs and Windows).
 - **Not on stdout.** Events never appear on stdout, so every `--json` document is unchanged.
 - **Failure does not stop the command.** If the log cannot be written, impr prints a warning and the
   command carries on.
