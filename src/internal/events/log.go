@@ -85,16 +85,9 @@ func (l Log) lastHash() (string, error) {
 	if err != nil || len(fs) == 0 {
 		return "", err
 	}
-	b, err := os.ReadFile(fs[len(fs)-1])
-	if err != nil {
+	b, _, err := lastLine(fs[len(fs)-1])
+	if err != nil || len(b) == 0 {
 		return "", err
-	}
-	b = bytes.TrimRight(b, "\n")
-	if len(b) == 0 {
-		return "", nil
-	}
-	if i := bytes.LastIndexByte(b, '\n'); i >= 0 {
-		b = b[i+1:]
 	}
 	return lineHash(b), nil
 }

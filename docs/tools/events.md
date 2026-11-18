@@ -19,7 +19,8 @@ verification step it takes.
   reordered line, the newest included.
 - **One writer at a time.** A writer holds an exclusive lock on `<state>/events/.lock` while it reads the
   chain's head and appends, so `impr serve` and a CLI run writing at once keep one chain (on macOS, Linux,
-  the BSDs and Windows).
+  the BSDs and Windows). To chain a new line it reads only the end of the newest month file, so
+  appending costs the same however long the log is.
 - **Not on stdout.** Events never appear on stdout, so every `--json` document is unchanged.
 - **Failure does not stop the command.** If the log cannot be written, impr prints a warning and the
   command carries on.
