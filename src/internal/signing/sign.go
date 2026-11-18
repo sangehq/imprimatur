@@ -71,8 +71,10 @@ func (s *Service) checkBinding(ctx context.Context, root string, o SignOptions) 
 	}
 	st, err := s.Git(ctx, root, o.Commit)
 	if err != nil {
-		s.logf("sign      %s is not a git work tree: the release's commit, tree and repository are as the caller gives them", root)
-		return nil
+		// Nothing could tie the release to its source, so it is refused
+		// (owner decision D-S1, ID-28).
+		return contract.New(contract.SignFailed, "%s is not a git work tree, so the release's commit, tree and repository cannot be checked; nothing was signed", root).
+			WithDetails(err.Error()).WithFix("sign the release in the checkout the build came from (--root)")
 	}
 	if st.Tree == "" {
 		return contract.New(contract.SignFailed, "commit %s is not in the checkout at %s; nothing was signed", o.Commit, root).

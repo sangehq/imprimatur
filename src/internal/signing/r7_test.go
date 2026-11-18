@@ -60,11 +60,12 @@ func TestReleaseIsBoundToTheCheckout(t *testing.T) {
 	if err := sign("ssh://git@github.com/acme/tool.git"); err != nil {
 		t.Fatalf("the checkout's own commit and remote: %v", err)
 	}
-	// Outside a git work tree the binding cannot be checked; impr says so.
+	// Outside a git work tree the binding cannot be checked, so a release is
+	// refused (owner decision D-S1, ID-28).
 	svc.Git = func(context.Context, string, string) (GitState, error) {
 		return GitState{}, errors.New("not a git work tree")
 	}
-	if err := sign("https://github.com/acme/tool"); err != nil {
+	if err := sign("https://github.com/acme/tool"); contract.CodeOf(err) != contract.SignFailed || !strings.Contains(err.Error(), "git work tree") {
 		t.Fatalf("a release outside a work tree: %v", err)
 	}
 }

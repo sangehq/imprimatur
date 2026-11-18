@@ -124,10 +124,32 @@ func (h *harness) exits(want int, args ...string) string {
 }
 
 // build writes two artifacts and a build manifest under a new root.
+// build is a git checkout with one commit and origin acme/tool, holding a
+// build manifest of two binaries bound to that commit: a release is signed
+// only in the checkout it came from (owner decision D-S1).
 func build(t *testing.T) (root, manifest, commit, tree string) {
 	t.Helper()
 	root = t.TempDir()
-	commit, tree = randHex(t, 20), randHex(t, 20)
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("needs git")
+	}
+	if err := os.WriteFile(filepath.Join(root, "README.md"), []byte("tool\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q"}, {"add", "README.md"}, {"commit", "-q", "-m", "init"},
+		{"remote", "add", "origin", "git@github.com:acme/tool.git"}} {
+		gitIn(t, root, args...)
+	}
+	rev := func(spec string) string {
+		cmd := exec.Command("git", "rev-parse", spec)
+		cmd.Dir = root
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	commit, tree = rev("HEAD"), rev("HEAD^{tree}")
 	type art struct {
 		Path   string `json:"path"`
 		SHA256 string `json:"sha256"`
