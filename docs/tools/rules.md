@@ -90,11 +90,14 @@ impr rules test --policy policies\applocker.xml --user Everyone build\windows\to
 
 - **What it asks.** It asks Windows, through `Test-AppLockerPolicy`, whether the policy would allow each
   file for that user (default `Everyone`), without deploying anything. It exits 4 when any file would be
-  denied. `--json`: `{"contract":1,"ok":true,"policy":"…","user":"Everyone","results":[{"path":"…","decision":"Allowed","rule":"…"}]}`.
+  denied, and 5 when Windows answers for fewer files than were named (a file never tested is never
+  reported as allowed). `--json`: `{"contract":1,"ok":true,"policy":"…","user":"Everyone","results":[{"path":"…","decision":"Allowed","rule":"…"}]}`.
 - **Windows only.** Elsewhere it exits 5.
-- **How PowerShell runs.** impr writes its own fixed script to a temporary file. The tool allow-list runs
-  PowerShell only with that script, byte for byte. Paths and the user reach it as parameters, never as
-  code, and a value starting with `-` is refused, so it cannot bind as another parameter.
+- **How PowerShell runs.** impr passes its own fixed script inline (`-EncodedCommand`), which execution
+  policy does not govern, so there is no `-ExecutionPolicy Bypass` and no script file that could be
+  swapped between impr checking it and PowerShell running it. The tool allow-list runs PowerShell only
+  with that exact command line. The policy path, the user and the files reach the script as environment
+  variables (the files one per line), so no value is ever parsed as PowerShell.
 
 ## The answer
 

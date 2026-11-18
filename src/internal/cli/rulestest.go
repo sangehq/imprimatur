@@ -61,18 +61,11 @@ func cmdRulesTest(ctx context.Context, a *App, args []string) (int, error) {
 		}
 		files = append(files, abs)
 	}
-	dir, err := os.MkdirTemp("", "impr-rules-test-")
+	env, err := execx.PowerShellEnv(policy, user, files)
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	script := filepath.Join(dir, "test-applocker.ps1")
-	if err := os.WriteFile(script, []byte(execx.TestAppLockerScript), 0o600); err != nil {
-		return 0, err
-	}
-	cmdArgs := []string{"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script,
-		"-PolicyPath", policy, "-User", user, "-Path"}
-	res, err := a.host().Runner.Run(ctx, execx.Cmd{Tool: "powershell", Args: append(cmdArgs, files...)})
+	res, err := a.host().Runner.Run(ctx, execx.Cmd{Tool: "powershell", Args: execx.PowerShellArgs(), Env: env})
 	if err != nil {
 		return 0, contract.Wrap(contract.Unavailable, err, "PowerShell could not run")
 	}
@@ -82,6 +75,12 @@ func cmdRulesTest(ctx context.Context, a *App, args []string) (int, error) {
 	var ds []RuleDecision
 	if err := json.Unmarshal(bytes.TrimSpace(res.Stdout), &ds); err != nil {
 		return 0, contract.Wrap(contract.Unavailable, err, "Test-AppLockerPolicy's answer is not JSON")
+	}
+	// Every file must have its decision: a missing one was never tested, and
+	// is never read as allowed (fail closed).
+	if len(ds) != len(files) {
+		return 0, contract.New(contract.Unavailable, "Test-AppLockerPolicy answered for %d of %d file(s); nothing is reported as allowed", len(ds), len(files)).
+			WithDetails(strings.TrimSpace(res.Output()))
 	}
 	out := RulesTestResult{Contract: contract.Version, OK: true, Policy: policy, User: user, Results: ds}
 	for _, d := range ds {

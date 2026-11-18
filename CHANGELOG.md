@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- `impr rules test` runs its PowerShell script inline (`-EncodedCommand`)
+  instead of from a temporary file with `-ExecutionPolicy Bypass`, and passes
+  the policy, user and files as environment variables, never as code (old
+  security finding 16). It also fails when Windows answers for fewer files than
+  were named; an empty answer read as "allowed".
+
 ### Added
 
 - End-to-end tests (`src/internal/e2e`) build `impr` and run it as a person
