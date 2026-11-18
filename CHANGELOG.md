@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr rules` from a build manifest resolves each file inside the build's
+  root and checks it against the signed record beside it (same build, signed,
+  same sha256), and pins the signer to the record's profile; `--profile NAME`
+  names one explicitly, for named files too. A committed binary signed by
+  someone else's certificate got allow rules (security review R6). Without a
+  record, a note says so and `--strict` refuses.
 - A profile an installed bundle names is checked against that bundle even when
   its file was edited to `"managed": false` or another owner; the check used
   to be skipped. `impr profile bundle install` refuses a bundle issued before

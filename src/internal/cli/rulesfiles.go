@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/asn1"
 	"encoding/hex"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -14,14 +16,16 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/artifact"
 	"github.com/sangehq/imprimatur/src/internal/backend"
 	"github.com/sangehq/imprimatur/src/internal/contract"
+	"github.com/sangehq/imprimatur/src/internal/profile"
 	"github.com/sangehq/imprimatur/src/internal/rules"
+	"github.com/sangehq/imprimatur/src/internal/signing"
 	"github.com/sangehq/imprimatur/src/internal/winres"
 )
 
 var rulesFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "request": stringFlag, "out-dir": stringFlag,
 	"scope": stringFlag, "product": stringFlag, "file-version": stringFlag, "eku": stringFlag, "base-policy": stringFlag,
 	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag, "manifest": stringFlag,
-	"include-default-rules": boolFlag}
+	"include-default-rules": boolFlag, "profile": stringFlag}
 
 // ruleEKU is the EKU a WDAC rule pins (O-181). For an Artifact Signing
 // certificate it is the certificate profile's own EKU, read from the file
@@ -53,7 +57,11 @@ func ruleEKU(a *App, given string, s *backend.PESigner) (string, error) {
 // the PowerShell meanings (ID-11): publisher (anything that certificate
 // signs), product (any file of this product), file (this product and file
 // name, any version) or version (and --file-version or newer).
-func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
+func rulesFromFiles(a *App, p parsed, want map[string]string) (rules.Request, error) {
+	pin, err := rulesPin(a, p.str("profile"))
+	if err != nil {
+		return rules.Request{}, err
+	}
 	scope := orDefault(p.str("scope"), "product")
 	switch scope {
 	case "publisher":
@@ -92,6 +100,14 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 			return rules.Request{}, contract.Wrap(contract.VerifyFailed, err, "%s does not match its signature", f).
 				WithFix("rebuild and re-sign it; never write rules for a file that fails this check")
 		}
+		// The signer is the profile's (security review R6): rules for a file
+		// signed by anyone else's certificate are never written.
+		if pin != nil {
+			if why := windowsPinMismatch(s, pin); why != "" {
+				return rules.Request{}, contract.New(contract.VerifyFailed, "%s %s; no rules were written", f, why).
+					WithFix("impr verify " + f + " --profile " + p.str("profile"))
+			}
+		}
 		if !s.Timestamped {
 			a.say("rules     %s: its signature has no timestamp, so it stops being valid when the certificate expires; sign with a timestamp server", f)
 		}
@@ -113,6 +129,10 @@ func rulesFromFiles(a *App, p parsed) (rules.Request, error) {
 		sum, err := artifact.SHA256(abs)
 		if err != nil {
 			return rules.Request{}, err
+		}
+		if w, ok := want[abs]; ok && !strings.EqualFold(w, sum) {
+			return rules.Request{}, contract.New(contract.VerifyFailed, "%s is not the file the signed record lists; no rules were written", f).
+				WithDetails("signed record "+strings.ToLower(w), "on disk       "+sum)
 		}
 		// The version information the file carries (impr build embeds it):
 		// its ProductName, OriginalFilename and FileVersion.
@@ -216,22 +236,110 @@ func fourPart(v string) []int {
 }
 
 // windowsFilesOf lists the Windows binaries of a build manifest, as paths
-// from the current folder (ID-20).
-func windowsFilesOf(manifest string) ([]string, error) {
+// under the build's root (ID-20). Each path must resolve inside the root. When
+// the signed record impr sign wrote sits beside it, the record must belong to
+// this build, and the digests it holds come back, so a file swapped after
+// signing is refused (security review R6); the record's profile is the
+// default --profile. Without a record nothing ties the files to a signing run,
+// which --strict refuses.
+func windowsFilesOf(a *App, manifest string, strict bool) ([]string, map[string]string, string, error) {
 	bm, err := artifact.ReadManifest(manifest)
 	if err != nil {
-		return nil, contract.Wrap(contract.Usage, err, "read the build manifest %s", manifest)
+		return nil, nil, "", contract.Wrap(contract.Usage, err, "read the build manifest %s", manifest)
 	}
-	root := filepath.Dir(filepath.Dir(manifest)) // <root>/build/build-manifest.json
+	root := filepath.Dir(filepath.Dir(bm.Path)) // <root>/build/build-manifest.json
 	var files []string
 	for _, a := range bm.Artifacts {
 		ext := strings.ToLower(filepath.Ext(a.Path))
 		if ext == ".exe" || ext == ".dll" {
-			files = append(files, filepath.Join(root, filepath.FromSlash(a.Path)))
+			path, err := artifact.Resolve(root, a.Path)
+			if err != nil {
+				return nil, nil, "", contract.Wrap(contract.VerifyFailed, err, "the build manifest %s", manifest)
+			}
+			files = append(files, path)
 		}
 	}
 	if len(files) == 0 {
-		return nil, contract.New(contract.Usage, "%s lists no Windows binaries", manifest)
+		return nil, nil, "", contract.New(contract.Usage, "%s lists no Windows binaries", manifest)
 	}
-	return files, nil
+	rec := filepath.Join(bm.Dir, signing.ManifestFile)
+	raw, err := os.ReadFile(rec) //nolint:gosec // G304: the signed record beside the build manifest
+	if err != nil {
+		if strict {
+			return nil, nil, "", contract.New(contract.VerifyFailed, "no signed record (%s) beside %s, so nothing ties these files to a signing run", signing.ManifestFile, manifest).
+				WithFix("impr sign, then impr rules", "name the files and --profile instead")
+		}
+		a.say("rules     no signed record beside %s: the files' digests are not checked against a signing run", manifest)
+		return files, nil, "", nil
+	}
+	var m signing.Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, nil, "", contract.Wrap(contract.VerifyFailed, err, "read the signed record %s", rec)
+	}
+	if m.BuildManifestDigest != bm.Digest {
+		return nil, nil, "", contract.New(contract.VerifyFailed, "the signed record %s belongs to another build manifest", rec).
+			WithDetails("record "+m.BuildManifestDigest, "build  "+bm.Digest)
+	}
+	want := map[string]string{}
+	for _, sa := range m.Artifacts {
+		path, err := artifact.Resolve(root, sa.Path)
+		if err != nil {
+			return nil, nil, "", contract.Wrap(contract.VerifyFailed, err, "the signed record %s", rec)
+		}
+		want[path] = sa.OutputSHA256
+	}
+	for _, f := range files {
+		if _, ok := want[f]; !ok {
+			return nil, nil, "", contract.New(contract.VerifyFailed, "%s is in the build manifest but was not signed (%s)", artifact.RelToRoot(root, f), rec)
+		}
+	}
+	return files, want, m.Profile, nil
+}
+
+// rulesPin loads the profile whose Windows certificate the files must carry.
+func rulesPin(a *App, name string) (*profile.WindowsSpec, error) {
+	if name == "" {
+		return nil, nil
+	}
+	st, err := a.store()
+	if err != nil {
+		return nil, err
+	}
+	pr, ok, err := st.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, profile.ErrMissing(name)
+	}
+	if pr.Platforms.Windows == nil {
+		return nil, contract.New(contract.Usage, "signing profile %s has no windows configuration", name)
+	}
+	return pr.Platforms.Windows, nil
+}
+
+// windowsPinMismatch says why s is not one of w's pinned certificates, or "".
+// A certificate matches when every field the signer pins agrees.
+func windowsPinMismatch(s backend.PESigner, w *profile.WindowsSpec) string {
+	type pinned struct{ thumb, subject string }
+	pins := []pinned{{w.Thumbprint, w.Subject}}
+	if len(w.Signers) > 0 {
+		pins = nil
+		for _, x := range w.Signers {
+			pins = append(pins, pinned{x.Thumbprint, x.Subject})
+		}
+	}
+	for _, pn := range pins {
+		if pn.thumb == "" && pn.subject == "" {
+			continue
+		}
+		if pn.thumb != "" && !strings.EqualFold(pn.thumb, s.Thumbprint) {
+			continue
+		}
+		if pn.subject != "" && !backend.SubjectsEqual(s.Subject, pn.subject) && !backend.SubjectsEqual(s.SubjectRFC, pn.subject) {
+			continue
+		}
+		return ""
+	}
+	return "is signed by " + s.Subject + " (" + s.Thumbprint + "), not a certificate the profile pins"
 }

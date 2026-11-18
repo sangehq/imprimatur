@@ -386,16 +386,32 @@ func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
 	case len(p.pos) > 0 && p.str("manifest") != "":
 		return 0, contract.New(contract.Usage, "name signed files or --manifest, not both")
 	case len(p.pos) > 0:
-		if req, err = rulesFromFiles(a, p); err != nil {
+		if req, err = rulesFromFiles(a, p, nil); err != nil {
 			return 0, err
 		}
 	case p.str("request") == "" && (p.str("manifest") != "" || regularFile(defaultBuildManifest)):
 		// No files named: the Windows files of the build manifest (ID-20), as
 		// the PowerShell rules read every .exe of the build folder.
-		if p.pos, err = windowsFilesOf(orDefault(p.str("manifest"), defaultBuildManifest)); err != nil {
+		var want map[string]string
+		var recProfile string
+		if p.pos, want, recProfile, err = windowsFilesOf(a, orDefault(p.str("manifest"), defaultBuildManifest), p.on("strict")); err != nil {
 			return 0, err
 		}
-		if req, err = rulesFromFiles(a, p); err != nil {
+		if p.str("profile") == "" && recProfile != "" {
+			// The record's profile pins the signer when this machine has it;
+			// --strict needs it.
+			if st, err := a.store(); err == nil {
+				if _, ok, _ := st.Get(recProfile); ok {
+					p.strs["profile"] = recProfile
+				} else if p.on("strict") {
+					return 0, contract.New(contract.VerifyFailed, "the signed record names profile %s, which this machine does not have, so the signer cannot be checked", recProfile).
+						WithFix("impr rules --profile NAME")
+				} else {
+					a.say("rules     the signed record names profile %s, which this machine does not have: the signer is not checked", recProfile)
+				}
+			}
+		}
+		if req, err = rulesFromFiles(a, p, want); err != nil {
 			return 0, err
 		}
 	case p.str("request") == "":
