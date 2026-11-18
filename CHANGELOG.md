@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A macOS profile's `notary.keychainProfile` names credentials notarytool
+  stored in the login keychain, so impr never resolves, writes or passes the
+  App Store Connect key (old security finding 7). `apiKeyRef` stays for CI;
+  a profile names exactly one. notarytool refuses a pipe for `--key`
+  (measured), so the key file route remains 0600 in a private folder.
 - `impr rules test` runs its PowerShell script inline (`-EncodedCommand`)
   instead of from a temporary file with `-ExecutionPolicy Bypass`, and passes
   the policy, user and files as environment variables, never as code (old

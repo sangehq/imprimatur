@@ -178,22 +178,37 @@ func (a *Apple) Notarize(ctx context.Context, files []Artifact) (string, error) 
 	if n == nil {
 		return "", nil
 	}
-	key, err := a.H.Secrets.Resolve(ctx, n.APIKeyRef)
-	if err != nil {
-		return "", err
-	}
-	keyFile, err := secrets.AsFile(key, false)
-	if err != nil {
-		return "", err
-	}
-	defer keyFile.Close()
-	keyID, err := a.literalOrRef(ctx, n.KeyID)
-	if err != nil {
-		return "", err
-	}
-	issuer, err := a.literalOrRef(ctx, n.Issuer)
-	if err != nil {
-		return "", err
+	// The credentials notarytool takes: a stored keychain profile, which
+	// keeps the .p8 out of impr entirely (old security finding 7), or the
+	// key itself, written 0600 in a private folder for this one call.
+	var creds []string
+	if n.KeychainProfile != "" {
+		creds = []string{"--keychain-profile", n.KeychainProfile}
+	} else {
+		key, err := a.H.Secrets.Resolve(ctx, n.APIKeyRef)
+		if err != nil {
+			return "", err
+		}
+		keyFile, err := secrets.AsFile(key, false)
+		if err != nil {
+			return "", err
+		}
+		defer keyFile.Close()
+		keyID, err := a.literalOrRef(ctx, n.KeyID)
+		if err != nil {
+			return "", err
+		}
+		issuer, err := a.literalOrRef(ctx, n.Issuer)
+		if err != nil {
+			return "", err
+		}
+		creds = []string{"--key", keyFile.Path}
+		if keyID != "" {
+			creds = append(creds, "--key-id", keyID)
+		}
+		if issuer != "" {
+			creds = append(creds, "--issuer", issuer)
+		}
 	}
 	tmp, err := os.MkdirTemp("", "impr-notary-")
 	if err != nil {
@@ -224,13 +239,8 @@ func (a *Apple) Notarize(ctx context.Context, files []Artifact) (string, error) 
 	if err != nil || z.ExitCode != 0 {
 		return "", contract.New(contract.SignFailed, "could not zip the binaries for notarisation").WithDetails(firstLine(z.Output()))
 	}
-	args := []string{"notarytool", "submit", zip, "--key", keyFile.Path, "--wait", "--output-format", "json"}
-	if keyID != "" {
-		args = append(args, "--key-id", keyID)
-	}
-	if issuer != "" {
-		args = append(args, "--issuer", issuer)
-	}
+	args := append([]string{"notarytool", "submit", zip}, creds...)
+	args = append(args, "--wait", "--output-format", "json")
 	r, err := a.H.Runner.Run(ctx, execx.Cmd{Tool: "xcrun", Args: args})
 	if err != nil {
 		return "", contract.Wrap(contract.Unavailable, err, "notarytool could not run")

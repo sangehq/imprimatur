@@ -997,3 +997,37 @@ func TestAppleCertificateExpiryFromKeychain(t *testing.T) {
 		t.Fatalf("certificate entry: %+v, want expiry %s", e, want.NotAfter)
 	}
 }
+
+// Old security finding 7: with notary.keychainProfile, notarytool reads the
+// App Store Connect credentials from the login keychain, so impr never
+// resolves, writes or passes the .p8 key.
+func TestNotarizeWithAKeychainProfile(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "tool")
+	if err := os.WriteFile(file, []byte{0xcf, 0xfa, 0xed, 0xfe}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := execx.NewFake("xcrun", "ditto")
+	f.Handle = func(c execx.Cmd) execx.Result {
+		if c.Tool == "xcrun" && c.Args[0] == "notarytool" {
+			return execx.Result{Stdout: []byte(`{"id":"sub-7","status":"Accepted"}`)}
+		}
+		return execx.Result{}
+	}
+	spec := macSpec()
+	spec.Notary = &profile.NotarySpec{KeychainProfile: "acme-notary"}
+	a := &Apple{H: fakeHost("darwin", f, nil), Spec: spec}
+	ticket, err := a.Notarize(context.Background(), []Artifact{{Path: file, Rel: "tool"}})
+	if err != nil || ticket != "sub-7" {
+		t.Fatalf("ticket %q %v", ticket, err)
+	}
+	if !f.Called("xcrun", "--keychain-profile acme-notary") {
+		t.Fatalf("calls: %+v", f.Calls)
+	}
+	for _, c := range f.Calls {
+		for _, a := range c.Args {
+			if a == "--key" || a == "--issuer" || a == "--key-id" {
+				t.Fatalf("a keychain-profile run passed %s: %v", a, c.Args)
+			}
+		}
+	}
+}
