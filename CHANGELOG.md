@@ -180,6 +180,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An event or audit log append reads only the end of the newest month file
+  to chain to its last line, instead of the whole file, so writing no longer
+  slows as the month's log grows (200 appends by 8 writers took 49 s on
+  Windows 11).
+
 - `impr notify` exits with impr's codes (1 usage, 5 not delivered); it passed
   on go-notifykit's, where 2 meant usage and read as "skipped" to a caller.
 - `impr build VERSION` and `impr release VERSION` stamp VERSION; the positional
