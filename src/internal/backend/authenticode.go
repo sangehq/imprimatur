@@ -109,6 +109,29 @@ func (a *Authenticode) Certificate(ctx context.Context, p profile.Profile) CertE
 	return e
 }
 
+// Plan is the command Sign would run first for art, for impr sign --dry-run:
+// osslsigncode for a .pfx (key and password shown as their references),
+// signtool for the certificate store, Certum and Artifact Signing.
+func (a *Authenticode) Plan(art Artifact) ([]string, error) {
+	ts := "TIMESTAMP"
+	if l := a.timestamps(); len(l) > 0 {
+		ts = l[0]
+	}
+	if a.Spec.Backend == profile.BackendPFX {
+		cmd := []string{"osslsigncode", "sign", "-pkcs12", a.Spec.CertRef}
+		if a.Spec.PasswordRef != "" {
+			cmd = append(cmd, "-readpass", a.Spec.PasswordRef)
+		}
+		return append(cmd, "-h", "sha256", "-ts", ts, "-in", art.Path, "-out", art.Path+".impr-signed"), nil
+	}
+	extra, err := a.signArgs()
+	if err != nil {
+		return nil, err
+	}
+	cmd := append([]string{"signtool", "sign", "/fd", "SHA256", "/td", "SHA256", "/tr", ts}, extra...)
+	return append(cmd, art.Path), nil
+}
+
 var azureEndpoint = regexp.MustCompile(`^https://[a-z0-9]+\.codesigning\.azure\.net/?$`)
 
 // signArgs returns the backend's signtool arguments, refusing an ambiguous

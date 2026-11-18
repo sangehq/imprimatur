@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `impr sign --dry-run` runs every check a real run makes and prints, per
+  certificate or key, the command it would run (credentials as references),
+  signing nothing and writing no record; it exits 5 naming what a real run
+  would stop at. Every Windows backend (`pfx`, `cert-store`, `certum`,
+  `azure-artifact-signing`) is proven for test and release purposes this way,
+  and the Certum and Artifact Signing recipes cover test and release
+  profiles and the real run.
+
 ## [0.2.0] - 2026-11-18
 
 ### Security

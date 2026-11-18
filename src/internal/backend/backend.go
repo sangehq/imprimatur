@@ -120,6 +120,12 @@ type Backend interface {
 	Verify(ctx context.Context, a Artifact, p profile.Profile) error
 }
 
+// Planner is a backend that can say, for a dry run, the command it would run
+// to sign an artifact. Credentials appear as their references, never values.
+type Planner interface {
+	Plan(a Artifact) ([]string, error)
+}
+
 // For returns the backend for one platform of a profile.
 func For(h Host, p profile.Profile, platform string) (Backend, error) {
 	switch platform {

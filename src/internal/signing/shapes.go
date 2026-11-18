@@ -75,6 +75,10 @@ type Result struct {
 	ManifestSHA256 string   `json:"manifestSha256"`
 	Skipped        []string `json:"skipped,omitempty"`
 	Uncovered      []string `json:"uncovered,omitempty"`
+	// DryRun, Plan and Problems are set by impr sign --dry-run only.
+	DryRun   bool          `json:"dryRun,omitempty"`
+	Plan     []PlannedStep `json:"plan,omitempty"`
+	Problems []string      `json:"problems,omitempty"`
 }
 
 // Verified is one entry of a verify result.

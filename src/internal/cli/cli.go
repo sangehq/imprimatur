@@ -599,7 +599,7 @@ Usage:
   impr cert install-check --print [--for systemd|launchd|task] [--exe PATH]
   impr sign (FILE... | --manifest FILE --commit SHA --tree ID) --profile NAME --purpose release|test|internal
             [--platforms windows,macos,checksums,containers,attestations] [--root DIR] [--repo URL] [--json] [--strict]
-            [--approval FILE]...
+            [--approval FILE]... [--dry-run]
   impr approve --manifest FILE --profile NAME --purpose P --approver NAME --key SSH-KEY [--expires 24h] [--out FILE] [--json]
   impr notify send|ping|doctor ...
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
