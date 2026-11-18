@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- `impr doctor` notes a release-purpose profile that can sign while
+  `approvals.enforce` is off, and an audit trail that is not anchored off the
+  machine (threat-model residuals 1 and 2). Notes never make doctor fail.
 - `impr serve` on Windows no longer stops when a client connects to its named
   pipe and leaves before the server accepts it (`ERROR_NO_DATA`); any local
   client could take the server down. Found and checked on Windows 11 ARM64:

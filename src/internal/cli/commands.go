@@ -14,6 +14,7 @@ import (
 
 	"github.com/sangehq/imprimatur/src/internal/backend"
 	gobuild "github.com/sangehq/imprimatur/src/internal/build"
+	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/profile"
@@ -478,6 +479,25 @@ func (a *App) doctorNotes(ctx context.Context, svc *signing.Service, tools []Too
 	profiles, err := svc.Store.List()
 	if err != nil {
 		return notes
+	}
+	// Threat-model residuals 1 and 2 (ID-26): said, never failed on, since
+	// sange enforces approvals and anchors for the hosts it drives.
+	cfg := config.Config{}
+	if d, err := a.dirs(); err == nil {
+		if eff, err := a.effective(d); err == nil {
+			cfg = eff.Config
+		}
+	}
+	for _, p := range profiles {
+		if p.HasPurpose(profile.PurposeRelease) && !cfg.Approvals.Enforce {
+			notes = append(notes, "profile "+p.Name+" can sign releases while approvals.enforce is off: one person can sign a release "+
+				"(fine when sange drives impr and enforces approvals; otherwise set approvals.enforce and lock it)")
+			break
+		}
+	}
+	if !cfg.Audit.Anchor.Enabled {
+		notes = append(notes, "audit.anchor is off: the audit trail and event log detect edits, but not a full rewrite on this machine "+
+			"(turn on audit.anchor.enabled with a webhook that receives audit.head)")
 	}
 	azure, gpgKeys := false, map[string]bool{}
 	for _, p := range profiles {

@@ -2,6 +2,8 @@ package cli
 
 import (
 	"encoding/json"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -71,4 +73,38 @@ func TestDoctorNotes(t *testing.T) {
 		}
 	}
 	_ = code
+}
+
+// ID-26, threat-model residuals 1 and 2: doctor notes, and never fails on, a
+// release-purpose profile that can sign while approvals are not enforced,
+// and an audit trail that is not anchored off the machine.
+func TestDoctorNotesApprovalsAndAnchoring(t *testing.T) {
+	h := newHarness(t)
+	key := filepath.Join(t.TempDir(), "k")
+	if out, err := exec.Command("ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key).CombinedOutput(); err != nil {
+		t.Skipf("needs ssh-keygen: %v %s", err, out)
+	}
+	fp, _ := exec.Command("ssh-keygen", "-l", "-E", "sha256", "-f", key).Output()
+	h.env["IMPR_K"] = key
+	h.ok("profile", "add", "rel", "--scope", "company", "--owner", "acme", "--purpose", "release",
+		"--allowed-repo", "github.com/acme/**",
+		"--set", "platforms.checksums.kind=ssh", "--set", "platforms.checksums.keyRef=env://IMPR_K",
+		"--set", "platforms.checksums.fingerprint="+strings.Fields(string(fp))[1])
+	h.ok("profile", "default", "rel")
+	var rep DoctorReport
+	if err := json.Unmarshal([]byte(h.ok("doctor", "--json")), &rep); err != nil {
+		t.Fatal(err)
+	}
+	notes := strings.Join(rep.Notes, "\n")
+	if !strings.Contains(notes, "approvals.enforce") || !strings.Contains(notes, "audit.anchor") {
+		t.Fatalf("notes:\n%s", notes)
+	}
+	h.ok("config", "set", "approvals.enforce", "true")
+	h.ok("config", "set", "audit.anchor.enabled", "true")
+	if err := json.Unmarshal([]byte(h.ok("doctor", "--json")), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Join(rep.Notes, "\n"); strings.Contains(n, "approvals.enforce") || strings.Contains(n, "audit.anchor") {
+		t.Fatalf("notes after turning both on:\n%s", n)
+	}
 }
