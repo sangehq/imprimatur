@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- A release signed in a git work tree is bound to it: `--commit` must be in
+  the checkout with `--tree` as its tree, and `--repo` must be one of its
+  remotes, so a signer cannot record a commit or an allowed repository the
+  build did not come from. Outside a work tree a note says the binding was
+  not checked. `impr build` counts untracked files outside `build/` as
+  uncommitted changes: an untracked `.go` file was compiled into a binary
+  recorded as the commit (security review R7). Loose `impr sign FILE` keeps
+  counting tracked files only.
 - `impr rules` from a build manifest resolves each file inside the build's
   root and checks it against the signed record beside it (same build, signed,
   same sha256), and pins the signer to the record's profile; `--profile NAME`

@@ -104,8 +104,9 @@ impr build --version v1.4.2 --product "Acme Tool" --company "Acme Ltd" --copyrig
   so impr checks every binary for the version's bytes: a version you gave that is not in the binary
   fails the build and names the variable; a snapshot version that is not stamped only warns.
 - **Paths.** `--main` must be a path inside the module.
-- **Uncommitted changes.** A work tree with uncommitted changes to tracked files is refused, because its
-  binaries would not match the commit the manifest names. `--allow-dirty` builds anyway and records
+- **Uncommitted changes.** A work tree with uncommitted changes is refused, because its binaries would not
+  match the commit the manifest names. Untracked files count (an untracked `.go` file is compiled in);
+  impr's own output under `build/` does not. `--allow-dirty` builds anyway and records
   `dirty: true`; [`impr release`](release.md) never allows it.
 - **`--clean`.** It removes only this binary's earlier files under `build/{os}/`, never anything else.
 - **Never tags, pushes or publishes.**

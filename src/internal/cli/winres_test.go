@@ -51,7 +51,8 @@ func TestBuildEmbedsWindowsVersionInfo(t *testing.T) {
 		t.Fatalf("--no-winres embedded %v", v)
 	}
 
-	// winres/winres.json in the package supplies the strings.
+	// winres/winres.json in the package supplies the strings. The files this
+	// test adds are untracked, so these builds pass --allow-dirty.
 	if err := os.MkdirAll(filepath.Join(pkg, "winres"), 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,7 @@ func TestBuildEmbedsWindowsVersionInfo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(pkg, "winres", "winres.json"), []byte(j), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, _, errOut := h.impr("build", "--repo-root", repo, "--targets", "windows/amd64", "--version", "v2.0.0")
+	_, _, errOut := h.impr("build", "--allow-dirty", "--repo-root", repo, "--targets", "windows/amd64", "--version", "v2.0.0")
 	if v := read(); v["ProductName"] != "From JSON" || v["CompanyName"] != "JSON Ltd" || v["FileVersion"] != "2.0.0.0" {
 		t.Fatalf("winres.json: %v", v)
 	}
@@ -71,7 +72,7 @@ func TestBuildEmbedsWindowsVersionInfo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(pkg, "winres", "winres.json"), []byte(`{"RT_GROUP_ICON":{"APP":{"0000":["icon.png"]}}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, errOut := h.impr("build", "--repo-root", repo, "--targets", "windows/amd64"); code != 1 || !strings.Contains(errOut, "not a .ico file") {
+	if code, _, errOut := h.impr("build", "--allow-dirty", "--repo-root", repo, "--targets", "windows/amd64"); code != 1 || !strings.Contains(errOut, "not a .ico file") {
 		t.Fatalf("a PNG icon: %d %s", code, errOut)
 	}
 	noSyso()
@@ -87,7 +88,7 @@ func TestBuildEmbedsWindowsVersionInfo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(pkg, "x_linux_amd64.syso"), []byte("not for windows"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	h.ok("build", "--repo-root", repo, "--targets", "windows/amd64", "--version", "v1.0.0", "--product", "Ours")
+	h.ok("build", "--allow-dirty", "--repo-root", repo, "--targets", "windows/amd64", "--version", "v1.0.0", "--product", "Ours")
 	if v := read(); v["ProductName"] != "Ours" {
 		t.Fatalf("a linux .syso stopped the version info: %v", v)
 	}
@@ -97,7 +98,7 @@ func TestBuildEmbedsWindowsVersionInfo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(pkg, "rsrc_windows_amd64.syso"), own, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_, _, errOut = h.impr("build", "--repo-root", repo, "--targets", "windows/amd64", "--version", "v1.0.0", "--product", "Ours")
+	_, _, errOut = h.impr("build", "--allow-dirty", "--repo-root", repo, "--targets", "windows/amd64", "--version", "v1.0.0", "--product", "Ours")
 	if v := read(); v["ProductName"] != "Their Own" || !strings.Contains(errOut, "has its own rsrc_windows_amd64.syso") {
 		t.Fatalf("the project's own .syso: %v %s", v, errOut)
 	}

@@ -48,8 +48,47 @@ type Service struct {
 	// is no person to ask (the REST server, CI, a pipe), so confirm-mode
 	// approval is refused.
 	Confirm func(prompt, want string) bool
+	// Git reads the checkout at root: the tree of commit ("" when the
+	// checkout does not have it) and the remotes' URLs. An error means root
+	// is not a git work tree. nil checks nothing (security review R7).
+	Git func(ctx context.Context, root, commit string) (GitState, error)
 	// BackendFor builds a backend; nil uses backend.For. Tests replace it.
 	BackendFor func(h backend.Host, p profile.Profile, platform string) (backend.Backend, error)
+}
+
+// GitState is what the checkout says about a release's commit.
+type GitState struct {
+	Tree    string   // the commit's tree, or "" when the checkout lacks it
+	Remotes []string // every remote's URL
+}
+
+// checkBinding ties a release's commit, tree and repository to the checkout
+// at root, so a signer cannot record a commit or an allowed repository the
+// build did not come from (security review R7).
+func (s *Service) checkBinding(ctx context.Context, root string, o SignOptions) error {
+	if s.Git == nil {
+		return nil
+	}
+	st, err := s.Git(ctx, root, o.Commit)
+	if err != nil {
+		s.logf("sign      %s is not a git work tree: the release's commit, tree and repository are as the caller gives them", root)
+		return nil
+	}
+	if st.Tree == "" {
+		return contract.New(contract.SignFailed, "commit %s is not in the checkout at %s; nothing was signed", o.Commit, root).
+			WithFix("git fetch, or sign in the checkout the build came from")
+	}
+	if st.Tree != o.Tree {
+		return contract.New(contract.SignFailed, "commit %s has tree %s in the checkout, not --tree %s; nothing was signed", o.Commit, st.Tree, o.Tree)
+	}
+	want := profile.RepoIdentity(o.Repo)
+	for _, r := range st.Remotes {
+		if profile.RepoIdentity(r) == want {
+			return nil
+		}
+	}
+	return contract.New(contract.SignFailed, "%s is not a remote of the checkout at %s; nothing was signed", repoLabel(o.Repo), root).
+		WithDetails(st.Remotes...).WithFix("git remote -v")
 }
 
 func (s *Service) backendFor(p profile.Profile, platform string) (backend.Backend, error) {
@@ -297,6 +336,11 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 	} else if purpose == profile.PurposeRelease {
 		return Result{}, contract.New(contract.Usage, "--repo is required to sign a release").
 			WithDetails("A release profile signs only the repositories in its allowedRepos.")
+	}
+	if purpose == profile.PurposeRelease {
+		if err := s.checkBinding(ctx, root, o); err != nil {
+			return Result{}, err
+		}
 	}
 	var approvals []RecordedApproval
 	if needApproval {

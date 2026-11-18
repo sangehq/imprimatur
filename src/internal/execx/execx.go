@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"sort"
@@ -48,8 +49,18 @@ var gitForms = [][]string{
 	{"rev-parse", "HEAD"},
 	{"rev-parse", "HEAD^{tree}"},
 	{"remote", "get-url", "origin"},
+	{"remote", "-v"},                                           // a release's --repo must be one of the checkout's remotes
 	{"describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"}, // a build's snapshot version
 	{"-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=no"},
+	{"-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=all"}, // untracked source counts (security review R7)
+}
+
+// commitTreeRe is a full commit id with ^{tree}: the one variable git form,
+// reading a release commit's tree (security review R7).
+var commitTreeRe = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?\^\{tree\}$`)
+
+func commitTreeForm(args []string) bool {
+	return len(args) == 4 && args[0] == "rev-parse" && args[1] == "--verify" && args[2] == "--quiet" && commitTreeRe.MatchString(args[3])
 }
 
 // goRefused are go build flags that run or substitute programs or files.
@@ -109,7 +120,7 @@ func Check(c Cmd) error {
 	if _, ok := Allowed[c.Tool]; !ok {
 		return fmt.Errorf("%q: %w", c.Tool, ErrNotAllowed)
 	}
-	if c.Tool == "git" && !slices.ContainsFunc(gitForms, func(f []string) bool { return slices.Equal(f, c.Args) }) {
+	if c.Tool == "git" && !slices.ContainsFunc(gitForms, func(f []string) bool { return slices.Equal(f, c.Args) }) && !commitTreeForm(c.Args) {
 		return fmt.Errorf("git %s: %w (only %d exact forms)", strings.Join(c.Args, " "), ErrNotAllowed, len(gitForms))
 	}
 	if c.Tool == "lipo" && (len(c.Args) != 5 || c.Args[0] != "-create" || c.Args[1] != "-output") {

@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
@@ -172,9 +173,10 @@ func (b Builder) git(ctx context.Context, dir string, args ...string) (string, e
 	return strings.TrimSpace(string(r.Stdout)), nil
 }
 
-// Commit returns HEAD's commit, its tree, and whether the work tree has
-// uncommitted changes to tracked files.
-func (b Builder) Commit(ctx context.Context, repo string) (commit, tree string, dirty bool, err error) {
+// TrackedCommit is Commit counting changes to tracked files only. Loose
+// signing uses it: the files it signs, and the records and signatures impr
+// writes beside them, are often untracked, and none of them is source.
+func (b Builder) TrackedCommit(ctx context.Context, repo string) (commit, tree string, dirty bool, err error) {
 	if commit, err = b.git(ctx, repo, "rev-parse", "HEAD"); err != nil {
 		return
 	}
@@ -186,6 +188,33 @@ func (b Builder) Commit(ctx context.Context, repo string) (commit, tree string, 
 	}
 	st, err := b.git(ctx, repo, "-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=no")
 	return commit, tree, st != "", err
+}
+
+// Commit returns HEAD's commit, its tree, and whether the work tree has
+// uncommitted changes: to tracked files, or untracked files outside build/.
+func (b Builder) Commit(ctx context.Context, repo string) (commit, tree string, dirty bool, err error) {
+	if commit, err = b.git(ctx, repo, "rev-parse", "HEAD"); err != nil {
+		return
+	}
+	if tree, err = b.git(ctx, repo, "rev-parse", "HEAD^{tree}"); err != nil {
+		return
+	}
+	if !hexRe.MatchString(commit) || !hexRe.MatchString(tree) {
+		return "", "", false, contract.New(contract.Usage, "git did not give a commit and tree")
+	}
+	// Untracked files count: an untracked .go file is compiled into the
+	// binary the record says came from commit (security review R7). impr's
+	// own output under build/ does not.
+	st, err := b.git(ctx, repo, "-c", "core.fsmonitor=false", "status", "--porcelain", "--untracked-files=all")
+	if err != nil {
+		return commit, tree, false, err
+	}
+	for _, line := range strings.Split(st, "\n") {
+		if line != "" && !strings.HasPrefix(line, "?? build/") {
+			return commit, tree, true, nil
+		}
+	}
+	return commit, tree, false, nil
 }
 
 // DefaultVersionVar is the variable a version is stamped into when no
@@ -205,6 +234,41 @@ func (b Builder) SnapshotVersion(ctx context.Context, repo string) string {
 	}
 	b.logf("version   v0.0.0-snapshot: no v* tag yet; pass VERSION, or tag a commit (git tag v1.2.0)")
 	return "v0.0.0-snapshot"
+}
+
+// CommitTree returns commit's tree in the checkout at repo, or "" when the
+// checkout does not have the commit. An error means repo is not a git work
+// tree (security review R7).
+func (b Builder) CommitTree(ctx context.Context, repo, commit string) (string, error) {
+	if _, err := b.git(ctx, repo, "rev-parse", "HEAD"); err != nil {
+		return "", err
+	}
+	if !hexRe.MatchString(commit) {
+		return "", nil
+	}
+	r, err := b.Runner.Run(ctx, execx.Cmd{Tool: "git", Dir: repo, Args: []string{"rev-parse", "--verify", "--quiet", commit + "^{tree}"}})
+	if err != nil {
+		return "", contract.Wrap(contract.Unavailable, err, "git could not run")
+	}
+	if r.ExitCode != 0 {
+		return "", nil
+	}
+	return strings.TrimSpace(string(r.Stdout)), nil
+}
+
+// Remotes returns the URL of every remote of the checkout at repo.
+func (b Builder) Remotes(ctx context.Context, repo string) ([]string, error) {
+	out, err := b.git(ctx, repo, "remote", "-v")
+	if err != nil {
+		return nil, err
+	}
+	var urls []string
+	for _, line := range strings.Split(out, "\n") {
+		if f := strings.Fields(line); len(f) >= 2 && !slices.Contains(urls, f[1]) {
+			urls = append(urls, f[1])
+		}
+	}
+	return urls, nil
 }
 
 // Remote returns the origin remote's URL, or "" without one.

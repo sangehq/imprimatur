@@ -36,6 +36,9 @@ func TestCheckRefuses(t *testing.T) {
 		{Tool: "git", Args: []string{"-c", "core.sshCommand=x", "fetch"}},
 		{Tool: "git"},
 		{Tool: "git", Args: []string{"describe", "--tags", "--match", "*"}},
+		{Tool: "git", Args: []string{"rev-parse", "--verify", "--quiet", "HEAD~1^{tree}"}},      // not a full commit id
+		{Tool: "git", Args: []string{"rev-parse", "--verify", "--quiet", "--git-dir=x^{tree}"}}, // an option
+		{Tool: "git", Args: []string{"remote", "-v", "show"}},
 		{Tool: "lipo", Args: []string{"-remove", "x86_64", "-output", "o", "a"}},
 		{Tool: "go", Args: []string{"run", "."}},
 		{Tool: "go", Args: []string{"build", "-toolexec", "x", "."}},
@@ -50,6 +53,8 @@ func TestCheckRefuses(t *testing.T) {
 		{Tool: "xcrun", Args: []string{"notarytool", "submit"}},
 		{Tool: "lipo", Args: []string{"-create", "-output", "u", "a", "b"}},
 		{Tool: "git", Args: []string{"rev-parse", "HEAD^{tree}"}},
+		{Tool: "git", Args: []string{"rev-parse", "--verify", "--quiet", "0123456789abcdef0123456789abcdef01234567^{tree}"}},
+		{Tool: "git", Args: []string{"remote", "-v"}},
 		{Tool: "git", Args: []string{"describe", "--tags", "--abbrev=0", "--match", "v[0-9]*"}},
 		{Tool: "go", Args: []string{"build", "-trimpath", "-o", "x", "./cmd/x"}},
 	} {

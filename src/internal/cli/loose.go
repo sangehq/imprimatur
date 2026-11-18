@@ -60,7 +60,7 @@ func (a *App) looseManifest(ctx context.Context, p parsed) (path, commit, tree s
 		arts = append(arts, entry{Path: rel, SHA256: sum})
 	}
 	b := gobuild.Builder{Runner: a.host().Runner}
-	commit, tree, dirty, gerr := b.Commit(ctx, root)
+	commit, tree, dirty, gerr := b.TrackedCommit(ctx, root)
 	switch {
 	case gerr != nil && p.str("purpose") == "release":
 		return "", "", "", contract.New(contract.SignFailed, "loose files are signed for a release only inside a git work tree; nothing was signed").
