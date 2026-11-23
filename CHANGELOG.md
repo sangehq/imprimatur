@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `impr secret set NAME [--file FILE]` and `impr secret list`: store a
+  signing secret (the App Store Connect key first) in the OS secret store and
+  record `NAME=reference` in `.env`; the value comes from a file or stdin,
+  never an argument or a prompt, and is never shown.
+- `impr serve` serves a secrets page at `/ui/` when it listens on loopback
+  (owner decision ID-31): an API token with the new `secrets` scope signs in
+  to an HttpOnly, `SameSite=Strict` session; every form carries a CSRF token;
+  a foreign `Host`, `Origin` or cross-site post is refused; failed sign-ins
+  are limited; values are never shown back (threat I-23).
+
+- `~/.config/imprimatur/` is created owner-only: the folder, `profiles/` and
+  `secrets/` 0700, and a `.env` (0600) of `NAME=reference` lines, never
+  values (owner decision ID-32). `env://NAME` falls back to the `.env` line
+  when the variable is not set. `impr doctor` reports a `.env` or `secrets/`
+  others can read, a `.env` holding a value, and profile files others can
+  write.
+- Secrets can be stored in the OS store, the macOS keychain, the Linux secret
+  service or the Windows Credential Manager, with a 0600 file in `secrets/`
+  where none exists (ID-33); the value reaches the store's tool on stdin,
+  never on a command line. `secret://` now reads the Windows Credential
+  Manager too.
+
+- `impr sign --dry-run` runs every check a real run makes and prints, per
+  certificate or key, the command it would run (credentials as references),
+  signing nothing and writing no record; it exits 5 naming what a real run
+  would stop at. Every Windows backend (`pfx`, `cert-store`, `certum`,
+  `azure-artifact-signing`) is proven for test and release purposes this way,
+  and the Certum and Artifact Signing recipes cover test and release
+  profiles and the real run.
+
 ## [0.2.0] - 2026-11-18
 
 ### Security

@@ -9,7 +9,9 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/paths"
+	"github.com/sangehq/imprimatur/src/internal/secrets"
 )
 
 func shortSum(s string) string {
@@ -37,6 +39,29 @@ func (a *App) permissionProblems(d paths.Dirs) []string {
 		}
 		if st.Mode().Perm()&0o022 != 0 {
 			out = append(out, fmt.Sprintf("%s is writable by group or others (%v); chmod go-w it", dir, st.Mode().Perm()))
+		}
+	}
+	// The secrets folder and .env are owner-only (ID-32, ID-33), and the .env
+	// holds references only.
+	sec := filepath.Join(d.Config, paths.SecretsDir)
+	if st, err := os.Stat(sec); err == nil && st.Mode().Perm()&0o077 != 0 {
+		out = append(out, fmt.Sprintf("%s is open to group or others (%v); chmod 700 it", sec, st.Mode().Perm()))
+	}
+	_ = filepath.WalkDir(sec, func(p string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return nil
+		}
+		if st, err := os.Lstat(p); err == nil && st.Mode().Perm()&0o077 != 0 {
+			out = append(out, fmt.Sprintf("secret file %s is readable by group or others (%v); chmod 600 it", p, st.Mode().Perm()))
+		}
+		return nil
+	})
+	if _, err := secrets.ReadEnvFile(filepath.Join(d.Config, paths.EnvFile)); err != nil {
+		out = append(out, strings.TrimPrefix(contract.Text(err), "impr: "))
+	}
+	for _, f := range append([]string{filepath.Join(d.Config, "config.json")}, jsonFiles(filepath.Join(d.Config, paths.ProfileDir))...) {
+		if st, err := os.Lstat(f); err == nil && st.Mode().Perm()&0o022 != 0 {
+			out = append(out, fmt.Sprintf("%s is writable by group or others (%v); chmod 600 it", f, st.Mode().Perm()))
 		}
 	}
 	keys := map[string]bool{}
@@ -94,4 +119,10 @@ func collectFileRefs(b []byte, into map[string]bool) {
 		}
 	}
 	walk(v)
+}
+
+// jsonFiles lists the .json files in dir.
+func jsonFiles(dir string) []string {
+	m, _ := filepath.Glob(filepath.Join(dir, "*.json"))
+	return m
 }

@@ -3,6 +3,7 @@ package signing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/hooks"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 	"github.com/sangehq/imprimatur/src/internal/project"
+	"github.com/sangehq/imprimatur/src/internal/redact"
 )
 
 // Service signs and verifies.
@@ -119,6 +121,10 @@ type SignOptions struct {
 	Strict    bool
 	// Approvals are approval documents, each with its .sig beside it.
 	Approvals []string
+	// DryRun runs every check, then returns the plan instead of signing:
+	// what each certificate or key would sign, and the command it would run.
+	// No hook runs, nothing is signed and no record is written.
+	DryRun bool
 }
 
 // LoadProfile resolves a profile and refuses one that is not valid.
@@ -345,9 +351,15 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 		}
 	}
 	var approvals []RecordedApproval
+	var dryProblems []string // what a dry run found that a real run would stop at
 	if needApproval {
-		if approvals, err = s.approve(ctx, p, o, bm); err != nil {
-			return Result{}, err
+		if o.DryRun && len(o.Approvals) == 0 {
+			dryProblems = append(dryProblems, fmt.Sprintf("profile %s needs %d approval(s); none were given (--approval)", p.Name, s.Approvals.Need()))
+		} else if approvals, err = s.approve(ctx, p, o, bm); err != nil {
+			if !o.DryRun {
+				return Result{}, err
+			}
+			dryProblems = append(dryProblems, problemText(err))
 		}
 	}
 	platforms := o.Platforms
@@ -417,6 +429,7 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 	}
 
 	var plan []work
+	var steps []PlannedStep
 	var skipped []string
 	for _, pl := range platforms {
 		units := []unit{{prof: p}}
@@ -442,6 +455,10 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 				return Result{}, err
 			}
 			w.be = be
+			if o.DryRun {
+				steps = append(steps, s.planStep(ctx, w, o.Strict))
+				continue
+			}
 			c := be.Capability(s.Host)
 			if !c.Sign {
 				if o.Strict {
@@ -461,6 +478,9 @@ func (s *Service) sign(ctx context.Context, o SignOptions, onStart func(bm artif
 		}
 	}
 
+	if o.DryRun {
+		return dryRunResult(steps, dryProblems, uncovered)
+	}
 	if err := onStart(bm, platforms); err != nil {
 		return Result{}, err
 	}
@@ -716,4 +736,85 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// PlannedStep is what one certificate or key would sign in a dry run.
+type PlannedStep struct {
+	Platform string   `json:"platform"`
+	Backend  string   `json:"backend,omitempty"`
+	Signer   string   `json:"signer,omitempty"` // the windows signer id, for a multi-certificate profile
+	Files    []string `json:"files,omitempty"`
+	// Command is the program and arguments the backend would run for the
+	// first file, with credentials shown as their references, never values.
+	Command  []string `json:"command,omitempty"`
+	Ready    bool     `json:"ready"`
+	Problems []string `json:"problems,omitempty"`
+}
+
+// planStep runs the checks a real run makes for one unit, collecting what
+// fails instead of stopping.
+func (s *Service) planStep(ctx context.Context, w work, strict bool) PlannedStep {
+	st := PlannedStep{Platform: w.platform, Signer: w.signerID}
+	if wi := w.prof.Platforms.Windows; w.platform == profile.Windows && wi != nil {
+		st.Backend = wi.Backend
+	}
+	for _, f := range w.files {
+		st.Files = append(st.Files, f.Rel)
+	}
+	if pl, ok := w.be.(backend.Planner); ok {
+		first := backend.Artifact{Rel: "FILE", Path: "FILE"}
+		if len(w.files) > 0 {
+			first = w.files[0]
+		}
+		cmd, err := pl.Plan(first)
+		if err != nil {
+			st.Problems = append(st.Problems, problemText(err))
+		}
+		st.Command = cmd
+	}
+	if c := w.be.Capability(s.Host); !c.Sign {
+		st.Problems = append(st.Problems, "this host cannot sign "+w.platform+": "+c.Reason)
+	} else {
+		if err := backend.Preflight(ctx, w.be, w.prof); err != nil {
+			st.Problems = append(st.Problems, problemText(err))
+		}
+	}
+	if err := s.certificateUsable(ctx, w.be, w.prof, w.platform, strict); err != nil {
+		st.Problems = append(st.Problems, problemText(err))
+	}
+	st.Ready = len(st.Problems) == 0
+	return st
+}
+
+// dryRunResult is a dry run's answer: the plan, ready or not. A plan with any
+// problem is returned with an Unavailable error naming them, so a dry run in
+// CI fails where the real run would.
+func dryRunResult(steps []PlannedStep, problems, uncovered []string) (Result, error) {
+	res := Result{Contract: contract.Version, OK: true, DryRun: true, Plan: steps, Uncovered: uncovered, Problems: problems}
+	var all []string
+	all = append(all, problems...)
+	for _, st := range steps {
+		for _, p := range st.Problems {
+			all = append(all, st.Platform+": "+p)
+		}
+	}
+	if len(steps) == 0 {
+		all = append(all, "no requested platform has files in the build manifest")
+	}
+	if len(all) > 0 {
+		res.OK = false
+		return res, contract.New(contract.Unavailable, "the dry run found %d problem(s) a real run would stop at; nothing was signed", len(all)).WithDetails(all...)
+	}
+	return res, nil
+}
+
+// problemText is one line for a dry run's problem: the message, then the
+// first fix, credentials redacted.
+func problemText(err error) string {
+	t := redact.String(err.Error())
+	var e *contract.Error
+	if errors.As(err, &e) && len(e.Fix) > 0 {
+		t += " (fix: " + redact.String(e.Fix[0]) + ")"
+	}
+	return t
 }

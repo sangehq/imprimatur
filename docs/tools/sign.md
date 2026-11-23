@@ -19,6 +19,7 @@ impr sign --manifest FILE --commit SHA --tree ID --profile NAME --purpose releas
 | `--platforms` | which of the profile's platforms to sign; default all of them |
 | `--root` | the directory manifest paths are relative to; default the current directory |
 | `--strict` | a platform this host cannot sign is an error (exit 5), not a skip (exit 2); a Windows or macOS certificate whose expiry this host cannot read is refused (exit 3), not a warning. Declare it with `platforms.<os>.notAfter`; Artifact Signing is exempt |
+| `--dry-run` | run every check and print, per certificate or key, the command it would run; sign nothing, write no record, run no hook. Exit 5 lists what a real run would stop at |
 | `--approval` | an approval from [`impr approve`](approve.md), with its `.sig` beside it; repeat for several approvers |
 
 impr refuses files named on the command line: it signs build-manifest entries

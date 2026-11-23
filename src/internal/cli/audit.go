@@ -20,6 +20,7 @@ var audited = map[string]map[string]bool{
 	"config":     {"set": true, "unset": true, "profile": true},
 	"server":     {"token": true},
 	"webhooks":   {"secret": true},
+	"secret":     {"set": true},
 	"completion": {"install": true, "uninstall": true},
 }
 

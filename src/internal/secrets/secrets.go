@@ -25,6 +25,9 @@ type Resolver struct {
 	Runner execx.Runner
 	Getenv func(string) string
 	GOOS   string
+	// EnvFile is impr's .env (ID-32): env://NAME falls back to its NAME line,
+	// a reference resolved once, when the variable is not set. "" reads none.
+	EnvFile string
 }
 
 // Scheme returns a reference's scheme and name ("env", "NAME").
@@ -45,12 +48,20 @@ func (r Resolver) Resolve(ctx context.Context, ref string) (string, error) {
 	}
 	switch scheme {
 	case "env":
-		v := r.Getenv(name)
-		if v == "" {
-			return "", contract.New(contract.Unavailable, "the variable %s named by %s is not set", name, ref).
-				WithFix("set it in this terminal or as a CI secret")
+		if v := r.Getenv(name); v != "" {
+			return v, nil
 		}
-		return v, nil
+		if r.EnvFile != "" {
+			m, err := ReadEnvFile(r.EnvFile)
+			if err != nil {
+				return "", err
+			}
+			if to := m[name]; to != "" {
+				return r.Resolve(ctx, to) // never env:// again: ReadEnvFile refuses it
+			}
+		}
+		return "", contract.New(contract.Unavailable, "the variable %s named by %s is not set", name, ref).
+			WithFix("set it in this terminal or as a CI secret", "or store it: impr secret set "+name)
 	case "keychain", "cert-store", "gpg-agent":
 		return name, nil
 	case "file":
@@ -70,6 +81,13 @@ func (r Resolver) store(ctx context.Context, name string) (string, error) {
 		c = execx.Cmd{Tool: "security", Args: []string{"find-generic-password", "-s", Service, "-a", name, "-w"}}
 	case "linux", "freebsd":
 		c = execx.Cmd{Tool: "secret-tool", Args: []string{"lookup", "service", Service, "account", name}}
+	case "windows":
+		v, err := credRead(Service + "/" + name)
+		if err != nil {
+			return "", contract.New(contract.Unavailable, "secret://%s is not in the Windows Credential Manager", name).
+				WithFix("store it: impr secret set " + name)
+		}
+		return decodeStored(v)
 	default:
 		return "", contract.New(contract.Unavailable, "secret://%s: this host has no secret store imprimatur can read", name).
 			WithFix("use an env:// reference set from a CI secret, or cert-store:// for a certificate")
@@ -81,9 +99,9 @@ func (r Resolver) store(ctx context.Context, name string) (string, error) {
 	v := strings.TrimRight(string(res.Stdout), "\r\n")
 	if res.ExitCode != 0 || v == "" {
 		return "", contract.New(contract.Unavailable, "secret://%s is not in the %s secret store", name, Service).
-			WithFix("store it under service " + Service + ", account " + name)
+			WithFix("store it: impr secret set " + name)
 	}
-	return v, nil
+	return decodeStored(v)
 }
 
 // File is a credential as a file a tool can read.

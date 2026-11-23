@@ -50,6 +50,8 @@ type harness struct {
 	home string
 	// notifier replaces the desktop notifier when set (a Recorder).
 	notifier *notifykit.Notifier
+	// stdin is what a run reads on stdin (impr secret set); "" is none.
+	stdin string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -66,6 +68,9 @@ func (h *harness) impr(args ...string) (code int, stdout, stderr string) {
 	}
 	a := &App{Stdout: &o, Stderr: &e, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: home, User: "tester",
 		Runner: h.run, Now: func() time.Time { return h.now }, Notifier: h.notifier}
+	if h.stdin != "" {
+		a.Stdin = strings.NewReader(h.stdin)
+	}
 	code = a.Run(context.Background(), args)
 	return code, o.String(), e.String()
 }
