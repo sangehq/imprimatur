@@ -170,3 +170,39 @@ func SystemConfig(e Env) string {
 	}
 	return filepath.Join("/etc", App)
 }
+
+// Layout names under the config folder (owner decisions ID-32, ID-33).
+const (
+	EnvFile    = ".env"    // NAME=reference lines, never a value
+	SecretsDir = "secrets" // a secret's 0600 file where no OS store exists
+	ProfileDir = "profiles"
+)
+
+// EnsureLayout creates what impr keeps under its config folder, owner-only:
+// the folder itself, profiles/ and secrets/ (0700), and an empty .env (0600).
+// It creates only what is missing and never changes an existing file or
+// folder; doctor reports one that is too open.
+func EnsureLayout(d Dirs) error {
+	for _, dir := range []string{d.Config, filepath.Join(d.Config, ProfileDir), filepath.Join(d.Config, SecretsDir)} {
+		if _, err := os.Stat(dir); err == nil {
+			continue
+		}
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302: a folder, owner-only; MkdirAll applies the umask
+			return err
+		}
+	}
+	env := filepath.Join(d.Config, EnvFile)
+	f, err := os.OpenFile(env, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: impr's own config file
+	if errors.Is(err, fs.ErrExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	_, werr := f.WriteString("# imprimatur: NAME=reference, read for env://NAME when the variable is not set.\n" +
+		"# References only (secret://, keychain://, file://, ...); never a secret value. impr secret set NAME stores one.\n")
+	return errors.Join(werr, f.Close())
+}

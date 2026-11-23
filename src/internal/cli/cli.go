@@ -291,6 +291,9 @@ func (a *App) store() (profile.Store, error) {
 	} else if len(copied) > 0 {
 		a.say("config    copied %s into %s; the old folder is kept", strings.Join(copied, ", "), d.Config)
 	}
+	if err := paths.EnsureLayout(d); err != nil {
+		a.say("config    could not create %s owner-only: %v", d.Config, err)
+	}
 	s := profile.Store{Dir: d.Config}
 	a.migrateOnce(s, d)
 	return s, nil
@@ -328,8 +331,11 @@ func (a *App) legacyEnv(d paths.Dirs) profile.LegacyEnv {
 
 func (a *App) host() backend.Host {
 	r := a.runner()
-	return backend.Host{GOOS: a.GOOS, Runner: r, Now: a.Now,
-		Secrets: secrets.Resolver{Runner: r, Getenv: a.Getenv, GOOS: a.GOOS}}
+	res := secrets.Resolver{Runner: r, Getenv: a.Getenv, GOOS: a.GOOS}
+	if d, err := a.dirs(); err == nil {
+		res.EnvFile = filepath.Join(d.Config, paths.EnvFile) // env://NAME falls back to it (ID-32)
+	}
+	return backend.Host{GOOS: a.GOOS, Runner: r, Now: a.Now, Secrets: res}
 }
 
 // runner is the tool runner with the config's tool pins applied. A config
