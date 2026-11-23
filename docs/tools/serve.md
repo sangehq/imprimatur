@@ -209,6 +209,30 @@ data: {"specversion":"1.0","id":"6f0c…","type":"com.simtabi.sange.imprimatur.s
   - impr is never a signing oracle.
 - **Revoking.** `impr server token revoke` takes effect when the server restarts.
 
+## The secrets page
+
+A local server (`server.listen` on `127.0.0.1`, `[::1]` or `localhost`) also serves a page at
+`http://127.0.0.1:PORT/ui/` for adding a signing secret, such as the App Store Connect `.p8` key, without a
+terminal (owner decision ID-31). It stores the value exactly as [`impr secret set`](secret.md) does: in the OS
+secret store, with only the reference in `.env`.
+
+```bash
+impr config set server.listen 127.0.0.1:8765
+impr server token add --scopes secrets      # prints the token once; paste it into the page
+impr serve                                  # then open http://127.0.0.1:8765/ui/
+```
+
+- **Local only.** A server that other machines can reach has no page at all, and the page answers only to a
+  loopback `Host`, so a web page that points a name at `127.0.0.1` (DNS rebinding) is refused.
+- **Signing in** takes an API token with the `secrets` scope. impr gives back a session cookie (HttpOnly,
+  `SameSite=Strict`, path `/ui`, 15 minutes idle), keeps at most 8 sessions, and allows 5 failed sign-ins a
+  minute.
+- **Every form** carries a per-session CSRF token, and a post whose `Origin` or `Sec-Fetch-Site` names
+  another site is refused.
+- **Never shown back.** The page lists names and references only. A stored value is never put in a page, a
+  log or an event, and the page is served with a strict Content-Security-Policy, `X-Frame-Options: DENY`,
+  `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
+
 ## Inbound webhooks
 
 Other apps can call `POST /v1/hooks/{name}` with a Standard Webhooks delivery, signed with the endpoint's

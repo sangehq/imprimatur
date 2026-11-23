@@ -57,6 +57,11 @@ type Options struct {
 	Poll   time.Duration
 	// Emit raises an event (server.auth.refused); nil raises none.
 	Emit func(short, subject string, data map[string]any)
+	// PutSecret stores a signing secret and returns its reference; with it
+	// set, a local server serves the secrets page (/ui/, ID-31).
+	PutSecret func(ctx context.Context, name, value string) (string, error)
+	// ListSecrets lists stored secrets by name and reference, for the page.
+	ListSecrets func() ([]UISecret, error)
 }
 
 type server struct {
@@ -70,6 +75,8 @@ type server struct {
 
 	streamMu sync.Mutex
 	streams  int
+
+	ui *uiState // the secrets page's sessions; nil without the page
 
 	refusedMu sync.Mutex
 	refused   map[string]time.Time // caller -> last server.auth.refused
@@ -106,6 +113,7 @@ func Handler(o Options) http.Handler {
 	mux.HandleFunc("POST /v1/verify", s.auth("verify", s.verify))
 	mux.HandleFunc("POST /v1/sign", s.auth("sign", s.sign))
 	mux.HandleFunc("POST /v1/hooks/{name}", s.inbound)
+	s.uiRoutes(mux)
 	return s.common(mux)
 }
 

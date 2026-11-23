@@ -21,6 +21,14 @@ identity verification must find.
    impr cert list                      # the certificate must be present and not expired
    ```
 
+   To add the `.p8` key later, without putting it in a CI secret, store it through
+   [`impr secret`](../tools/secret.md) or the local [secrets page](../tools/serve.md#the-secrets-page);
+   the profile's `apiKeyRef=env://ASC_API_KEY` then reads it from the keychain:
+
+   ```bash
+   impr secret set ASC_API_KEY --file ~/Downloads/AuthKey_ABC123.p8
+   ```
+
    On a Mac you sign from, store the notary credentials in the login keychain once
    instead, so impr never handles the `.p8` (the owner runs this, not an agent):
 

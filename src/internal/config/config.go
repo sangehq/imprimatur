@@ -112,7 +112,7 @@ const (
 type Token struct {
 	ID     string   `json:"id"`
 	SHA256 string   `json:"sha256"`
-	Scopes []string `json:"scopes"` // read, verify, sign, events
+	Scopes []string `json:"scopes"` // read, verify, sign, events, admin, secrets
 }
 
 // Server is the impr serve section (design §7).
@@ -260,7 +260,7 @@ type Policy struct {
 func (p Policy) RequireFullGPG() bool { return p.GPGFullFingerprint == nil || *p.GPGFullFingerprint }
 
 // Scopes are the API token scopes.
-var Scopes = []string{"read", "verify", "sign", "events", "admin"}
+var Scopes = []string{"read", "verify", "sign", "events", "admin", "secrets"}
 
 // InboundActions are what an inbound webhook may ask for. sign is never one:
 // a signature needs a bound manifest and an authenticated caller with the sign

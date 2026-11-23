@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr secret set NAME [--file FILE]` and `impr secret list`: store a
+  signing secret (the App Store Connect key first) in the OS secret store and
+  record `NAME=reference` in `.env`; the value comes from a file or stdin,
+  never an argument or a prompt, and is never shown.
+- `impr serve` serves a secrets page at `/ui/` when it listens on loopback
+  (owner decision ID-31): an API token with the new `secrets` scope signs in
+  to an HttpOnly, `SameSite=Strict` session; every form carries a CSRF token;
+  a foreign `Host`, `Origin` or cross-site post is refused; failed sign-ins
+  are limited; values are never shown back (threat I-23).
+
 - `~/.config/imprimatur/` is created owner-only: the folder, `profiles/` and
   `secrets/` 0700, and a `.env` (0600) of `NAME=reference` lines, never
   values (owner decision ID-32). `env://NAME` falls back to the `.env` line

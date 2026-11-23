@@ -26,6 +26,8 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/events"
+	"github.com/sangehq/imprimatur/src/internal/paths"
+	"github.com/sangehq/imprimatur/src/internal/secrets"
 	"github.com/sangehq/imprimatur/src/internal/server"
 )
 
@@ -111,6 +113,18 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 		Events: events.Log{Dir: filepath.Join(d.State, "events")},
 		Emit: func(short, subject string, data map[string]any) {
 			a.bus().Emit(context.Background(), short, subject, data)
+		},
+		PutSecret: a.PutSecret,
+		ListSecrets: func() ([]server.UISecret, error) {
+			m, err := secrets.ReadEnvFile(filepath.Join(d.Config, paths.EnvFile))
+			if err != nil {
+				return nil, err
+			}
+			out := make([]server.UISecret, 0, len(m))
+			for k, v := range m {
+				out = append(out, server.UISecret{Name: k, Ref: v})
+			}
+			return out, nil
 		}})
 	srv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 60 * time.Second,
 		WriteTimeout: 35 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 64 << 10}
@@ -119,6 +133,9 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	bus := a.bus()
 	bus.Emit(ctx, "server.started", "server", map[string]any{"listen": strings.SplitN(where, ":", 2)[0]})
 	a.say("server    listening on %s (Ctrl-C to stop)", where)
+	if !cfg.Server.Remote() && cfg.Server.Listen != "" && cfg.Server.Listen != "unix" {
+		a.say("server    secrets page: http://%s/ui/ (sign in with a token holding the secrets scope)", cfg.Server.Listen)
+	}
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()
 	// The long-running mode: answer impr notify ping, and check certificate

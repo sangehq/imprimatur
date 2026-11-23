@@ -585,6 +585,7 @@ func init() {
 		"tools":      {cmdTools, "Lists the external tools impr may run, and pins one by its digest.", "config.md"},
 		"audit":      {cmdAudit, "Reads, checks and anchors impr's hash-chained audit trail.", "audit.md"},
 		"notify":     {cmdNotify, "Sends and checks desktop notifications.", "notify.md"},
+		"secret":     {cmdSecret, "Stores signing secrets in the OS secret store and lists their references.", "secret.md"},
 	}
 }
 
@@ -608,6 +609,8 @@ Usage:
             [--approval FILE]... [--dry-run]
   impr approve --manifest FILE --profile NAME --purpose P --approver NAME --key SSH-KEY [--expires 24h] [--out FILE] [--json]
   impr notify send|ping|doctor ...
+  impr secret set NAME [--file FILE] [--json]   (the value on stdin or in FILE, never as an argument)
+  impr secret list [--json]
   impr verify (FILE... | --signed impr-manifest.json [--manifest FILE]) --profile NAME [--root DIR] [--json] [--strict]
   impr rules test --policy applocker.xml [--user Everyone] FILE... [--json]   (Windows)
   impr rules (--request FILE | FILE... [--scope publisher|product|file|version] [--product NAME] [--file-version a.b.c.d]
