@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- An opt-in test (`IMPR_LIVE_KEYCHAIN=1`) checks `impr secret set`'s macOS
+  path against the real login keychain: a throwaway item written, read back
+  equal, deleted and gone. Run on 2026-11-23, it passed.
+
 - `impr secret set NAME [--file FILE]` and `impr secret list`: store a
   signing secret (the App Store Connect key first) in the OS secret store and
   record `NAME=reference` in `.env`; the value comes from a file or stdin,

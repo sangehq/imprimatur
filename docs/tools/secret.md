@@ -26,6 +26,13 @@ impr tries the operating system's own store first (owner decision ID-33):
 The value reaches the store's tool on stdin, never on a command line, where other processes could read it.
 impr never prints it, and `impr secret list` shows only names and references.
 
+On macOS the keychain path is checked against the real login keychain by an opt-in test, which writes a
+throwaway `IMPR_SELFTEST` item, reads it back, deletes it and checks it is gone:
+
+```bash
+cd src && IMPR_LIVE_KEYCHAIN=1 go test ./internal/secrets/ -run TestLiveKeychainRoundTrip -count=1 -v
+```
+
 ## The config folder
 
 ```text
