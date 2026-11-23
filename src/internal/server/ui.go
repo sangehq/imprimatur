@@ -195,11 +195,12 @@ func (s *server) uiLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/ui/", http.StatusSeeOther)
 }
 
-func (s *server) uiLogout(w http.ResponseWriter, _ *http.Request, id string, _ *uiSession) {
+func (s *server) uiLogout(w http.ResponseWriter, r *http.Request, id string, _ *uiSession) {
 	s.ui.mu.Lock()
 	delete(s.ui.sessions, id)
 	s.ui.mu.Unlock()
-	http.SetCookie(w, &http.Cookie{Name: uiCookie, Value: "", Path: "/ui", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1}) //nolint:gosec // G124: clears the cookie set above
+	http.SetCookie(w, &http.Cookie{Name: uiCookie, Value: "", Path: "/ui", HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1, //nolint:gosec // G124: as the cookie it clears
+		Secure: r.TLS != nil})
 	s.render(w, http.StatusOK, uiData{Message: "Signed out."})
 }
 
