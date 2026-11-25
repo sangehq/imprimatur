@@ -105,6 +105,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PATH and to set up completion for your shell, as the PowerShell line did;
   `--yes` answers yes, `--no-path` and `--no-completion` leave one out, and
   with nobody at a terminal it changes nothing (O-78, O-80).
+- `impr rules --wdac-base` (or `options.basePolicy`) renders a WDAC base
+  policy to merge, as the PowerShell line did without `--base`: audit mode
+  unless `--enforce`, never the default (O-182). On Windows, a WDAC policy
+  written with `--out-dir` is compiled into a `.cip` with
+  `ConvertFrom-CIPolicy` to prove Windows accepts it (O-183).
 - An installed bash, zsh or fish completion script is rewritten on the next
   run after an upgrade, as the PowerShell line's cache was (O-97).
 - Bare `impr serve` now starts the web UI as well as the API, and starts with

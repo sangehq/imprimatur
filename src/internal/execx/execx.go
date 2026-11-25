@@ -39,7 +39,7 @@ var Allowed = map[string]string{
 	"go":           "impr build: go build only, never -toolexec, -exec, -overlay or -modfile",
 	"git":          "impr build: the commit, tree, remote and whether the tree is clean (exact forms only)",
 	"az":           "whether the Azure CLI is signed in before Artifact Signing (az account show only)",
-	"powershell":   "impr rules test: Test-AppLockerPolicy through impr's own embedded script only (Windows)",
+	"powershell":   "impr rules: Test-AppLockerPolicy and ConvertFrom-CIPolicy through impr's own embedded scripts only (Windows)",
 	"openssl":      "re-wrap a macOS .p12 under a one-time password, so the real one never reaches a command line (two pkcs12 forms only)",
 }
 

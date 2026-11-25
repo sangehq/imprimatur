@@ -24,7 +24,7 @@ import (
 
 var rulesFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "request": stringFlag, "out-dir": stringFlag,
 	"scope": foldFlag, "product": stringFlag, "file-version": stringFlag, "eku": stringFlag, "base-policy": stringFlag,
-	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag, "manifest": stringFlag,
+	"applocker": boolFlag, "wdac": boolFlag, "wdac-base": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag, "manifest": stringFlag,
 	"include-default-rules": boolFlag, "profile": stringFlag, "without-signed-record": boolFlag}
 
 // ruleEKU is the EKU a WDAC rule pins (O-181). For an Artifact Signing
@@ -197,6 +197,14 @@ func rulesFromFiles(a *App, p parsed, want map[string]string) (rules.Request, er
 	}
 	opt := rules.Options{Name: p.str("name"), Enforce: p.on("enforce"), BasePolicyID: p.str("base-policy"),
 		UserOrGroupSID: p.str("sid"), AppLocker: p.on("applocker"), WDAC: p.on("wdac"), IncludeDefaultRules: p.on("include-default-rules")}
+	// --wdac-base asks for a WDAC base policy to merge, as the PowerShell
+	// line rendered without --base (O-182); it is never the default.
+	if p.on("wdac-base") {
+		if p.str("base-policy") != "" {
+			return rules.Request{}, contract.New(contract.Usage, "--wdac-base renders a base policy; drop --base-policy, or drop --wdac-base for a supplemental one")
+		}
+		opt.BasePolicy, opt.WDAC = true, true
+	}
 	if !opt.AppLocker && !opt.WDAC {
 		opt.AppLocker, opt.WDAC = true, p.str("base-policy") != ""
 		if !opt.WDAC {

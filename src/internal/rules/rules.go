@@ -70,6 +70,12 @@ type Options struct {
 	// Administrators. Without them, enforcing a collection blocks Windows
 	// itself; with them, user-writable folders under Windows are allowed too.
 	IncludeDefaultRules bool `json:"includeDefaultRules,omitempty"`
+	// BasePolicy renders the WDAC policy as a base policy (its own PolicyID as
+	// BasePolicyID, UMCI, Audit Mode unless Enforce), as the PowerShell line
+	// did without --base, to merge into the machine's base policy (O-182).
+	// Off by default and exclusive with BasePolicyID: impr renders
+	// supplemental policies unless asked (threat I-15).
+	BasePolicy bool `json:"basePolicy,omitempty"`
 }
 
 // Request is what sange asks for (`impr rules --request <file>`).
@@ -147,7 +153,11 @@ func Render(req Request, renderer string) (Result, error) {
 	default:
 		res.Notes = append(res.Notes, "no product name: the rules allow anything this publisher signs")
 	}
-	res.Notes = append(res.Notes, "no file-hash rules; no base WDAC policy")
+	if opt.WDAC && opt.BasePolicy {
+		res.Notes = append(res.Notes, "no file-hash rules; a WDAC base policy, as asked (--wdac-base)")
+	} else {
+		res.Notes = append(res.Notes, "no file-hash rules; no base WDAC policy")
+	}
 	if opt.AppLocker {
 		who := opt.UserOrGroupSID
 		if who == sidUsers {
@@ -178,9 +188,17 @@ func Render(req Request, renderer string) (Result, error) {
 			return Result{}, err
 		}
 		res.WDAC = string(w)
-		res.Notes = append(res.Notes, "the WDAC supplemental policy takes audit or enforcement from its base policy")
-		if opt.Enforce {
+		switch {
+		case opt.BasePolicy:
+			res.Notes = append(res.Notes, "the WDAC policy is a base policy: merge it into the machine's base policy (Merge-CIPolicy); deployed on its own in enforced mode it would allow only this program and block Windows itself")
+			if !opt.Enforce {
+				res.Notes = append(res.Notes, "the WDAC base policy is in audit mode; --enforce leaves that option out")
+			}
+		case opt.Enforce:
+			res.Notes = append(res.Notes, "the WDAC supplemental policy takes audit or enforcement from its base policy")
 			res.Notes = append(res.Notes, "--enforce does not apply to the WDAC supplemental policy: it is enforced only when its base policy is")
+		default:
+			res.Notes = append(res.Notes, "the WDAC supplemental policy takes audit or enforcement from its base policy")
 		}
 	}
 	return res, nil
@@ -249,8 +267,11 @@ func check(req Request, opt Options) error {
 		if !tbsRe.MatchString(req.Publisher.IssuerTBS) {
 			p = append(p, "WDAC needs the issuing CA's TBS hash in hex")
 		}
-		if !guidRe.MatchString(opt.BasePolicyID) {
-			p = append(p, "WDAC needs the base policy id as {GUID}; imprimatur renders supplemental policies only")
+		switch {
+		case opt.BasePolicy && opt.BasePolicyID != "":
+			p = append(p, "basePolicy renders a base policy; it cannot also be supplemental to basePolicyId")
+		case !opt.BasePolicy && !guidRe.MatchString(opt.BasePolicyID):
+			p = append(p, "WDAC needs the base policy id as {GUID} for a supplemental policy, or basePolicy (impr rules --wdac-base) for a base policy to merge")
 		}
 	}
 	if req.Publisher.EKU != "" && !oidRe.MatchString(req.Publisher.EKU) {
@@ -549,6 +570,18 @@ func renderWDAC(req Request, opt Options, files []File, level, fv string) ([]byt
 	}
 	pol := siPolicy{PolicyType: "Supplemental Policy", VersionEx: fv, PolicyID: strings.ToUpper(policyID), BasePolicyID: base,
 		PlatformID: platformID, Rules: []siRule{{Option: "Enabled:Unsigned System Integrity Policy"}}}
+	if opt.BasePolicy {
+		// A base policy names itself as its base, enforces user-mode code
+		// integrity, and audits unless --enforce (the PowerShell line's).
+		if !guidRe.MatchString(req.PolicyID) {
+			policyID = "{" + strings.ToUpper(guid("wdac-base-policy", pub.Subject, pub.LeafCN, pub.Product, opt.Name)) + "}"
+		}
+		pol.PolicyType, pol.PolicyID, pol.BasePolicyID = "Base Policy", strings.ToUpper(policyID), strings.ToUpper(policyID)
+		pol.Rules = append(pol.Rules, siRule{Option: "Enabled:UMCI"})
+		if !opt.Enforce {
+			pol.Rules = append(pol.Rules, siRule{Option: "Enabled:Audit Mode"})
+		}
+	}
 	name := pub.IssuerName
 	if name == "" {
 		name = pub.LeafCN
