@@ -3,9 +3,11 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -304,5 +306,48 @@ func TestUnitServeDoesNotOpenABrowser(t *testing.T) {
 		if got, _ := wantBrowser(tc.noOpen, tc.terminal, tc.goos, env(tc.env)); got != tc.want {
 			t.Errorf("%s: %v, want %v", name, got, tc.want)
 		}
+	}
+}
+
+// A token revoked with impr server token revoke while impr serve runs stops
+// working in the web UI at once: its session is refused on the next request,
+// and it signs in no more (owner, 2026-11-25).
+func TestATokenRevokedFromTheCLIStopsInTheWebUI(t *testing.T) {
+	h := newHarness(t)
+	tok := strings.TrimSpace(h.ok("server", "token", "add", "--scopes", "secrets"))
+	sv := startServe(t, h, "--listen", "127.0.0.1:0", "--port", "0", "--no-open")
+	link := waitLink(t, webDirOf(t, h), "", sv)
+	base := strings.SplitN(link, "/?", 2)[0]
+	signIn := func() (*http.Client, *http.Response) {
+		jar, _ := cookiejar.New(nil)
+		c := &http.Client{Jar: jar, Timeout: 10 * time.Second}
+		req, _ := http.NewRequest("POST", base+"/signin", strings.NewReader(url.Values{"token": {tok}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", base)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		return c, resp
+	}
+	session, r := signIn()
+	if r.StatusCode != 200 || r.Request.URL.Path != "/secrets" {
+		t.Fatalf("token sign-in: %d %s", r.StatusCode, r.Request.URL)
+	}
+	var list struct {
+		Tokens []struct {
+			ID string `json:"id"`
+		} `json:"tokens"`
+	}
+	if err := json.Unmarshal([]byte(h.ok("server", "token", "list", "--json")), &list); err != nil || len(list.Tokens) != 1 {
+		t.Fatalf("token list: %v", err)
+	}
+	h.ok("server", "token", "revoke", list.Tokens[0].ID)
+	if r, err := session.Get(base + "/secrets"); err != nil || r.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("the revoked token's session: %v %v", err, r.StatusCode)
+	}
+	if _, r := signIn(); r.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("the revoked token signed in: %d", r.StatusCode)
 	}
 }

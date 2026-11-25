@@ -1,11 +1,14 @@
 package web
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/sangehq/imprimatur/src/internal/config"
@@ -226,6 +229,66 @@ func TestRevokingATokenEndsItsWebSessions(t *testing.T) {
 		t.Errorf("the revoked token's session lived on: %d", code)
 	}
 	body, hdr := form(url.Values{"token": {p.secrets}})
+	if r := do(p.s.Handler(), "POST", "/signin", body, hdr); r.Code != http.StatusUnauthorized {
+		t.Errorf("the revoked token signed in: %d", r.Code)
+	}
+}
+
+// liveTokens is a token list the test changes while the server runs, as the
+// config file changes under impr server token revoke.
+type liveTokens struct {
+	mu   sync.Mutex
+	list []config.Token
+	err  error
+}
+
+func (l *liveTokens) read() ([]config.Token, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.list), l.err
+}
+
+func (l *liveTokens) set(list []config.Token, err error) {
+	l.mu.Lock()
+	l.list, l.err = list, err
+	l.mu.Unlock()
+}
+
+// The web UI reads the configured tokens at each token sign-in and each token
+// session's request: a token revoked from the terminal ends its sessions and
+// signs in no more, and a token list that cannot be read refuses every token
+// session (owner, 2026-11-25). The owner's link session is not affected.
+func TestATokenRevokedElsewhereStopsAtOnce(t *testing.T) {
+	raw, tok := apiToken(t, "secrets")
+	live := &liveTokens{list: []config.Token{tok}}
+	p := newPagesWith(t, false, func(o *Options) { o.LiveTokens = live.read })
+	s := tokenSession(t, p, raw)
+	if code, _, _ := s.get("/secrets"); code != http.StatusOK {
+		t.Fatalf("before: %d", code)
+	}
+	live.set(nil, errors.New("config.json: unexpected end of JSON input"))
+	if code, body, _ := s.get("/secrets"); code != http.StatusServiceUnavailable || len(styled(t, p.s, body)) > 0 {
+		t.Errorf("a token session while the token list cannot be read: %d", code)
+	}
+	body, hdr := form(url.Values{"token": {raw}})
+	if r := do(p.s.Handler(), "POST", "/signin", body, hdr); r.Code != http.StatusServiceUnavailable {
+		t.Errorf("a token sign-in while the token list cannot be read: %d", r.Code)
+	}
+	if code, _, _ := p.get("/doctor"); code != http.StatusOK {
+		t.Errorf("the owner's session while the token list cannot be read: %d", code)
+	}
+	live.set([]config.Token{tok}, nil)
+	s = tokenSession(t, p, raw)
+	live.set(nil, nil) // revoked from the terminal
+	if code, _, _ := s.get("/secrets"); code != http.StatusUnauthorized {
+		t.Errorf("the revoked token's session: %d", code)
+	}
+	live.set([]config.Token{tok}, nil) // even listed again, that session has ended
+	if code, _, _ := s.get("/secrets"); code != http.StatusUnauthorized {
+		t.Errorf("an ended session came back: %d", code)
+	}
+	live.set(nil, nil)
+	body, hdr = form(url.Values{"token": {raw}})
 	if r := do(p.s.Handler(), "POST", "/signin", body, hdr); r.Code != http.StatusUnauthorized {
 		t.Errorf("the revoked token signed in: %d", r.Code)
 	}

@@ -343,7 +343,16 @@ func (a *App) newWeb(wln net.Listener, cfg config.Config, d paths.Dirs, verbose 
 		Run: a.runCaptured, PutSecret: a.PutSecret,
 		ListSecrets: func() ([]server.UISecret, error) { return envSecrets(d.Config) },
 		Events:      events.Log{Dir: filepath.Join(d.State, "events")},
-		Web:         cfg.Server.Web, AllowAdmin: cfg.Server.AllowAdmin}
+		Web:         cfg.Server.Web, AllowAdmin: cfg.Server.AllowAdmin,
+		// The tokens as configured now, through the loader the CLI uses, so
+		// impr server token revoke takes effect in the web UI at once.
+		LiveTokens: func() ([]config.Token, error) {
+			eff, err := a.effective(d)
+			if err != nil {
+				return nil, err
+			}
+			return eff.Config.Server.Tokens, nil
+		}}
 	if verbose { // --verbose: page views too, not only changes
 		opts.Debug = a.say
 	}

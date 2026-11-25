@@ -46,6 +46,10 @@ type Options struct {
 	// Tokens are the configured API tokens: one with the secrets scope still
 	// signs in on /signin, into a session that reaches the secrets page only.
 	Tokens []config.Token
+	// LiveTokens reads the configured tokens now, from the config the CLI
+	// edits; nil uses Tokens. It is read at each token sign-in and each
+	// token session's request.
+	LiveTokens func() ([]config.Token, error)
 
 	// Run runs one impr command line and returns its exit code and stdout:
 	// the same bridge the API uses (App.runCaptured), so every page shows

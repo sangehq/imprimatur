@@ -33,7 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Events, `admin` the changes); what it cannot reach is hidden and answers
   403 (owner, 2026-11-25). Its configuration changes also need
   `server.allowAdmin`, as over the API, and it can only add tokens with
-  scopes it holds itself.
+  scopes it holds itself. The web UI reads the configured tokens live, at
+  each token sign-in and request: a token revoked with `impr server token
+  revoke` while `impr serve` runs stops working there at once, and an
+  unreadable config refuses token sessions (owner, 2026-11-25).
 - `server.web.webhookAdmin` (`allowAdmin`, the default, or `owner`): adding
   or removing a webhook in the web UI needs `server.allowAdmin`, as over the
   API, unless it is `owner`; when off, the controls stay visible but

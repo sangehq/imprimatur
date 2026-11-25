@@ -84,6 +84,11 @@ its document. Every change is that command too: nothing in the UI is a second im
 - **A new API token is shown once**, with a copy button, and never again; it is not logged. A running API
   reads its tokens when it starts, so a token added or revoked here takes effect there on restart. In the web
   UI a revoke takes effect at once: the token's sessions end and it cannot sign in again.
+- **The token list is read live.** The web UI reads the configured tokens, from the same config the CLI
+  edits, at each token sign-in and each request of a token session. A token revoked with
+  `impr server token revoke` while `impr serve` runs ends its web sessions on their next request and signs
+  in no more. When the config cannot be read, token sign-ins and token sessions are refused (503) until it
+  can; the session from `impr serve`'s link is not affected.
 - **A secret's value** goes to the OS secret store as data, never on a command line, is never shown back,
   and is held to 64 KiB.
 - **Webhooks** are added through the API's own checks: a name, an http(s) URL, and a `secret://` or

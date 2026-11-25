@@ -140,6 +140,24 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			s.renderUnauthorized(w, r)
 			return
 		}
+		// A token session is checked against the configured tokens on every
+		// request: one no longer listed (revoked from the terminal, or here)
+		// ends; a list that cannot be read refuses it (fails closed).
+		if sess.tokenID != "" {
+			tokens, err := s.configuredTokens()
+			if err != nil {
+				s.logf("web       a token session was refused: the token list cannot be read: %v", err)
+				s.renderError(w, r, http.StatusServiceUnavailable, "Token sign-in is unavailable",
+					"impr's configuration cannot be read just now, so this API token session is refused. Open the link impr serve printed, or fix the config and reload.")
+				return
+			}
+			if !slices.ContainsFunc(tokens, func(t config.Token) bool { return t.ID == sess.tokenID }) {
+				s.logf("web       %s is no longer configured: its sessions ended", sess.tokenID)
+				s.revoke(sess.tokenID)
+				s.renderUnauthorized(w, r)
+				return
+			}
+		}
 		r = r.WithContext(withSession(r.Context(), sess))
 		if sess.tokenID != "" && !s.opts.Web.TokenScopes() && !tokenSessionPath(r) {
 			s.renderError(w, r, http.StatusForbidden, "Secrets only",
@@ -148,6 +166,15 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// configuredTokens are the API tokens configured now: Options.LiveTokens,
+// which reads the config the CLI edits, or the start-up list without it.
+func (s *Server) configuredTokens() ([]config.Token, error) {
+	if s.opts.LiveTokens != nil {
+		return s.opts.LiveTokens()
+	}
+	return s.opts.Tokens, nil
 }
 
 // tokenSessionPath is what a token sign-in reaches under
@@ -219,13 +246,22 @@ func (s *Server) signinToken(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
 	// The limit is checked, the token matched and a failure counted in one
 	// locked step, so requests at once cannot all pass the check.
+	// The configured tokens now, never a copy from start-up: a token revoked
+	// from the terminal signs in no more. A list that cannot be read refuses.
+	tokens, terr := s.configuredTokens()
+	if terr != nil {
+		s.logf("web       a token sign-in was refused: the token list cannot be read: %v", terr)
+		s.renderError(w, r, http.StatusServiceUnavailable, "Token sign-in is unavailable",
+			"impr's configuration cannot be read just now, so no API token is accepted. Open the link impr serve printed, or fix the config and try again.")
+		return
+	}
 	s.failMu.Lock()
 	s.failures = slices.DeleteFunc(s.failures, func(t time.Time) bool { return now.Sub(t) > time.Minute })
 	limited := len(s.failures) >= loginsPerMinute
 	var tok config.Token
 	found := false
 	if !limited {
-		tok, found = server.MatchToken(s.opts.Tokens, r.PostFormValue("token"))
+		tok, found = server.MatchToken(tokens, r.PostFormValue("token"))
 		if found && s.isRevoked(tok.ID) {
 			found = false
 		}
