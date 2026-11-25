@@ -226,6 +226,9 @@ func (s *Server) signinToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tok, found := server.MatchToken(s.opts.Tokens, r.PostFormValue("token"))
+	if found && s.isRevoked(tok.ID) {
+		found = false
+	}
 	if !found {
 		s.failMu.Lock()
 		s.failures = append(s.failures, now)

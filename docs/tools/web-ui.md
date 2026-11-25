@@ -78,7 +78,8 @@ its document. Every change is that command too: nothing in the UI is a second im
 - **Remove and revoke ask first**, in a danger dialog. Without JavaScript the server asks on a page of its
   own, so nothing is removed unasked either way.
 - **A new API token is shown once**, with a copy button, and never again; it is not logged. A running API
-  reads its tokens when it starts, so a token added or revoked here takes effect there on restart.
+  reads its tokens when it starts, so a token added or revoked here takes effect there on restart. In the web
+  UI a revoke takes effect at once: the token's sessions end and it cannot sign in again.
 - **A secret's value** goes to the OS secret store as data, never on a command line, is never shown back,
   and is held to 64 KiB.
 - **Webhooks** are added through the API's own checks: a name, an http(s) URL, and a `secret://` or

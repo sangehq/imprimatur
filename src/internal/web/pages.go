@@ -649,6 +649,23 @@ func (s *Server) tokenCreated(w http.ResponseWriter, r *http.Request) {
 	s.page(w, r, "token_created", "tokens", "Your new API token", createdData{Token: tok})
 }
 
+// revoke records id as revoked here and ends its sessions.
+func (s *Server) revoke(id string) {
+	s.tokensMu.Lock()
+	if s.revoked == nil {
+		s.revoked = map[string]bool{}
+	}
+	s.revoked[id] = true
+	s.tokensMu.Unlock()
+	s.sessions.endToken(id)
+}
+
+func (s *Server) isRevoked(id string) bool {
+	s.tokensMu.Lock()
+	defer s.tokensMu.Unlock()
+	return s.revoked[id]
+}
+
 // tokenRevoke is POST /tokens/{id}/revoke: impr server token revoke ID, after
 // a confirmation.
 func (s *Server) tokenRevoke(w http.ResponseWriter, r *http.Request) {
@@ -667,7 +684,10 @@ func (s *Server) tokenRevoke(w http.ResponseWriter, r *http.Request) {
 		s.done(w, r, "/tokens", id+" was not revoked: "+err.Error(), true)
 		return
 	}
-	s.done(w, r, "/tokens", "Revoked "+id+". A running API keeps it until it restarts.", false)
+	// In this web UI it takes effect at once: its sessions end, and it signs
+	// in no more.
+	s.revoke(id)
+	s.done(w, r, "/tokens", "Revoked "+id+": its web UI sessions ended. A running API keeps it until it restarts.", false)
 }
 
 // ---- webhooks -------------------------------------------------------------------

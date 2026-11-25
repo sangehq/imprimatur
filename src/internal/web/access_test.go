@@ -210,3 +210,23 @@ func TestATokenCannotMintWiderScopes(t *testing.T) {
 		t.Fatal("the form offers scopes the session does not hold")
 	}
 }
+
+// Revoking a token on /tokens takes effect in the web UI at once: its
+// sessions end and it signs in no more.
+func TestRevokingATokenEndsItsWebSessions(t *testing.T) {
+	p := newPages(t, false)
+	s := tokenSession(t, p, p.secrets)
+	if code, _, _ := s.get("/secrets"); code != http.StatusOK {
+		t.Fatalf("before: %d", code)
+	}
+	if code, _, _ := p.post("/tokens/"+p.secretsID+"/revoke", url.Values{"confirm": {"yes"}}, true); code != http.StatusSeeOther {
+		t.Fatalf("revoke: %d", code)
+	}
+	if code, _, _ := s.get("/secrets"); code != http.StatusUnauthorized {
+		t.Errorf("the revoked token's session lived on: %d", code)
+	}
+	body, hdr := form(url.Values{"token": {p.secrets}})
+	if r := do(p.s.Handler(), "POST", "/signin", body, hdr); r.Code != http.StatusUnauthorized {
+		t.Errorf("the revoked token signed in: %d", r.Code)
+	}
+}

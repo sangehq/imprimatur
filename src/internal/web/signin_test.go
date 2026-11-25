@@ -29,12 +29,13 @@ func (c *clock) add(d time.Duration) {
 
 // fixture is a web UI with a first link, a control key and two API tokens.
 type fixture struct {
-	s       *Server
-	clk     *clock
-	link    string // the first sign-in link's token
-	control string
-	secrets string // an API token with the secrets scope
-	reader  string // one without it
+	s         *Server
+	clk       *clock
+	link      string // the first sign-in link's token
+	control   string
+	secrets   string // an API token with the secrets scope
+	secretsID string
+	reader    string // one without it
 }
 
 func apiToken(t *testing.T, scopes ...string) (string, config.Token) {
@@ -51,6 +52,7 @@ func newFixture(t *testing.T, edit func(*Options)) *fixture {
 	f := &fixture{clk: &clock{t: time.Date(2026, 11, 25, 9, 0, 0, 0, time.UTC)}, link: NewToken(), control: NewToken()}
 	var st, rt config.Token
 	f.secrets, st = apiToken(t, "secrets")
+	f.secretsID = st.ID
 	f.reader, rt = apiToken(t, "read")
 	o := Options{AllowedHosts: AllowedHosts(7823), Version: "test", Now: f.clk.now, Token: f.link, Control: f.control,
 		Instance: "inst-1", Tokens: []config.Token{st, rt}, User: "tester", Host: "box"}

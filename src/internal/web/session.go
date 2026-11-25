@@ -90,6 +90,17 @@ func (ss *sessions) get(id string, now time.Time) *session {
 	return sess
 }
 
+// endToken ends every session a token sign-in with tokenID began.
+func (ss *sessions) endToken(tokenID string) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	for id, sess := range ss.byID {
+		if sess.tokenID == tokenID {
+			delete(ss.byID, id)
+		}
+	}
+}
+
 func (ss *sessions) end(id string) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()

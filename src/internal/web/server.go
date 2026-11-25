@@ -78,6 +78,11 @@ type Server struct {
 
 	streams streamCount
 
+	// tokensMu guards revoked: token ids revoked on /tokens while this server
+	// runs, which sign in no more (Options.Tokens is what it started with).
+	tokensMu sync.Mutex
+	revoked  map[string]bool
+
 	failMu   sync.Mutex
 	failures []time.Time // failed token sign-ins in the last minute
 }
