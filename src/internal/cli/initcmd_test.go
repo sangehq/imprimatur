@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -170,4 +171,22 @@ func TestInitRefusesSymlinks(t *testing.T) {
 			t.Fatal("targets.txt was written through the linked build folder")
 		}
 	})
+}
+
+// "No program" is told by its sentinel error, not by the message's words.
+func TestBuildOptionsReportsNoProgramBySentinel(t *testing.T) {
+	root := goModule(t, true)
+	p, err := parse([]string{"--repo-root", root}, initFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = (&App{Getenv: func(string) string { return "" }}).buildOptions(p)
+	if !errors.Is(err, errNoProgram) {
+		t.Fatalf("got %v, want errNoProgram", err)
+	}
+	two := goModule(t, true, "a", "b")
+	p, _ = parse([]string{"--repo-root", two}, initFlags)
+	if _, err := (&App{Getenv: func(string) string { return "" }}).buildOptions(p); err == nil || errors.Is(err, errNoProgram) {
+		t.Fatalf("several programs read as none: %v", err)
+	}
 }

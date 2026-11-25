@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -41,7 +42,7 @@ func cmdInit(_ context.Context, a *App, args []string) (int, error) {
 	}
 	o, err := a.buildOptions(p)
 	if err != nil {
-		if strings.Contains(err.Error(), "found 0 commands") {
+		if errors.Is(err, errNoProgram) {
 			return 0, contract.New(contract.Usage, "this module has no program to build (no cmd/NAME/main.go)").
 				WithFix("add one, such as cmd/<name>/main.go with package main, then run impr init again")
 		}
