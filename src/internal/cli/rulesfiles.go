@@ -23,7 +23,7 @@ import (
 )
 
 var rulesFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "request": stringFlag, "out-dir": stringFlag,
-	"scope": stringFlag, "product": stringFlag, "file-version": stringFlag, "eku": stringFlag, "base-policy": stringFlag,
+	"scope": foldFlag, "product": stringFlag, "file-version": stringFlag, "eku": stringFlag, "base-policy": stringFlag,
 	"applocker": boolFlag, "wdac": boolFlag, "enforce": boolFlag, "name": stringFlag, "sid": stringFlag, "manifest": stringFlag,
 	"include-default-rules": boolFlag, "profile": stringFlag, "without-signed-record": boolFlag}
 

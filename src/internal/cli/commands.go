@@ -284,7 +284,7 @@ func (a *App) trustSteps(c backend.CertEntry) {
 }
 
 var signFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "manifest": stringFlag, "commit": stringFlag, "tree": stringFlag,
-	"profile": stringFlag, "purpose": stringFlag, "platforms": listFlag, "root": stringFlag, "repo": stringFlag, "approval": listFlag, "dry-run": boolFlag}
+	"profile": stringFlag, "purpose": foldFlag, "platforms": listFlag, "root": stringFlag, "repo": stringFlag, "approval": listFlag, "dry-run": boolFlag}
 
 func cmdSign(ctx context.Context, a *App, args []string) (int, error) {
 	p, err := parse(args, signFlags)

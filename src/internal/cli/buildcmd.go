@@ -15,7 +15,7 @@ import (
 
 var buildFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "repo-root": stringFlag, "module": stringFlag, "main": stringFlag,
 	"binary": stringFlag, "version": stringFlag, "version-var": stringFlag, "targets": listFlag, "clean": boolFlag,
-	"allow-dirty": boolFlag, "profile": stringFlag, "purpose": stringFlag, "repo": stringFlag, "platforms": listFlag,
+	"allow-dirty": boolFlag, "profile": stringFlag, "purpose": foldFlag, "repo": stringFlag, "platforms": listFlag,
 	"product": stringFlag, "company": stringFlag, "description": stringFlag, "copyright": stringFlag, "icon": stringFlag, "no-winres": boolFlag, "archives": boolFlag}
 
 // BuildResult is `impr build --json`.

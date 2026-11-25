@@ -82,6 +82,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Option values from a fixed set match without regard to case, as the
+  PowerShell line's did: `--purpose Release` (sign, build, release, approve)
+  and `impr rules --scope Product` work (O-12).
 - Bare `impr serve` now starts the web UI as well as the API, and starts with
   no API token configured; `--no-web` keeps the API-only behaviour and its
   refusal without a token or inbound endpoint. `impr serve --check-config`

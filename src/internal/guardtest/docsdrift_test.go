@@ -16,7 +16,7 @@ import (
 var (
 	imprCall  = regexp.MustCompile("\\bimpr [a-z][^`|;&]*")
 	longFlag  = regexp.MustCompile(`(?:^|[^\w-])(--[a-z][a-z0-9-]*)`)
-	flagSpec  = regexp.MustCompile(`"([a-z][a-z0-9-]*)":\s*(?:boolFlag|stringFlag|listFlag|repeatFlag)`)
+	flagSpec  = regexp.MustCompile(`"([a-z][a-z0-9-]*)":\s*(?:boolFlag|stringFlag|listFlag|repeatFlag|foldFlag)`)
 	policyXML = regexp.MustCompile(`\b([a-z][a-z0-9-]*\.xml)\b`)
 	codeXML   = regexp.MustCompile(`"([a-z][a-z0-9-]*\.xml)"`)
 )

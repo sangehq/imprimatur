@@ -25,3 +25,20 @@ func TestProfileAddFileMustNameTheSameProfile(t *testing.T) {
 	h.ok("profile", "rm", "other", "--force")
 	h.ok("profile", "add", "other", "--file", f)
 }
+
+// O-12: the PowerShell parser matched an option's value from a fixed set
+// without regard to case (its Map options: --purpose and rules' --scope), so
+// --purpose Release and --scope Product still work; other values keep their
+// case.
+func TestFixedSetValuesIgnoreCase(t *testing.T) {
+	for name, spec := range map[string]flagSpec{"sign": signFlags, "build": buildFlags, "approve": approveFlags} {
+		p, err := parse([]string{"--purpose", "Release", "--profile", "Acme"}, spec)
+		if err != nil || p.str("purpose") != "release" || p.str("profile") != "Acme" {
+			t.Errorf("%s: purpose %q profile %q (%v)", name, p.str("purpose"), p.str("profile"), err)
+		}
+	}
+	p, err := parse([]string{"--scope=Product", "--product", "Tool"}, rulesFlags)
+	if err != nil || p.str("scope") != "product" || p.str("product") != "Tool" {
+		t.Errorf("rules: scope %q product %q (%v)", p.str("scope"), p.str("product"), err)
+	}
+}

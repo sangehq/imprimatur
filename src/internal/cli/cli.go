@@ -114,6 +114,10 @@ const (
 	stringFlag
 	listFlag   // repeatable, and comma-separated values split
 	repeatFlag // repeatable, each value kept whole (it may contain commas)
+	// foldFlag is a value from a fixed set, matched without regard to case
+	// as the PowerShell parser's mapped options were (O-12): it is stored
+	// lower-cased, and the command checks it against the set.
+	foldFlag
 )
 
 type flagSpec map[string]kind
@@ -181,6 +185,8 @@ func parse(args []string, spec flagSpec) (parsed, error) {
 					p.lists[name] = append(p.lists[name], v)
 				}
 			}
+		case foldFlag:
+			p.strs[name] = strings.ToLower(val)
 		default:
 			p.strs[name] = val
 		}
