@@ -35,7 +35,7 @@ GOFILES_DIRS := $(MODULE)/cmd $(MODULE)/internal
 # directory fails instead of passing nothing.
 BUILD_LAYOUT_MIN ?= 1
 
-.PHONY: help build test test-all vet fmt fmt-check lint check cross check-build clean fuzz vuln
+.PHONY: help build test test-all vet fmt fmt-check lint check cross check-build clean fuzz vuln tabler-check tabler-update tabler-vendor
 
 # Each fuzzer runs this long in `make fuzz`; FUZZ_MIN is the fewest fuzzers it
 # must find, so a rename that hides them fails instead of fuzzing nothing.
@@ -102,3 +102,12 @@ fuzz: ## run every Fuzz function for FUZZTIME each (default 30s)
 
 vuln: ## report known vulnerabilities in the code paths impr uses (govulncheck)
 	$(GO) run $(GOVULNCHECK) ./...
+
+tabler-check: ## say whether a newer Tabler or Tabler Icons release is out (writes nothing)
+	$(GO) run ./internal/tools/tablervendor -check -root ..
+
+tabler-update: ## move the web UI to the newest Tabler + Tabler Icons; re-vendor, notices, hashes
+	$(GO) run ./internal/tools/tablervendor -latest -root ..
+
+tabler-vendor: ## re-vendor exactly what src/internal/web/assets/vendor/TABLER_VERSION pins
+	$(GO) run ./internal/tools/tablervendor -root ..
