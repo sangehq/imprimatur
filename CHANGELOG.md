@@ -112,7 +112,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sign a release), as the PowerShell line's migration did (O-120).
 - An import from a pre-1.4 PowerShell toolkit moves its settings, state and
   `metadata.json` from the toolkit root into `config/` first, as the
-  PowerShell line did (O-09).
+  PowerShell line did (O-09). The move renames files inside the toolkit and
+  never replaces a file already in `config/`, even one that appears
+  meanwhile.
 - `impr install` asks, at a terminal, to put its folder on the Windows user
   PATH and to set up completion for your shell, as the PowerShell line did;
   `--yes` answers yes, `--no-path` and `--no-completion` leave one out, and

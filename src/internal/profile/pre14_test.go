@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,5 +82,67 @@ func TestPre14MoveKeepsTheNewerAndOnlyTouchesAToolkit(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(plain, LegacySettingsFile)); err != nil {
 		t.Fatal("a file outside a toolkit was moved")
+	}
+}
+
+// A config/ file that appears between the check and the move (another impr,
+// or the user) is never replaced: the move fails safe, keeps both files and
+// reports it.
+func TestPre14MoveNeverReplacesATarget(t *testing.T) {
+	root := toolkit(t, map[string]string{"metadata.json": `{"old":true}`})
+	target := filepath.Join(root, "config", "metadata.json")
+	const theirs = `{"new":true}`
+	old := beforePre14Move
+	beforePre14Move = func(to string) {
+		if to == target {
+			if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(to, []byte(theirs), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	t.Cleanup(func() { beforePre14Move = old })
+	var rep LegacyReport
+	if err := movePre14(filepath.Join(root, "config"), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != theirs {
+		t.Fatalf("the config/ file was replaced: %s", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "metadata.json")); string(b) != `{"old":true}` {
+		t.Fatalf("the root file was lost: %s", b)
+	}
+	if !strings.Contains(strings.Join(rep.Notes, "\n"), "both") {
+		t.Fatalf("not reported: %+v", rep.Notes)
+	}
+}
+
+// Where hard links are refused, the move copies into an exclusively created
+// file instead, and still never replaces one.
+func TestPre14MoveWithoutHardLinks(t *testing.T) {
+	old := linkFile
+	linkFile = func(string, string) error { return &os.LinkError{Op: "link", Err: errors.ErrUnsupported} }
+	t.Cleanup(func() { linkFile = old })
+	root := toolkit(t, map[string]string{"metadata.json": `{"m":1}`, ".imprimatur-state.json": `{"s":1}`})
+	if err := os.MkdirAll(filepath.Join(root, "config"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "config", ".imprimatur-state.json"), []byte(`{"kept":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var rep LegacyReport
+	if err := movePre14(filepath.Join(root, "config"), &rep); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "config", "metadata.json")); string(b) != `{"m":1}` {
+		t.Fatalf("not copied: %s", b)
+	}
+	if _, err := os.Stat(filepath.Join(root, "metadata.json")); !os.IsNotExist(err) {
+		t.Fatal("the root copy is still there")
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "config", ".imprimatur-state.json")); string(b) != `{"kept":1}` {
+		t.Fatalf("an existing file was replaced: %s", b)
 	}
 }

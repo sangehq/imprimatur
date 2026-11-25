@@ -3,6 +3,7 @@ package profile
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -216,9 +217,20 @@ var pre14Files = []string{LegacySettingsFile, ".imprimatur-state.json", "metadat
 
 // movePre14 moves a pre-1.4 toolkit's files from its root into config/, as
 // the PowerShell line did on every run (O-09), so an import from such a
-// toolkit finds them. It acts only on configDir named config inside a
-// PowerShell toolkit (one with src/impr.ps1); a file already in config/ wins
-// and the old one is left in place, reported.
+// toolkit finds them. Unlike the rest of import-legacy, which only reads the
+// toolkit, this changes the toolkit's own tree: it renames files within it
+// (root to config/), copying nothing out and deleting nothing. It acts only
+// on configDir named config inside a PowerShell toolkit (one with
+// src/impr.ps1). A file already in config/ wins and the old one is left in
+// place, reported; the move never replaces one, even one that appears after
+// the check (moveNoReplace).
+// linkFile is os.Link; a test replaces it to take the copy path.
+var linkFile = os.Link
+
+// beforePre14Move is a test seam that runs just before each move, so a test
+// can make the target appear between the check and the move.
+var beforePre14Move = func(string) {}
+
 func movePre14(configDir string, rep *LegacyReport) error {
 	root := filepath.Dir(configDir)
 	if filepath.Base(configDir) != "config" {
@@ -239,12 +251,51 @@ func movePre14(configDir string, rep *LegacyReport) error {
 		if err := os.MkdirAll(configDir, 0o700); err != nil {
 			return err
 		}
-		if err := os.Rename(from, to); err != nil {
+		beforePre14Move(to)
+		if err := moveNoReplace(from, to); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				rep.Notes = append(rep.Notes, "both "+from+" and "+to+" exist; used "+to+" (delete the old one)")
+				continue
+			}
 			return contract.Wrap(contract.Unavailable, err, "move %s into %s", from, configDir)
 		}
 		rep.Notes = append(rep.Notes, "moved "+name+" from the toolkit root (impr 1.3 and earlier) to "+to)
 	}
 	return nil
+}
+
+// moveNoReplace moves from to to, failing with fs.ErrExist rather than
+// replacing a file at to: a hard link (which the system refuses atomically
+// when to exists) then the old name removed; where links are not supported,
+// an exclusive create and a copy.
+func moveNoReplace(from, to string) error {
+	lerr := linkFile(from, to)
+	if lerr == nil {
+		return os.Remove(from)
+	}
+	if errors.Is(lerr, fs.ErrExist) {
+		return lerr
+	}
+	src, err := os.Open(from) //nolint:gosec // G304: a pre-1.4 file in the toolkit the user named
+	if err != nil {
+		return err
+	}
+	defer func() { _ = src.Close() }()
+	dst, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: config/ in the same toolkit
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
+		_ = os.Remove(to)
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		_ = os.Remove(to)
+		return err
+	}
+	_ = src.Close()
+	return os.Remove(from)
 }
 
 func (s Store) importOne(p Profile, ps Problems, rep *LegacyReport) error {
