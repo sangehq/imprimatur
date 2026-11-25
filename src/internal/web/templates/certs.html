@@ -6,7 +6,7 @@
       <h1 class="page-title">Certificates</h1>
       <div class="text-secondary">The certificates and keys the profiles use, from <code>impr cert list</code>.</div>
     </div>
-    <div class="col-auto ms-auto"><a href="/certs/new" class="btn btn-primary" data-inline>{{icon "plus"}}<span class="ms-1">Create a test certificate</span></a></div>
+    {{if $.Can "admin"}}<div class="col-auto ms-auto"><a href="/certs/new" class="btn btn-primary" data-inline>{{icon "plus"}}<span class="ms-1">Create a test certificate</span></a></div>{{end}}
   </div>
 </div>
 {{template "err" .Err}}

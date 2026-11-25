@@ -118,7 +118,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 					s.renderUnauthorized(w, r)
 					return
 				}
-				id, _ := s.sessions.create(s.now(), "")
+				id, _ := s.sessions.create(s.now(), "", nil)
 				s.setSessionCookie(w, r, id)
 				s.logf("web       signed in with a sign-in link")
 				redirectWithoutToken(w, r)
@@ -131,7 +131,7 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			return
 		}
 		r = r.WithContext(withSession(r.Context(), sess))
-		if sess.tokenID != "" && !tokenSessionPath(r) {
+		if sess.tokenID != "" && !s.opts.Web.TokenScopes() && !tokenSessionPath(r) {
 			s.renderError(w, r, http.StatusForbidden, "Secrets only",
 				"This browser signed in with an API token, which reaches the secrets page only. Open the link impr serve printed for the whole web UI.")
 			return
@@ -140,8 +140,9 @@ func (s *Server) auth(next http.Handler) http.Handler {
 	})
 }
 
-// tokenSessionPath is what a token sign-in reaches: the secrets page and its
-// form, and signing out.
+// tokenSessionPath is what a token sign-in reaches under
+// server.web.tokenAccess secrets: the secrets page and its form, and signing
+// out. Under scopes, each route's s.need decides.
 func tokenSessionPath(r *http.Request) bool {
 	switch r.URL.Path {
 	case "/secrets", "/secrets/new":
@@ -224,15 +225,28 @@ func (s *Server) signinToken(w http.ResponseWriter, r *http.Request) {
 		s.render(w, http.StatusUnauthorized, "signin", s.newView(r, "", "Sign in", signinData{Message: "That is not a valid API token."}))
 		return
 	}
-	if !slices.Contains(tok.Scopes, "secrets") {
+	landing := "/secrets"
+	if s.opts.Web.TokenScopes() {
+		landing = ""
+		for _, l := range []struct{ scope, path string }{{"read", "/"}, {"secrets", "/secrets"}, {"admin", "/tokens"}, {"events", "/events"}} {
+			if landing == "" && slices.Contains(tok.Scopes, l.scope) {
+				landing = l.path
+			}
+		}
+		if landing == "" {
+			s.render(w, http.StatusForbidden, "signin", s.newView(r, "", "Sign in",
+				signinData{Message: "Token " + tok.ID + " has none of the scopes the web UI uses (" + strings.Join(webScopes, ", ") + ")."}))
+			return
+		}
+	} else if !slices.Contains(tok.Scopes, "secrets") {
 		s.render(w, http.StatusForbidden, "signin", s.newView(r, "", "Sign in",
 			signinData{Message: "Token " + tok.ID + " lacks the secrets scope (impr server token add --scopes secrets)."}))
 		return
 	}
-	id, _ := s.sessions.create(now, tok.ID)
+	id, _ := s.sessions.create(now, tok.ID, tok.Scopes)
 	s.setSessionCookie(w, r, id)
-	s.logf("web       %s signed in with an API token (secrets page only)", tok.ID)
-	http.Redirect(w, r, "/secrets", http.StatusSeeOther)
+	s.logf("web       %s signed in with an API token", tok.ID)
+	http.Redirect(w, r, landing, http.StatusSeeOther)
 }
 
 // signout is POST /signout: it ends the session on the server and clears the

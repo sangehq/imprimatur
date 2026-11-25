@@ -39,8 +39,17 @@ impr serve --verbose        # log page views too, not only changes
   redirects (303) to the same page without the token, so it leaves the address bar and the history.
 - **The session** is an HttpOnly, `SameSite=Strict` cookie for the whole UI. It ends after 8 hours without
   a request, 24 hours after sign-in, or at Sign out (in the user menu).
-- **An API token still signs in.** At `/signin`, a token with the `secrets` scope opens the Secrets page
-  only, as the old secrets page did; 5 failed sign-ins a minute, then a minute's wait.
+- **An API token still signs in** at `/signin`; 5 failed sign-ins a minute, then a minute's wait. What it
+  reaches is `server.web.tokenAccess` ([configuration](../configuration.md#the-web-ui)):
+  - `secrets`, the default: a token with the `secrets` scope opens the Secrets page only, as the old secrets
+    page did.
+  - `scopes`: the token's scopes decide. `read` opens the read-only pages (Overview, Doctor, Profiles,
+    Certificates, Audit, About), `secrets` the Secrets page and its form, `events` the Events page, and
+    `admin` API tokens, Webhooks and every other change (set default, remove, create a test certificate).
+    A token with none of these cannot sign in.
+
+  Pages, menu entries, palette entries and buttons the session cannot use are not shown, and a request
+  for one answers 403. The one-time link's session reaches everything.
 
 ## Pages
 

@@ -2,7 +2,7 @@
 <div class="page-header d-print-none mb-3">
   <div class="page-pretitle">Signing</div>
   <h1 class="page-title">Profiles</h1>
-  <div class="text-secondary">Signing profiles say which key or certificate signs what. Add one with <code>impr profile add</code>, or <a href="/certs/new" data-inline>create a test certificate</a>.</div>
+  <div class="text-secondary">Signing profiles say which key or certificate signs what. Add one with <code>impr profile add</code>, {{if $.Can "admin"}} or <a href="/certs/new" data-inline>create a test certificate</a>{{end}}.</div>
 </div>
 {{template "err" .Err}}
 <div class="card">
@@ -15,11 +15,11 @@
       <td data-label="Platforms">{{range $i, $p := platforms .Platforms}}{{if $i}}, {{end}}{{$p}}{{end}}</td>
       <td data-label="Actions" class="text-end">
         <div class="btn-list justify-content-end">
-          {{if ne .Name $.Data.Default}}<form method="post" action="/profiles/{{.Name}}/default" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm">{{icon "star"}}<span class="ms-1">Set default</span></button></form>{{end}}
+          {{if and ($.Can "admin") (ne .Name $.Data.Default)}}<form method="post" action="/profiles/{{.Name}}/default" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm">{{icon "star"}}<span class="ms-1">Set default</span></button></form>{{end}}
           <a href="/profiles/{{.Name}}/validate" class="btn btn-sm" data-inline>{{icon "circle-check"}}<span class="ms-1">Validate</span></a>
-          <form method="post" action="/profiles/{{.Name}}/remove" id="rm-profile-{{.Name}}" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="confirm-rm-profile-{{.Name}}">{{icon "trash"}}<span class="ms-1">Remove</span></button></form>
+          {{if $.Can "admin"}}<form method="post" action="/profiles/{{.Name}}/remove" id="rm-profile-{{.Name}}" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="confirm-rm-profile-{{.Name}}">{{icon "trash"}}<span class="ms-1">Remove</span></button></form>{{end}}
         </div>
-        {{template "confirm" (confirm (printf "confirm-rm-profile-%s" $n) (printf "rm-profile-%s" $n) (printf "Remove %s?" $n) "The signing profile is deleted. Its keys and certificates stay where they are." "Remove")}}
+        {{if $.Can "admin"}}{{template "confirm" (confirm (printf "confirm-rm-profile-%s" $n) (printf "rm-profile-%s" $n) (printf "Remove %s?" $n) "The signing profile is deleted. Its keys and certificates stay where they are." "Remove")}}{{end}}
       </td></tr>{{end}}</tbody>
   </table></div>{{else}}{{template "empty" (empty "users" "No signing profiles" "Add one with impr profile add, or create a test certificate, which makes a test profile.")}}{{end}}
 </div>

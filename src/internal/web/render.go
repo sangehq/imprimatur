@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -182,8 +183,12 @@ type view struct {
 	// Authed is a signed-in session; TokenOnly one that signed in with an
 	// API token, which reaches the secrets page only.
 	Authed, TokenOnly bool
-	CSRF              string
-	Version           string
+	// Owner is the one-time link's session, which reaches everything; Reach
+	// is what a token sign-in may use (see Can).
+	Owner   bool
+	Reach   []string
+	CSRF    string
+	Version string
 	// User and Host are who the server runs as and where; Year is the
 	// footer's.
 	User, Host string
@@ -196,6 +201,10 @@ type view struct {
 	FlashBad bool
 	Data     any
 }
+
+// Can reports whether the page's session may use scope, so a page shows only
+// the links and forms it can follow.
+func (v view) Can(scope string) bool { return v.Owner || slices.Contains(v.Reach, scope) }
 
 func (s *Server) newView(r *http.Request, nav, title string, data any) view {
 	v := view{Title: title, Nav: nav, Version: s.opts.Version, User: s.opts.User, Host: s.opts.Host,

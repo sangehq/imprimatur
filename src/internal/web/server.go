@@ -60,6 +60,11 @@ type Options struct {
 	// is read (default a second).
 	Events events.Log
 	Poll   time.Duration
+
+	// Web are the server.web settings; AllowAdmin is server.allowAdmin,
+	// which webhook writes need unless Web.WebhookAdmin is owner.
+	Web        config.ServerWeb
+	AllowAdmin bool
 }
 
 // Server is the web UI.

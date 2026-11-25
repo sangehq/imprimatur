@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   second `impr serve` opens the running one with a fresh link
   (`<state>/web/serve.json`). An API token with the `secrets` scope still
   signs in, to the Secrets page only.
+- `server.web.tokenAccess` (`secrets`, the default, or `scopes`): with
+  `scopes`, an API token signed in to the web UI reaches what its scopes
+  allow (`read` the read-only pages, `secrets` the Secrets page, `events`
+  Events, `admin` the changes); what it cannot reach is hidden and answers
+  403 (owner, 2026-11-25).
 - `scripts/test-all.sh` checks the vendored web assets against
   `MANIFEST.sha256`, and their versions against sange's and authama's.
 

@@ -182,22 +182,29 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	var cl certList
 	note(s.runJSON(r, &cl, "cert", "list"))
 	d.Certs = len(cl.Certificates)
-	var tl tokenList
-	note(s.runJSON(r, &tl, "server", "token", "list"))
-	d.Tokens = len(tl.Tokens)
-	var wl webhookList
-	note(s.runJSON(r, &wl, "webhooks", "list"))
-	d.Webhooks = len(wl.Subscriptions)
-	if s.opts.ListSecrets != nil {
+	// What this session cannot open, the overview does not count: a token
+	// sign-in under server.web.tokenAccess scopes sees its own reach.
+	sess := sessionFrom(r.Context())
+	if s.can(sess, "admin") {
+		var tl tokenList
+		note(s.runJSON(r, &tl, "server", "token", "list"))
+		d.Tokens = len(tl.Tokens)
+		var wl webhookList
+		note(s.runJSON(r, &wl, "webhooks", "list"))
+		d.Webhooks = len(wl.Subscriptions)
+	}
+	if s.opts.ListSecrets != nil && s.can(sess, "secrets") {
 		list, err := s.opts.ListSecrets()
 		note(err)
 		d.Secret = len(list)
 	}
-	var el struct {
-		Events []eventRow `json:"events"`
+	if s.can(sess, "events") {
+		var el struct {
+			Events []eventRow `json:"events"`
+		}
+		note(s.runJSON(r, &el, "events", "tail", "--limit=8"))
+		d.Events = el.Events
 	}
-	note(s.runJSON(r, &el, "events", "tail", "--limit=8"))
-	d.Events = el.Events
 	d.Err = strings.Join(errs, "; ")
 	s.page(w, r, "overview", "overview", "Overview", d)
 }

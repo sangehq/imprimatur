@@ -138,6 +138,14 @@ type pagesFixture struct {
 
 func newPages(t *testing.T, empty bool) *pagesFixture {
 	t.Helper()
+	// The owner's fixture lets webhook writes through (server.allowAdmin);
+	// TestWebhookWritesNeedAllowAdmin covers the default.
+	return newPagesWith(t, empty, func(o *Options) { o.AllowAdmin = true })
+}
+
+// newPagesWith is newPages with edit applied to the options last.
+func newPagesWith(t *testing.T, empty bool, edit func(*Options)) *pagesFixture {
+	t.Helper()
 	fi := &fakeImpr{empty: empty, secrets: map[string]string{}}
 	var err error
 	fi.token, _, _, err = newAPIToken()
@@ -163,6 +171,9 @@ func newPages(t *testing.T, empty bool) *pagesFixture {
 				out = append(out, server.UISecret{Name: k, Ref: "secret://" + k})
 			}
 			return out, nil
+		}
+		if edit != nil {
+			edit(o)
 		}
 	})
 	p := &pagesFixture{fixture: f, impr: fi, evlog: evlog}

@@ -7,12 +7,12 @@
     </div>
     <div class="col-auto ms-auto btn-list">
       <a href="/profiles/{{.Name}}/validate" class="btn" data-inline>{{icon "circle-check"}}<span class="ms-1">Validate</span></a>
-      <form method="post" action="/profiles/{{.Name}}/default" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn">{{icon "star"}}<span class="ms-1">Set default</span></button></form>
-      <form method="post" action="/profiles/{{.Name}}/remove" id="rm-profile" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-outline-danger" data-confirm="confirm-rm-profile">{{icon "trash"}}<span class="ms-1">Remove</span></button></form>
+      {{if $.Can "admin"}}<form method="post" action="/profiles/{{.Name}}/default" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn">{{icon "star"}}<span class="ms-1">Set default</span></button></form>
+      <form method="post" action="/profiles/{{.Name}}/remove" id="rm-profile" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-outline-danger" data-confirm="confirm-rm-profile">{{icon "trash"}}<span class="ms-1">Remove</span></button></form>{{end}}
     </div>
   </div>
 </div>
-{{template "confirm" (confirm "confirm-rm-profile" "rm-profile" (printf "Remove %s?" .Name) "The signing profile is deleted. Its keys and certificates stay where they are." "Remove")}}
+{{if $.Can "admin"}}{{template "confirm" (confirm "confirm-rm-profile" "rm-profile" (printf "Remove %s?" .Name) "The signing profile is deleted. Its keys and certificates stay where they are." "Remove")}}{{end}}
 {{template "err" .Err}}
 <div class="card mb-3"><div class="card-header"><h2 class="card-title">What it can do on this machine</h2></div>
   {{if .Capabilities}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">

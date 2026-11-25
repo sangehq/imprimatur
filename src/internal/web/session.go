@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 )
@@ -31,6 +32,8 @@ type session struct {
 	// tokenID names the API token a token sign-in used; such a session
 	// reaches the secrets page only. "" for a sign-in link's session.
 	tokenID string
+	// scopes are that token's scopes, for server.web.tokenAccess scopes.
+	scopes []string
 
 	// mu guards what follows: requests in one session run concurrently.
 	mu   sync.Mutex
@@ -48,7 +51,7 @@ type sessions struct {
 	byID map[string]*session
 }
 
-func (ss *sessions) create(now time.Time, tokenID string) (string, *session) {
+func (ss *sessions) create(now time.Time, tokenID string, scopes []string) (string, *session) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	if ss.byID == nil {
@@ -64,7 +67,7 @@ func (ss *sessions) create(now time.Time, tokenID string) (string, *session) {
 		delete(ss.byID, oldest)
 	}
 	id := NewToken()
-	sess := &session{csrf: NewToken(), created: now, seen: now, tokenID: tokenID}
+	sess := &session{csrf: NewToken(), created: now, seen: now, tokenID: tokenID, scopes: scopes}
 	ss.byID[id] = sess
 	return id, sess
 }
@@ -149,7 +152,44 @@ func (s *Server) fillSession(r *http.Request, v *view) {
 		return
 	}
 	v.Authed, v.TokenOnly, v.CSRF = true, sess.tokenID != "", sess.csrf
+	v.Owner, v.Reach = sess.tokenID == "", s.reach(sess)
 	if !v.Panel {
 		v.Flash, v.FlashBad = sess.takeFlash()
+	}
+}
+
+// webScopes are the scopes that reach anything in the web UI.
+var webScopes = []string{"read", "secrets", "admin", "events"}
+
+// reach is what a token sign-in may use: the Secrets page alone under
+// server.web.tokenAccess secrets (the default), else the token's scopes.
+func (s *Server) reach(sess *session) []string {
+	if sess == nil || sess.tokenID == "" {
+		return nil
+	}
+	if !s.opts.Web.TokenScopes() {
+		return []string{"secrets"}
+	}
+	return sess.scopes
+}
+
+// can reports whether sess may use scope: a sign-in link's session always.
+func (s *Server) can(sess *session, scope string) bool {
+	if sess == nil {
+		return false
+	}
+	return sess.tokenID == "" || slices.Contains(s.reach(sess), scope)
+}
+
+// need lets a request through only when its session may use scope; any
+// other answers the styled 403 and runs nothing.
+func (s *Server) need(scope string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.can(sessionFrom(r.Context()), scope) {
+			s.renderError(w, r, http.StatusForbidden, "Not for this sign-in",
+				"This browser signed in with an API token that does not reach this page. Open the link impr serve printed for the whole web UI.")
+			return
+		}
+		next(w, r)
 	}
 }
