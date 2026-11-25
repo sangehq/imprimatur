@@ -61,7 +61,7 @@ its document. Every change is that command too: nothing in the UI is a second im
 | Overview (`/`) | the doctor's verdict, counts of profiles, certificates, secrets, tokens and webhooks, recent events | — |
 | Doctor | `impr doctor`: problems, notes, profiles, tools | — |
 | Profiles | `impr profile list`, `show`, `capabilities`, `validate` | set default (`profile default`), remove (`profile rm`) |
-| Certificates | `impr cert list` | create a test certificate (`cert create --name --subject --days`) |
+| Certificates | `impr cert list` | create a test certificate (`cert create --name --days`, and `--subject` when given; empty takes impr's default) |
 | Secrets | the names and references in `.env` | store a value or a `.p8` file in the OS secret store |
 | API tokens | `impr server token list` | add with scopes (shown once), revoke |
 | Webhooks | `impr webhooks list`, `deliveries` | add, remove, test, retry, retry all |

@@ -540,3 +540,19 @@ func TestEventsStreamLive(t *testing.T) {
 		t.Fatalf("content type %q", rec.Header().Get("Content-Type"))
 	}
 }
+
+// A form left without a subject takes impr cert create's own default: the
+// flag is left off, never sent empty.
+func TestACertificateSubjectIsOptional(t *testing.T) {
+	p := newPages(t, false)
+	code, _, hdr := p.post("/certs", url.Values{"name": {"t3"}, "subject": {""}, "days": {"30"}}, true)
+	if code != http.StatusSeeOther || hdr.Get("Location") != "/certs" {
+		t.Fatalf("no subject: %d", code)
+	}
+	for _, a := range p.impr.ran {
+		if strings.Join(a, " ") == "cert create --name=t3 --days=30 --json" {
+			return
+		}
+	}
+	t.Fatalf("ran %v, want cert create --name=t3 --days=30 --json", p.impr.ran)
+}

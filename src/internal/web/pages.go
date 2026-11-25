@@ -432,8 +432,8 @@ func (s *Server) certCreate(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case !server.ValidName(f.Name):
 		f.Err = "A name is lower-case letters, digits, . _ and -, starting with a letter or digit."
-	case !plainText(f.Subject, 64):
-		f.Err = "A subject is up to 64 characters of plain text, like Example Test."
+	case f.Subject != "" && !plainText(f.Subject, 64):
+		f.Err = "A subject is up to 64 characters of plain text, like Example Test, or empty for impr's default."
 	case !daysRe.MatchString(f.Days) || n < 1 || n > 825:
 		f.Err = "Days is a whole number from 1 to 825."
 	}
@@ -445,7 +445,11 @@ func (s *Server) certCreate(w http.ResponseWriter, r *http.Request) {
 		Profile    string `json:"profile"`
 		Thumbprint string `json:"thumbprint"`
 	}
-	if err := s.runJSON(r, &out, "cert", "create", "--name="+f.Name, "--subject="+f.Subject, "--days="+f.Days); err != nil {
+	args := []string{"cert", "create", "--name=" + f.Name}
+	if f.Subject != "" { // empty: impr cert create's own default subject
+		args = append(args, "--subject="+f.Subject)
+	}
+	if err := s.runJSON(r, &out, append(args, "--days="+f.Days)...); err != nil {
 		f.Err = err.Error()
 		s.render(w, http.StatusBadRequest, "cert_new", s.newView(r, "certs", "Create a test certificate", f))
 		return
