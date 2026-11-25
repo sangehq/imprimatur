@@ -125,7 +125,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written with `--out-dir` is compiled into a `.cip` with
   `ConvertFrom-CIPolicy` to prove Windows accepts it (O-183).
 - An installed bash, zsh or fish completion script is rewritten on the next
-  run after an upgrade, as the PowerShell line's cache was (O-97).
+  run after an upgrade, as the PowerShell line's cache was (O-97): once, when
+  the version stamped in its header is older than the running impr; never
+  from a `dev` build and never to downgrade.
 - Bare `impr serve` now starts the web UI as well as the API, and starts with
   no API token configured; `--no-web` keeps the API-only behaviour and its
   refusal without a token or inbound endpoint. `impr serve --check-config`

@@ -123,24 +123,58 @@ func TestInstallOffersCompletion(t *testing.T) {
 	}
 }
 
-// O-97: a completion script impr installed is rewritten on the next run after
-// an upgrade, quietly, as the PowerShell line's cache was; a file impr did not
-// write is never touched.
-func TestInstalledCompletionFollowsAnUpgrade(t *testing.T) {
-	h := newHarness(t)
-	h.home = t.TempDir()
+// withVersion runs the rest of a test as impr version v.
+func withVersion(t *testing.T, v string) {
+	t.Helper()
+	old := version
+	version = v
+	t.Cleanup(func() { version = old })
+}
+
+// stampedBash installs the bash completion as impr version stamp, then
+// changes its body so a rewrite shows, and returns the path and the body.
+func stampedBash(t *testing.T, h *harness, stamp string) (path, body string) {
+	t.Helper()
+	withVersion(t, stamp)
 	h.ok("completion", "install", "bash")
 	a := &App{Home: h.home, Getenv: func(k string) string { return h.env[k] }}
 	f, _ := a.completionFile("bash")
 	cur, _ := os.ReadFile(f)
-	old := strings.ReplaceAll(string(cur), "release", "an-old-value")
-	if err := os.WriteFile(f, []byte(old), 0o644); err != nil { //nolint:gosec // a completion script
+	if !strings.Contains(string(cur), "# impr-version: "+stamp+"\n") {
+		t.Fatalf("the generated header does not carry the version stamp:\n%.300s", cur)
+	}
+	body = strings.ReplaceAll(string(cur), "release", "an-old-value")
+	if err := os.WriteFile(f, []byte(body), 0o644); err != nil { //nolint:gosec // a completion script
+		t.Fatal(err)
+	}
+	return f, body
+}
+
+// O-97: a completion script impr installed is rewritten after an upgrade,
+// once, quietly, as the PowerShell line's cache was: only when its version
+// stamp is older than the running impr. A file impr did not write is never
+// touched.
+func TestInstalledCompletionFollowsAnUpgrade(t *testing.T) {
+	h := newHarness(t)
+	h.home = t.TempDir()
+	f, _ := stampedBash(t, h, "1.4.0")
+	withVersion(t, "1.5.0")
+	h.ok("path")
+	now, _ := os.ReadFile(f)
+	want, _ := CompletionScript("bash")
+	if string(now) != want || !strings.Contains(want, "# impr-version: 1.5.0\n") {
+		t.Fatal("the installed script was not brought up to date")
+	}
+	// Exactly one write: once stamped 1.5.0, a 1.5.0 impr leaves it alone.
+	edited := strings.ReplaceAll(want, "release", "edited-after")
+	if err := os.WriteFile(f, []byte(edited), 0o644); err != nil { //nolint:gosec // a completion script
 		t.Fatal(err)
 	}
 	h.ok("path")
-	if now, _ := os.ReadFile(f); string(now) != string(cur) {
-		t.Fatal("the installed script was not brought up to date")
+	if again, _ := os.ReadFile(f); string(again) != edited {
+		t.Fatal("the script was written a second time by the same version")
 	}
+	a := &App{Home: h.home, Getenv: func(k string) string { return h.env[k] }}
 	zsh, _ := a.completionFile("zsh")
 	if err := os.MkdirAll(filepath.Dir(zsh), 0o755); err != nil { //nolint:gosec // a test folder
 		t.Fatal(err)
@@ -152,5 +186,51 @@ func TestInstalledCompletionFollowsAnUpgrade(t *testing.T) {
 	h.ok("path")
 	if now, _ := os.ReadFile(zsh); string(now) != mine {
 		t.Fatal("a file impr did not write was changed")
+	}
+}
+
+// The same version, an older impr and a dev build never write the home
+// folder's completion script.
+func TestCompletionRefreshNeverDowngradesOrRewritesTheSameVersion(t *testing.T) {
+	for _, c := range []struct{ name, stamp, running string }{
+		{"same version", "1.5.0", "1.5.0"},
+		{"older impr", "1.5.0", "1.4.9"},
+		{"older pre-release", "1.5.0", "1.5.0-rc.2"},
+		{"dev build", "1.4.0", "dev"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.home = t.TempDir()
+			f, body := stampedBash(t, h, c.stamp)
+			withVersion(t, c.running)
+			h.ok("path")
+			if now, _ := os.ReadFile(f); string(now) != body {
+				t.Fatalf("impr %s rewrote a script stamped %s", c.running, c.stamp)
+			}
+		})
+	}
+}
+
+func TestCompareVersions(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want int
+	}{
+		{"1.5.0", "1.4.0", 1}, {"v1.5.0", "1.5.0", 0}, {"1.10.0", "1.9.9", 1}, {"1.5.0", "1.5.0-rc.1", 1},
+		{"1.5.0-rc.10", "1.5.0-rc.2", 1}, {"1.5.0-beta.1", "1.5.0-alpha.9", 1}, {"1.5.0-rc.1", "1.5.0-rc", 1},
+		{"2.0.0+build.1", "2.0.0", 0},
+	} {
+		got, ok := compareVersions(c.a, c.b)
+		if !ok || got != c.want {
+			t.Errorf("compareVersions(%s, %s) = %d %v, want %d", c.a, c.b, got, ok, c.want)
+		}
+		if back, _ := compareVersions(c.b, c.a); back != -c.want {
+			t.Errorf("compareVersions(%s, %s) = %d, want %d", c.b, c.a, back, -c.want)
+		}
+	}
+	for _, bad := range []string{"dev", "", "1.2", "1.2.x", "01.2.3"} {
+		if _, ok := compareVersions(bad, "1.0.0"); ok {
+			t.Errorf("%q read as a version", bad)
+		}
 	}
 }
