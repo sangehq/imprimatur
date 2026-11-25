@@ -127,8 +127,9 @@ func (w *webServe) post(path string, form url.Values) (int, string) {
 }
 
 // TestE2EWebUI: the built impr serve starts its web UI with no API token,
-// a one-time link signs a browser in and is gone from the address, the link
-// works once, and a change without the CSRF token is refused.
+// a one-time link signs a browser in and is gone from the address, every page
+// loads from the real command layer, a test certificate is made through its
+// form, the link works once, and a change without the CSRF token is refused.
 func TestE2EWebUI(t *testing.T) {
 	e := newEnv(t)
 	w := startWeb(t, e)
@@ -146,6 +147,24 @@ func TestE2EWebUI(t *testing.T) {
 	code, body := w.get("/")
 	if code != 200 || !strings.Contains(body, `rel="icon" type="image/svg+xml"`) || w.csrf == "" {
 		t.Fatalf("the overview: %d", code)
+	}
+	// Every page answers, from the real command layer.
+	for _, page := range []string{"/doctor", "/profiles", "/certs", "/certs/new", "/secrets", "/secrets/new", "/tokens", "/tokens/new",
+		"/webhooks", "/webhooks/new", "/events", "/audit", "/about"} {
+		if code, body := w.get(page); code != 200 || !strings.Contains(body, `<main id="main"`) {
+			t.Fatalf("GET %s: %d", page, code)
+		}
+	}
+	// One write: a test certificate, through the form, with the CSRF token.
+	if code, body := w.post("/certs", url.Values{"csrf": {w.csrf}, "name": {"e2e-cert"}, "subject": {"E2E Test"}, "days": {"2"}}); code != 200 ||
+		!strings.Contains(body, "CN=E2E Test") || !strings.Contains(body, `class="toast show"`) {
+		t.Fatalf("create a test certificate: %d", code)
+	}
+	if code, body := w.get("/profiles/e2e-cert"); code != 200 || !strings.Contains(body, "e2e-cert") {
+		t.Fatalf("the new test profile: %d", code)
+	}
+	if code, _ := w.post("/certs", url.Values{"name": {"e2e-other"}, "subject": {"X"}, "days": {"2"}}); code != http.StatusForbidden {
+		t.Fatalf("a write without the CSRF token: %d", code)
 	}
 	jar, _ := cookiejar.New(nil)
 	other := &http.Client{Jar: jar, Timeout: 30 * time.Second}

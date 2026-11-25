@@ -158,7 +158,7 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	errc := make(chan error, 2)
 	go func() { errc <- srv.Serve(ln) }()
 	if wln != nil {
-		ws, rec, link, err := a.newWeb(wln, cfg, p.on("verbose"))
+		ws, rec, link, err := a.newWeb(wln, cfg, d, p.on("verbose"))
 		if err != nil {
 			_ = srv.Close()
 			return 0, contract.Wrap(contract.Unavailable, err, "the web UI cannot start")

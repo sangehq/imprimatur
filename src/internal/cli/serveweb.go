@@ -16,7 +16,10 @@ import (
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/config"
+	"github.com/sangehq/imprimatur/src/internal/events"
 	"github.com/sangehq/imprimatur/src/internal/execx"
+	"github.com/sangehq/imprimatur/src/internal/paths"
+	"github.com/sangehq/imprimatur/src/internal/server"
 	"github.com/sangehq/imprimatur/src/internal/web"
 )
 
@@ -288,7 +291,7 @@ func boundPort(ln net.Listener) (int, error) {
 
 // newWeb builds the web UI on wln, with a first sign-in link and the record
 // a second impr serve reads. With verbose it logs page views as well.
-func (a *App) newWeb(wln net.Listener, cfg config.Config, verbose bool) (*web.Server, webInstance, string, error) {
+func (a *App) newWeb(wln net.Listener, cfg config.Config, d paths.Dirs, verbose bool) (*web.Server, webInstance, string, error) {
 	port, err := boundPort(wln)
 	if err != nil {
 		return nil, webInstance{}, "", err
@@ -298,7 +301,12 @@ func (a *App) newWeb(wln net.Listener, cfg config.Config, verbose bool) (*web.Se
 		Control: web.NewToken(), Version: version, Started: a.Now()}
 	first := web.NewToken()
 	opts := web.Options{AllowedHosts: web.AllowedHosts(port), Version: version, Now: a.Now, Log: a.say, User: a.User, Host: host,
-		Token: first, Control: rec.Control, Instance: rec.Instance, Tokens: cfg.Server.Tokens}
+		Token: first, Control: rec.Control, Instance: rec.Instance, Tokens: cfg.Server.Tokens,
+		// The pages run the same commands the API does, through the same
+		// bridge; a secret is stored by PutSecret, never through a command line.
+		Run: a.runCaptured, PutSecret: a.PutSecret,
+		ListSecrets: func() ([]server.UISecret, error) { return envSecrets(d.Config) },
+		Events:      events.Log{Dir: filepath.Join(d.State, "events")}}
 	if verbose { // --verbose: page views too, not only changes
 		opts.Debug = a.say
 	}
