@@ -338,7 +338,7 @@ func (c notaryClient) wait(ctx context.Context, id string) error {
 		case "In Progress":
 		default:
 			return contract.New(contract.SignFailed, "notarisation was not accepted (status %q, submission %s)", st, id).
-				WithFix("read Apple's log: GET " + notaryAt.API + "/submissions/" + id + "/logs, or xcrun notarytool log " + id + " on a Mac")
+				WithFix("read Apple's log: GET " + c.at.API + "/submissions/" + id + "/logs, or xcrun notarytool log " + id + " on a Mac")
 		}
 		if c.now().After(deadline) {
 			return contract.New(contract.Unavailable, "Apple had not decided submission %s after %s", id, c.at.Wait)

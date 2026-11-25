@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -258,5 +259,30 @@ func TestSigV4MatchesAWSExample(t *testing.T) {
 	want := "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=host;range;x-amz-content-sha256;x-amz-date,Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41"
 	if strings.ReplaceAll(got, ", ", ",") != want {
 		t.Fatalf("\ngot  %s\nwant %s", got, want)
+	}
+}
+
+// A rejected submission's fix names the log on the endpoint the client used,
+// not the package default.
+func TestNotaryRejectionNamesTheClientsEndpoint(t *testing.T) {
+	k, _ := ascKey(t)
+	f := newFakeNotary(t, &k.PublicKey)
+	f.status = []string{"Invalid"}
+	at := notaryAt
+	old := notaryAt
+	notaryAt = notaryEndpoints{API: "https://default.invalid/notary/v2"}
+	t.Cleanup(func() { notaryAt = old })
+	c := notaryClient{at: at, key: k, keyID: f.keyID, issuer: f.issuer, now: time.Now}
+	err := c.wait(context.Background(), "sub-1")
+	if err == nil {
+		t.Fatal("a rejected submission passed")
+	}
+	var ce *contract.Error
+	if !errors.As(err, &ce) {
+		t.Fatalf("not a contract error: %v", err)
+	}
+	fix := strings.Join(ce.Fix, "\n")
+	if !strings.Contains(fix, at.API+"/submissions/sub-1/logs") || strings.Contains(fix, "default.invalid") {
+		t.Fatalf("fix: %s", fix)
 	}
 }
