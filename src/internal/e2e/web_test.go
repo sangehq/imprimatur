@@ -181,7 +181,9 @@ func TestE2EWebUI(t *testing.T) {
 		t.Fatalf("serve.json: %v", err)
 	}
 	w.stop()
-	if _, err := os.Stat(filepath.Join(stateDir(e), "web", "serve.json")); !os.IsNotExist(err) {
+	// Windows has no interrupt to send another process: the server is killed
+	// there, and a killed server cannot remove its record.
+	if _, err := os.Stat(filepath.Join(stateDir(e), "web", "serve.json")); runtime.GOOS != "windows" && !os.IsNotExist(err) {
 		t.Fatalf("serve.json outlived the server: %v", err)
 	}
 }

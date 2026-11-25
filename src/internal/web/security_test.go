@@ -40,7 +40,7 @@ var wantHeaders = map[string]string{
 func TestEveryResponseCarriesTheSecurityHeaders(t *testing.T) {
 	s := newTestServer(t, nil, nil)
 	routes := registeredRoutes(t)
-	atLeast(t, "routes in routes.go", len(routes), 1)
+	atLeast(t, "routes in routes.go", len(routes), 30)
 	type probe struct{ method, target, host string }
 	probes := []probe{{"GET", "/no-such-page", testHost}, {"GET", "/", "evil.example:7823"}}
 	for _, r := range routes {
