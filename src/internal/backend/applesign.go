@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"crypto"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/http"
@@ -65,7 +66,7 @@ func (a *Apple) signingMaterial(ctx context.Context) (*pki.SigningMaterial, erro
 			return nil, err
 		}
 	}
-	key, cert, chain, err := pkcs12.DecodeChain(der, pw)
+	key, cert, _, err := pkcs12.DecodeChain(der, pw)
 	if err != nil {
 		// pkcs12's message names no secret; keep it out of ours anyway.
 		if errors.Is(err, pkcs12.ErrIncorrectPassword) {
@@ -84,15 +85,64 @@ func (a *Apple) signingMaterial(ctx context.Context) (*pki.SigningMaterial, erro
 	if _, ok := key.(crypto.Signer); !ok {
 		return nil, contract.New(contract.SignFailed, "the .p12's key cannot sign")
 	}
-	// A self-signed test identity has no chain to Apple's roots; a real one
-	// does, and quill completes it from Apple's certificates.
-	full := len(chain) > 0 || cert.Issuer.String() != cert.Subject.String()
-	sm, err := pki.NewSigningMaterialFromP12(load.P12Contents{PrivateKey: key, Certificate: cert, Certificates: chain}, full)
+	issuer, root, err := a.verifyDeveloperID(cert)
+	if err != nil {
+		return nil, err
+	}
+	// The verified chain, not the .p12's own, goes into the signature.
+	sm, err := pki.NewSigningMaterialFromP12(load.P12Contents{PrivateKey: key, Certificate: cert, Certificates: []*x509.Certificate{issuer, root}}, true)
 	if err != nil {
 		return nil, contract.New(contract.SignFailed, "the .p12's certificate chain is not one Apple's code signing accepts").WithDetails(err.Error())
 	}
 	sm.TimestampServer = appleTimestampServer
 	return sm, nil
+}
+
+// verifyDeveloperID requires the signing certificate to chain to Apple Root CA
+// through one of the Developer ID CAs (appleTrust), to carry the code-signing
+// extended key usage, and to be within its validity period now. The .p12's own
+// chain is ignored: only appleTrust's issuers can complete it, so a
+// certificate from any other CA, Apple's included, is refused.
+func (a *Apple) verifyDeveloperID(cert *x509.Certificate) (issuer, root *x509.Certificate, err error) {
+	now := time.Now()
+	if a.H.Now != nil {
+		now = a.H.Now()
+	}
+	if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+		return nil, nil, contract.New(contract.SignFailed, "the .p12's certificate is not valid now: it is valid from %s to %s, so it has expired or is not yet valid",
+			cert.NotBefore.UTC().Format(time.DateOnly), cert.NotAfter.UTC().Format(time.DateOnly))
+	}
+	inter := x509.NewCertPool()
+	for _, c := range appleTrust.issuers {
+		inter.AddCert(c)
+	}
+	// Apple marks Developer ID certificates with critical extensions Go does
+	// not know (devid_execute, devid_kernel); check a copy without them, as
+	// quill does.
+	leaf := *cert
+	leaf.UnhandledCriticalExtensions = nil
+	for _, ex := range cert.UnhandledCriticalExtensions {
+		if s := ex.String(); s != "1.2.840.113635.100.6.1.13" && s != "1.2.840.113635.100.6.1.18" {
+			leaf.UnhandledCriticalExtensions = append(leaf.UnhandledCriticalExtensions, ex)
+		}
+	}
+	chains, err := leaf.Verify(x509.VerifyOptions{Roots: appleTrust.roots, Intermediates: inter, CurrentTime: now,
+		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}})
+	if err != nil {
+		return nil, nil, contract.New(contract.SignFailed, "the .p12's certificate is not a Developer ID certificate Apple issued for code signing").
+			WithDetails(err.Error()).
+			WithFix("export the Developer ID Application certificate and its key from the Apple developer account as a .p12")
+	}
+	for _, ch := range chains {
+		if len(ch) == 3 {
+			for _, want := range appleTrust.issuers {
+				if ch[1].Equal(want) {
+					return ch[1], ch[2], nil
+				}
+			}
+		}
+	}
+	return nil, nil, contract.New(contract.SignFailed, "the .p12's certificate was not issued by a Developer ID Certification Authority")
 }
 
 func orNone(s string) string {

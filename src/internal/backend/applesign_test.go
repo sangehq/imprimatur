@@ -2,13 +2,7 @@ package backend
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/base64"
-	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,45 +10,22 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
-
-	"software.sslmate.com/src/go-pkcs12"
 
 	"github.com/sangehq/imprimatur/src/internal/contract"
 	"github.com/sangehq/imprimatur/src/internal/execx"
 	"github.com/sangehq/imprimatur/src/internal/profile"
 )
 
-// devIDP12 makes a self-signed code-signing certificate named like a
-// Developer ID ("Developer ID Application: NAME (TEAM)", OU TEAM) and its
-// key, as a .p12 under a password made at run time.
+// devIDP12 makes a Developer ID-shaped code-signing certificate issued by a
+// test CA, and puts that CA in place of Apple's through the appleTrust seam
+// for the rest of the test.
 func devIDP12(t *testing.T, cn, team string) (p12 []byte, password string) {
 	t.Helper()
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tmpl := &x509.Certificate{SerialNumber: big.NewInt(time.Now().UnixNano()), Subject: pkix.Name{CommonName: cn, OrganizationalUnit: []string{team}, Organization: []string{"Example"}},
-		NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(24 * time.Hour), KeyUsage: x509.KeyUsageDigitalSignature,
-		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageCodeSigning}, BasicConstraintsValid: true}
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cert, _ := x509.ParseCertificate(der)
-	b := make([]byte, 12)
-	if _, err := rand.Read(b); err != nil {
-		t.Fatal(err)
-	}
-	password = base64.RawURLEncoding.EncodeToString(b)
-	p12, err = pkcs12.Modern.Encode(key, cert, nil, password)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return p12, password
+	ca := newDevIDCA(t)
+	useTestAppleTrust(t, ca)
+	return ca.p12(t, leafOpts{cn: cn, team: team})
 }
 
-// tinyMachO builds a small Go program for macOS on arm64.
 func tinyMachO(t *testing.T) string {
 	t.Helper()
 	gobin, err := exec.LookPath("go")

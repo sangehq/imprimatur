@@ -70,8 +70,15 @@ impr profile edit acme-mac \
 
 - **Signing.** impr signs each Mach-O file in Go with anchore/quill's code-signing packages: the hardened
   runtime, a secure timestamp from `timestamp.apple.com`, and a universal binary slice by slice. The
-  `.p12` (a file, or base64 in a variable) and its password are read through impr's references, in memory;
-  a `.p12` whose certificate is not the pinned identity and team is refused before anything is signed.
+  `.p12` (a file, or base64 in a variable) and its password are read through impr's references, in memory.
+  Before anything is signed, the certificate must be the pinned identity (its common name) and team (its
+  first organisational unit), must chain to Apple Root CA through a Developer ID Certification Authority
+  (G1 or G2), must carry the code-signing extended key usage, and must be within its validity period. Apple's
+  three public certificates are embedded in impr with their SHA-256 fingerprints
+  (`src/internal/backend/applecerts/`, copied from anchore/quill v0.7.1, which took them from
+  apple.com/certificateauthority), and the `.p12`'s own chain is not trusted: a self-signed certificate, or
+  one from any other CA, is refused. The G1 CA expires on 2027-02-01, so a certificate it issued stops
+  verifying then; G2 runs to 2031-09-17.
 - **Notarising.** impr talks to Apple's notary API itself, with the standard library: an ES256 token made in
   memory from the `.p8` key (`notary.apiKeyRef`, `notary.keyId`, `notary.issuer`), the zip uploaded to the
   S3 bucket Apple names (only Apple's notary bucket, in `us-west-2`, over HTTPS, signed with the session

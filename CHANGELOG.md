@@ -13,8 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the PowerShell line's GoReleaser template did (O-140, design ID-36): signing
   with anchore/quill's code-signing packages from the profile's `.p12`, and
   notarising through impr's own client for Apple's notary API (no AWS SDK).
-  On a Mac, `codesign` and `notarytool` are used as before. impr now depends
-  on 12 modules, up from 2.
+  Off a Mac the `.p12`'s certificate must chain to Apple Root CA through a
+  Developer ID CA (embedded, pinned by SHA-256), carry the code-signing usage
+  and be in date, as well as name the pinned identity and team. On a Mac,
+  `codesign` and `notarytool` are used as before. impr now depends on 12
+  modules, up from 2.
 
 - `impr init [--main PKG] [--force]`, as the PowerShell line had: it writes
   `build/targets.txt` with the old template's targets (in place of
