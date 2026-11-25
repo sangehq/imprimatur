@@ -601,6 +601,7 @@ func init() {
 		"path":       {cmdPath, "Shows impr's config, state and install folders.", "install.md"},
 		"menu":       {cmdMenu, "Opens the interactive menu.", "menu.md"},
 		"build":      {cmdBuild, "Cross-compiles a Go module into build/ and writes its build manifest.", "build.md"},
+		"init":       {cmdInit, "Sets a project up for impr build: its targets, and its build output out of git.", "init.md"},
 		"release":    {cmdRelease, "Builds, signs and verifies in one step; never tags, pushes or publishes.", "release.md"},
 		"tools":      {cmdTools, "Lists the external tools impr may run, and pins one by its digest.", "config.md"},
 		"audit":      {cmdAudit, "Reads, checks and anchors impr's hash-chained audit trail.", "audit.md"},
@@ -635,6 +636,7 @@ Usage:
   impr rules test --policy applocker.xml [--user Everyone] FILE... [--json]   (Windows)
   impr rules (--request FILE | FILE... [--scope publisher|product|file|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID] [--profile NAME] [--without-signed-record]) [--out-dir DIR] [--json] [--strict]
+  impr init [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--force] [--json]
   impr build [VERSION] [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z] [--version-var PKG.VAR]
             [--targets os/arch,...] [--clean] [--allow-dirty] [--json]
   impr release [VERSION] --profile NAME --purpose release|test|internal [--repo URL] [--platforms ...] [build options] [--json]

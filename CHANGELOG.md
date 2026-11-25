@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr init [--main PKG] [--force]`, as the PowerShell line had: it writes
+  `build/targets.txt` with the old template's targets (in place of
+  `.goreleaser.yaml`, which impr no longer reads), adds the build output to
+  `.gitignore`, and refuses to overwrite targets without `--force`
+  (O-36..O-39).
+
 - `impr serve` starts a web UI on `127.0.0.1:7823` beside the API (the next
   free port when taken; `--port` pins it), following the sange and authama
   web UI (design ID-34). It needs no API token: a one-time sign-in link
