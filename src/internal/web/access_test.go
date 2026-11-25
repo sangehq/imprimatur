@@ -129,8 +129,11 @@ func TestEveryRouteNamesItsScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	open := map[string]bool{"GET /assets/{hash}/{path...}": true, "GET /healthz": true, "GET /signin": true, "POST /signin": true, "POST /signout": true}
-	lineRe := regexp.MustCompile(`mux\.HandleFunc\("((?:GET|POST) [^"]+)", (.*)\)`)
+	open := map[string]bool{"GET /assets/{hash}/{path...}": true, "GET /healthz": true, "GET /signin": true, "POST /signin": true,
+		"POST /signout": true, "/": true}
+	// Every registration, whatever its method (or none), so a route added
+	// without one cannot slip past.
+	lineRe := regexp.MustCompile(`mux\.HandleFunc\("([^"]+)", (.*)\)`)
 	n := 0
 	for _, m := range lineRe.FindAllStringSubmatch(string(b), -1) {
 		n++
@@ -140,6 +143,9 @@ func TestEveryRouteNamesItsScope(t *testing.T) {
 		if !regexp.MustCompile(`^s\.need\("(read|secrets|admin|events)", s\.[a-zA-Z]+\)$`).MatchString(m[2]) {
 			t.Errorf("%s does not name its scope: %s", m[1], m[2])
 		}
+	}
+	if total := strings.Count(string(b), "mux.HandleFunc("); total != n {
+		t.Errorf("matched %d of %d registrations in routes.go", n, total)
 	}
 	atLeast(t, "routes", n, 30)
 }

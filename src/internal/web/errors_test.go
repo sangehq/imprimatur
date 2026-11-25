@@ -72,7 +72,21 @@ func TestEveryPageNamesTheLogoMarkFavicon(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), fav) {
 		t.Error("the 404 page does not link the favicon")
 	}
-	atLeast(t, "HTML pages", pages+1, 1)
+	atLeast(t, "HTML pages without a session", pages, 16)
+	// Signed in, every page names it too.
+	p := newPages(t, false)
+	signed := 0
+	for _, path := range htmlPages(t) {
+		code, body, _ := p.get(path)
+		if code != http.StatusOK {
+			continue
+		}
+		signed++
+		if !strings.Contains(body, `<link rel="icon" type="image/svg+xml" href="`+fav+`">`) || !strings.Contains(body, `class="navbar-brand-mark" src="`+fav+`"`) {
+			t.Errorf("signed in, GET %s does not link the logo mark favicon", path)
+		}
+	}
+	atLeast(t, "HTML pages signed in", signed, 16)
 	r := do(s.Handler(), "GET", fav, nil, nil)
 	svg := r.Body.String()
 	if r.Code != 200 || r.Header().Get("Content-Type") != "image/svg+xml" || !strings.Contains(svg, `viewBox="0 0 32 32"`) ||
