@@ -3,6 +3,7 @@ package web
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -69,8 +70,10 @@ func (s *Server) hostAllowed(host string) bool {
 
 // sameOrigin lets a request that can change state through only when it came
 // from this server's own pages: an Origin naming the host it was sent to (or,
-// with no Origin, Sec-Fetch-Site: same-origin). The form is parsed here, so a
-// body over MaxBodyBytes is refused as what it is.
+// with no Origin, Sec-Fetch-Site: same-origin), and the session's CSRF token.
+// The form is parsed here, so a body over MaxBodyBytes is refused as what it
+// is. The token sign-in has no session yet, so the Origin is its check (with
+// the failed sign-in limit).
 func (s *Server) sameOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -96,6 +99,13 @@ func (s *Server) sameOrigin(next http.Handler) http.Handler {
 			s.renderError(w, r, http.StatusBadRequest, "Unreadable form", "The form could not be read; reload the page and try again.")
 			return
 		}
+		if r.URL.Path != "/signin" {
+			sess := sessionFrom(r.Context())
+			if sess == nil || !equal(r.PostFormValue(csrfField), sess.csrf) {
+				s.renderError(w, r, http.StatusForbidden, "Missing or stale form token", "Reload the page and try again.")
+				return
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -112,10 +122,13 @@ func (s *Server) originAllowed(r *http.Request) bool {
 	return s.hostAllowed(u.Host) && strings.EqualFold(u.Host, r.Host)
 }
 
+// healthz says that this is imprimatur's web UI and which instance, so impr
+// serve can tell a server it recorded from anything else on the port. It
+// carries no state.
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_, _ = w.Write([]byte(`{"app":"imprimatur"}` + "\n"))
+	_ = json.NewEncoder(w).Encode(map[string]string{"app": "imprimatur", "instance": s.opts.Instance})
 }
 
 // NewToken returns 32 random bytes, base64url: a sign-in link, a session or a

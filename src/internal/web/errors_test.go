@@ -38,10 +38,12 @@ func TestErrorPagesAreStyled(t *testing.T) {
 			t.Errorf("the %d page lacks %v", code, miss)
 		}
 	}
+	f := newFixture(t, nil)
+	cookie, _ := f.signIn(t)
 	for host, code := range map[string]int{testHost: http.StatusNotFound, "evil.example:7823": http.StatusMisdirectedRequest} {
-		r := do(s.Handler(), "GET", "/no-such-page", nil, map[string]string{"Host": host})
-		if r.Code != code || len(styled(t, s, r.Body.String())) > 0 {
-			t.Errorf("GET /no-such-page on %s: %d, lacks %v", host, r.Code, styled(t, s, r.Body.String()))
+		r := do(f.s.Handler(), "GET", "/no-such-page", nil, map[string]string{"Host": host, "Cookie": cookie})
+		if r.Code != code || len(styled(t, f.s, r.Body.String())) > 0 {
+			t.Errorf("GET /no-such-page on %s: %d, lacks %v", host, r.Code, styled(t, f.s, r.Body.String()))
 		}
 	}
 }

@@ -10,7 +10,7 @@ import (
 
 func newTestServer(t *testing.T, log, debug *bytes.Buffer) *Server {
 	t.Helper()
-	o := Options{AllowedHosts: AllowedHosts(7823), Version: "test"}
+	o := Options{AllowedHosts: AllowedHosts(7823), Version: "test", Token: NewToken()}
 	if log != nil {
 		o.Log = func(f string, a ...any) { fmt.Fprintf(log, f+"\n", a...) }
 	}
@@ -81,7 +81,7 @@ func TestHostCheckRefusesARebindingHost(t *testing.T) {
 func TestAnOversizedBodyIsRefused(t *testing.T) {
 	s := newTestServer(t, nil, nil)
 	big := strings.NewReader("csrf=x&v=" + strings.Repeat("a", MaxBodyBytes+1))
-	r := do(s.Handler(), "POST", "/signout", big, map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "http://" + testHost})
+	r := do(s.Handler(), "POST", "/signin", big, map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "http://" + testHost})
 	if r.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("an oversized body: %d, want 413", r.Code)
 	}
@@ -99,7 +99,7 @@ func TestUnsafeMethodsNeedTheSameOrigin(t *testing.T) {
 		"no Origin, no fetch site":   {},
 	} {
 		hdr["Content-Type"] = "application/x-www-form-urlencoded"
-		if r := do(s.Handler(), "POST", "/signout", strings.NewReader("csrf=x"), hdr); r.Code != http.StatusForbidden {
+		if r := do(s.Handler(), "POST", "/signin", strings.NewReader("token=x"), hdr); r.Code != http.StatusForbidden {
 			t.Errorf("%s: %d, want 403", name, r.Code)
 		}
 	}

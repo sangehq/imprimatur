@@ -12,7 +12,10 @@ import (
 	"errors"
 	"net"
 	"net/http"
+	"sync"
 	"time"
+
+	"github.com/sangehq/imprimatur/src/internal/config"
 )
 
 // Options configure a Server.
@@ -31,14 +34,29 @@ type Options struct {
 	Debug func(format string, args ...any)
 	// User and Host are who the server runs as and where, for the user menu.
 	User, Host string
+
+	// Token is the first sign-in link's token: it works once, within
+	// LinkLifetime. Control is the key a second impr serve presents at
+	// LinkPath for a new link; empty makes none that way. Instance is a
+	// random id /healthz answers with, so that impr serve can tell this
+	// server from anything else on the port.
+	Token, Control, Instance string
+	// Tokens are the configured API tokens: one with the secrets scope still
+	// signs in on /signin, into a session that reaches the secrets page only.
+	Tokens []config.Token
 }
 
 // Server is the web UI.
 type Server struct {
-	opts    Options
-	assets  *assetSet
-	pages   pageSet
-	handler http.Handler
+	opts     Options
+	assets   *assetSet
+	pages    pageSet
+	sessions sessions
+	links    links
+	handler  http.Handler
+
+	failMu   sync.Mutex
+	failures []time.Time // failed token sign-ins in the last minute
 }
 
 // New builds a Server. It parses every template once, so a template error is
@@ -55,10 +73,16 @@ func New(opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if opts.Token == "" {
+		return nil, errors.New("web: a first sign-in link token is required")
+	}
 	s := &Server{opts: opts, assets: assets, pages: pages}
-	s.handler = s.logRequests(securityHeaders(s.hostCheck(s.sameOrigin(s.routes()))))
+	s.links.add(opts.Token, opts.Now().Add(LinkLifetime))
+	s.handler = s.logRequests(securityHeaders(s.hostCheck(s.auth(s.sameOrigin(s.routes())))))
 	return s, nil
 }
+
+func (s *Server) now() time.Time { return s.opts.Now() }
 
 // Handler is the whole middleware chain and the routes.
 func (s *Server) Handler() http.Handler { return s.handler }

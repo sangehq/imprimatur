@@ -1,0 +1,24 @@
+{{define "content"}}{{with .Data}}
+<div class="container-tight py-4">
+  <div class="card card-md">
+    <div class="card-body">
+      <h1 class="h2 text-center mb-3">{{if .Unauthorized}}Open impr serve's link to sign in{{else}}Sign in with an API token{{end}}</h1>
+      {{if .Message}}<div class="alert alert-danger" role="alert">{{.Message}}</div>{{end}}
+      {{if .Unauthorized}}
+      <p class="text-secondary">This browser is not signed in. <code>impr serve</code> prints a one-time sign-in link when it starts (and opens it, at a desktop); run <code>impr serve</code> again for a fresh one. A link works once, within 10 minutes.</p>
+      <p class="text-secondary mb-0">To store a signing secret only, you can <a href="/signin">sign in with an API token</a> that holds the secrets scope.</p>
+      {{else}}
+      <p class="text-secondary">An API token with the <code>secrets</code> scope opens the secrets page only. For the whole web UI, open the link <code>impr serve</code> printed.</p>
+      <form method="post" action="/signin" autocomplete="off">
+        <div class="mb-3">
+          <label class="form-label" for="signin-token">API token</label>
+          <input class="form-control" id="signin-token" name="token" type="password" required autocomplete="off" spellcheck="false">
+          <div class="form-hint">Make one with <code>impr server token add --scopes secrets</code>.</div>
+        </div>
+        <button type="submit" class="btn btn-primary w-100">Sign in</button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{end}}{{end}}

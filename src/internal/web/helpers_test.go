@@ -1,6 +1,10 @@
 package web
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -69,4 +73,19 @@ func do(h http.Handler, method, target string, body io.Reader, hdr map[string]st
 // form encodes v as a POST body.
 func form(v url.Values) (io.Reader, map[string]string) {
 	return strings.NewReader(v.Encode()), map[string]string{"Content-Type": "application/x-www-form-urlencoded", "Origin": "http://" + testHost}
+}
+
+// newAPIToken makes an API token as impr server token add does, at run time.
+func newAPIToken() (raw, id, sum string, err error) {
+	b := make([]byte, 32)
+	if _, err = rand.Read(b); err != nil {
+		return
+	}
+	raw = "impr_" + base64.RawURLEncoding.EncodeToString(b)
+	h := sha256.Sum256([]byte(raw))
+	idb := make([]byte, 6)
+	if _, err = rand.Read(idb); err != nil {
+		return
+	}
+	return raw, "tok_" + hex.EncodeToString(idb), hex.EncodeToString(h[:]), nil
 }
