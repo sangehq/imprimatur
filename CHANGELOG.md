@@ -22,8 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remove and revoke behind a confirmation, a Ctrl-K palette and `?`
   shortcuts. Tabler 1.7.5, its icons and Inter are vendored and embedded.
   `--no-open`, `--no-web` (the API alone, as before) and `--verbose`. A
-  second `impr serve` opens the running one with a fresh link
-  (`<state>/web/serve.json`). An API token with the `secrets` scope still
+  second `impr serve` at a terminal for the same API address opens the
+  running one with a fresh link (`<state>/web/serve.json`); any other (the
+  service unit, another address) starts its API and shares the running web
+  UI. A web UI that cannot start is logged and never stops the API. An API token with the `secrets` scope still
   signs in, to the Secrets page only.
 - `server.web.tokenAccess` (`secrets`, the default, or `scopes`): with
   `scopes`, an API token signed in to the web UI reaches what its scopes

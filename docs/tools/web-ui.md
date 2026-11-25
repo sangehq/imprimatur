@@ -20,9 +20,13 @@ impr serve --verbose        # log page views too, not only changes
 - **No API token needed.** The web UI signs in with a one-time link. The API answers 401 to any call
   without a token, as it always did, and `impr serve --no-web` with no token or inbound endpoint is still
   refused.
-- **One server per state directory.** A second `impr serve` finds the running one through
-  `<state>/web/serve.json`, asks it for a fresh link, prints or opens that, and exits. Stop the server with
-  Ctrl-C where it runs.
+- **One web UI per state directory.** A second `impr serve` finds the running one through
+  `<state>/web/serve.json` and asks it for a fresh link. Run at a terminal for the same API address, it
+  prints or opens that link and exits. Otherwise (the service unit, or another `server.listen`) it starts
+  its own API as usual and hands over the running web UI's link instead of starting a second web UI. Stop a
+  server with Ctrl-C where it runs.
+- **The API comes first.** When the web UI cannot start (its state folder, a taken `--port`), `impr serve`
+  logs `web       not started:` with the reason and serves the API anyway.
 - **Stopping.** Ctrl-C or SIGTERM stops the API and the web UI together.
 
 ## Signing in

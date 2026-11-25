@@ -107,21 +107,38 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 			return 0, contract.New(contract.Usage, "not started")
 		}
 	}
+	// The web part never stops the API: whatever keeps it from starting is
+	// logged, and the API is served (review B1).
 	var wdir string
 	var wln net.Listener
+	var running *webInstance // a web UI another impr serve runs for this state directory
 	if !noWeb {
 		if wdir, err = webDir(d.State); err != nil {
-			return 0, contract.Wrap(contract.Unavailable, err, "the web UI's state directory")
+			a.say("web       not started: %v", err)
+		} else {
+			if r := readWebInstance(wdir); r != nil && r.alive() {
+				running = r
+			}
+			// At a terminal, an impr serve for the same API address as the
+			// running one only opens it with a fresh link. Anything else (the
+			// service unit, another address) starts its own API and opens the
+			// running web UI rather than a second one (review B2).
+			terminal := a.Interactive != nil && a.Interactive()
+			if running != nil && terminal && running.Listen == cfg.Server.Listen {
+				if a.openRunning(wdir, p.on("no-open")) {
+					return 0, nil
+				}
+				running = nil
+			}
+			if running == nil {
+				if wln, err = web.Listen(nil, "127.0.0.1", port, pinned, web.DefaultPortAttempts); err != nil {
+					a.say("web       not started: %v", err)
+					wln = nil
+				} else {
+					defer func() { _ = wln.Close() }()
+				}
+			}
 		}
-		// A web UI already running for this state directory is opened with a
-		// fresh link instead of starting a second server.
-		if a.openRunning(wdir, p.on("no-open")) {
-			return 0, nil
-		}
-		if wln, err = web.Listen(nil, "127.0.0.1", port, pinned, web.DefaultPortAttempts); err != nil {
-			return 0, contract.Wrap(contract.Unavailable, err, "the web UI cannot listen")
-		}
-		defer func() { _ = wln.Close() }()
 	}
 	ln, where, err := listen(d.State, cfg.Server.Listen)
 	if err != nil {
@@ -157,23 +174,14 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	}
 	errc := make(chan error, 2)
 	go func() { errc <- srv.Serve(ln) }()
+	var webDone <-chan struct{}
 	if wln != nil {
-		ws, rec, link, err := a.newWeb(wln, cfg, d, p.on("verbose"))
-		if err != nil {
-			_ = srv.Close()
-			return 0, contract.Wrap(contract.Unavailable, err, "the web UI cannot start")
-		}
-		if err := writeWebInstance(wdir, rec); err != nil {
-			_ = srv.Close()
-			return 0, contract.Wrap(contract.Unavailable, err, "the web UI's record cannot be written")
-		}
-		defer removeWebInstance(wdir, rec.Instance)
-		go func() {
-			if err := ws.Serve(ctx, wln); err != nil && !errors.Is(err, net.ErrClosed) {
-				errc <- err
-			}
-		}()
-		if err := a.showLink(wdir, link, rec.Addr, p.on("no-open")); err != nil {
+		webDone = a.startWeb(ctx, wln, wdir, cfg, d, p.on("verbose"), p.on("no-open"))
+	} else if running != nil {
+		a.say("web       already running for this state directory (pid %d, http://%s/); this impr serve uses it", running.PID, running.Addr)
+		if link, err := running.newLink(); err != nil {
+			a.say("web       not started: the running web UI gave no link: %v", err)
+		} else if err := a.showLink(wdir, link, running.Addr, p.on("no-open")); err != nil {
 			a.say("web       the sign-in link could not be written: %v", err)
 		}
 	}
@@ -218,6 +226,10 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	shut, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shut)
+	if webDone != nil {
+		stop()    // ends ctx, if the API stopped first
+		<-webDone // the web UI shuts down with the API, and removes its record
+	}
 	bus.Emit(context.Background(), "server.stopped", "server", map[string]any{})
 	a.say("server    stopped")
 	return 0, nil

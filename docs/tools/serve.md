@@ -28,7 +28,8 @@ impr serve --listen 127.0.0.1:8743             # or a loopback port
 - **Stopping.** Ctrl-C or SIGTERM stops it gracefully, the web UI with it.
 - **The web UI.** Bare `impr serve` also starts the [web UI](web-ui.md), which needs no API token: it
   prints a one-time sign-in link. `--port N` pins its port, `--no-open` opens no browser, `--verbose` logs
-  page views, and `--no-web` serves the API alone, as before. Without `--no-web`, `--check-config` passes
+  page views, and `--no-web` serves the API alone, as before. A web UI that cannot start never stops the
+  API: the reason is logged and the API is served. Without `--no-web`, `--check-config` passes
   with no token configured, and says the API will answer 401.
 
 ```bash

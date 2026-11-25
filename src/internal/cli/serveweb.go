@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -38,6 +39,10 @@ type webInstance struct {
 	Control  string    `json:"control"` // the key /auth/link asks for
 	Version  string    `json:"version"`
 	Started  time.Time `json:"started"`
+	// Listen is the API's server.listen this impr serve was started with
+	// ("" for the default socket or pipe): a second impr serve at a terminal
+	// for the same address only opens this one.
+	Listen string `json:"listen"`
 }
 
 const (
@@ -287,6 +292,37 @@ func boundPort(ln net.Listener) (int, error) {
 		return ta.Port, nil
 	}
 	return 0, errors.New("the web UI's listener is not TCP")
+}
+
+// startWeb starts the web UI on wln beside the API, records it and hands
+// over its first link. A failure is logged and the web UI is left off; the
+// API keeps serving (review B1). The returned channel closes once the web UI
+// has shut down and removed its record, after ctx ends.
+func (a *App) startWeb(ctx context.Context, wln net.Listener, wdir string, cfg config.Config, d paths.Dirs, verbose, noOpen bool) <-chan struct{} {
+	done := make(chan struct{})
+	ws, rec, link, err := a.newWeb(wln, cfg, d, verbose)
+	if err == nil {
+		rec.Listen = cfg.Server.Listen
+		err = writeWebInstance(wdir, rec)
+	}
+	if err != nil {
+		a.say("web       not started: %v", err)
+		_ = wln.Close()
+		close(done)
+		return done
+	}
+	go func() {
+		defer close(done)
+		err := ws.Serve(ctx, wln)
+		removeWebInstance(wdir, rec.Instance)
+		if err != nil && !errors.Is(err, net.ErrClosed) {
+			a.say("web       stopped: %v", err)
+		}
+	}()
+	if err := a.showLink(wdir, link, rec.Addr, noOpen); err != nil {
+		a.say("web       the sign-in link could not be written: %v", err)
+	}
+	return done
 }
 
 // newWeb builds the web UI on wln, with a first sign-in link and the record

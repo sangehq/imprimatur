@@ -3,11 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -147,24 +150,133 @@ func TestServeStartsTheUIWithoutAnAPIToken(t *testing.T) {
 	}
 }
 
-// A second impr serve opens the running one with a fresh link instead of
-// starting another.
+// atTerminal runs impr as a person at a terminal would, and returns when it
+// ends.
+func atTerminal(t *testing.T, h *harness, args ...string) (int, string, string) {
+	t.Helper()
+	var o, e bytes.Buffer
+	a := &App{Stdout: &o, Stderr: &e, Getenv: func(k string) string { return h.env[k] }, GOOS: h.os, Home: t.TempDir(), User: "tester",
+		Runner: h.run, Now: time.Now, Notifier: h.notifier, Stdin: strings.NewReader(""), Interactive: func() bool { return true }}
+	done := make(chan int, 1)
+	go func() { done <- a.Run(context.Background(), args) }()
+	select {
+	case code := <-done:
+		return code, o.String(), e.String()
+	case <-time.After(15 * time.Second):
+		t.Fatal("impr did not return")
+	}
+	return -1, "", ""
+}
+
+var linkLineRe = regexp.MustCompile(`web UI    (http://\S+)`)
+
+// A second impr serve at a terminal, for the same API address, opens the
+// running one with a fresh link instead of starting another.
 func TestServeReusesTheRunningInstance(t *testing.T) {
 	h := newHarness(t)
 	sv := startServe(t, h, "--listen", "127.0.0.1:0", "--port", "0", "--no-open")
 	dir := webDirOf(t, h)
 	first := waitLink(t, dir, "", sv)
-	code, _, errOut := h.impr("serve", "--listen", "127.0.0.1:0", "--port", "0", "--no-open")
-	if code != 0 || !strings.Contains(errOut, "already running") {
-		t.Fatalf("a second serve: %d %s", code, errOut)
+	code, out, errOut := atTerminal(t, h, "serve", "--listen", "127.0.0.1:0", "--port", "0", "--no-open")
+	m := linkLineRe.FindStringSubmatch(out)
+	if code != 0 || !strings.Contains(errOut, "already running") || m == nil {
+		t.Fatalf("a second serve: %d %s %s", code, out, errOut)
 	}
-	second := waitLink(t, dir, first, sv)
-	if strings.SplitN(first, "?", 2)[0] != strings.SplitN(second, "?", 2)[0] {
-		t.Fatalf("the second link names another server: %s, %s", first, second)
+	if strings.SplitN(first, "?", 2)[0] != strings.SplitN(m[1], "?", 2)[0] {
+		t.Fatalf("the second link names another server: %s, %s", first, m[1])
 	}
-	if _, resp := signInWith(t, second); resp.StatusCode != 200 {
+	if _, resp := signInWith(t, m[1]); resp.StatusCode != 200 {
 		t.Fatalf("the fresh link: %d", resp.StatusCode)
 	}
+}
+
+// Without a terminal (the service unit), or for another API address, a
+// second impr serve always starts its own API; its web part opens the running
+// web UI with a fresh link and starts no second web listener.
+func TestASecondServeStillStartsItsAPI(t *testing.T) {
+	h := newHarness(t)
+	sv := startServe(t, h, "--listen", "127.0.0.1:0", "--port", "0", "--no-open")
+	dir := webDirOf(t, h)
+	first := waitLink(t, dir, "", sv)
+	for name, args := range map[string][]string{
+		"no terminal, the same API address": {"--listen", "127.0.0.1:0", "--port", "0", "--no-open"},
+		"no terminal, another API address":  {"--listen", "localhost:0", "--port", "0", "--no-open"},
+	} {
+		second := startServe(t, h, args...)
+		link := waitLink(t, dir, first, second)
+		waitLog(t, second, "server    listening on")
+		if strings.SplitN(first, "?", 2)[0] != strings.SplitN(link, "?", 2)[0] {
+			t.Errorf("%s: the link names a second web UI: %s, %s", name, first, link)
+		}
+		if strings.Count(second.errOut.String(), "web       http://") != 1 || !strings.Contains(second.errOut.String(), "already running") {
+			t.Errorf("%s: %s", name, second.errOut)
+		}
+		if code := second.stop(t); code != 0 {
+			t.Errorf("%s: stop: %d", name, code)
+		}
+		if readWebInstance(dir) == nil {
+			t.Errorf("%s: stopping the second serve removed the first one's record", name)
+		}
+		first = link
+	}
+	// At a terminal, another API address starts its API too.
+	h2 := *h
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		var o, e syncBuf
+		a := &App{Stdout: &o, Stderr: &e, Getenv: func(k string) string { return h2.env[k] }, GOOS: h2.os, Home: t.TempDir(), User: "tester",
+			Runner: h2.run, Now: time.Now, Notifier: h2.notifier, Stdin: strings.NewReader(""), Interactive: func() bool { return true }}
+		code := a.Run(ctx, []string{"serve", "--listen", "localhost:0", "--port", "0", "--no-open"})
+		if code != 0 || !strings.Contains(e.String(), "server    listening on") || !linkLineRe.MatchString(o.String()) {
+			t.Errorf("at a terminal, another API address: %d %s %s", code, o.String(), e.String())
+		}
+	}()
+	<-done
+	_ = sv
+}
+
+// waitLog waits for a line in a running serve's log.
+func waitLog(t *testing.T, sv *serving, want string) {
+	t.Helper()
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); time.Sleep(50 * time.Millisecond) {
+		if strings.Contains(sv.errOut.String(), want) {
+			return
+		}
+	}
+	t.Fatalf("no %q in: %s", want, sv.errOut)
+}
+
+// A web UI that cannot start (its state folder, its port) does not stop the
+// API: impr serve logs why and serves the API.
+func TestServeKeepsTheAPIWhenTheWebUIFails(t *testing.T) {
+	h := newHarness(t)
+	dir := webDirOf(t, h)
+	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dir, []byte("not a folder"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sv := startServe(t, h, "--listen", "127.0.0.1:0", "--port", "0", "--no-open")
+	waitLog(t, sv, "server    listening on")
+	waitLog(t, sv, "web       not started:")
+	if code := sv.stop(t); code != 0 {
+		t.Fatalf("stop: %d %s", code, sv.errOut)
+	}
+	// A pinned web port that is taken: the API still starts.
+	h2 := newHarness(t)
+	taken, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = taken.Close() }()
+	port := strconv.Itoa(taken.Addr().(*net.TCPAddr).Port)
+	sv2 := startServe(t, h2, "--listen", "127.0.0.1:0", "--port", port, "--no-open")
+	waitLog(t, sv2, "server    listening on")
+	waitLog(t, sv2, "web       not started:")
 }
 
 // The service unit never opens a browser: it passes --no-open, and nobody is
