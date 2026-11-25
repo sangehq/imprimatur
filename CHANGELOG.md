@@ -103,8 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Option values from a fixed set match without regard to case, as the
   PowerShell line's did: `--purpose Release` (sign, build, release, approve)
   and `impr rules --scope Product` work (O-12).
-- `impr config set` trims the spaces and quotes around a value, as the
-  PowerShell line did (O-74).
+- `impr config set` trims the spaces and one matched pair of quotes around a
+  value (O-74). The PowerShell line trimmed every quote at either end; impr
+  keeps quotes inside the pair, or with no partner, as part of the value.
 - Bash completion offers an option's values after `--opt=` too, as the
   PowerShell line's completer did (O-95).
 - On Windows, impr's first run with no PowerShell settings makes the personal

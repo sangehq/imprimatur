@@ -64,6 +64,16 @@ func TestConfigSetTrimsQuotes(t *testing.T) {
 	if code, _, _ := h.impr("config", "set", "server.listen", `""`); code != 1 {
 		t.Errorf("a value that is only quotes was accepted: %d", code)
 	}
+	// Exactly one matched pair goes: quotes inside it, or a quote with no
+	// partner, are part of the value.
+	for in, want := range map[string]string{
+		`'"a b"'`: `"a b"`, `"'a b'"`: `'a b'`, `a b"`: `a b"`, `"a b'`: `"a b'`, `'a b`: `'a b`,
+		` 'a b' `: `a b`, `""`: ``, `"`: `"`, `''x''`: `'x'`,
+	} {
+		if got := trimValueQuotes(in); got != want {
+			t.Errorf("trimValueQuotes(%s) = %s, want %s", in, got, want)
+		}
+	}
 }
 
 // O-95: bash splits --purpose=re at the "=" (COMP_WORDBREAKS), and the
