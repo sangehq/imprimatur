@@ -1,0 +1,3 @@
+{{/* Why configuration changes are off for this session, and the fix: the
+     forms below show disabled. */}}
+{{define "config_off"}}{{if .ConfigOff}}<div class="alert alert-warning" role="status">{{icon "lock"}}<span class="ms-1">{{.ConfigOff}}</span></div>{{end}}{{end}}

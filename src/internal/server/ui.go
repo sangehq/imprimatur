@@ -22,6 +22,12 @@ import (
 // without a terminal. It exists only when the server is not reachable from
 // other machines, answers only to a loopback Host, signs in with an API token
 // holding the secrets scope, and never shows a value back.
+//
+// Superseded since 2026-11-25 (design ID-35) by the web UI's Secrets page
+// (internal/web, GET /secrets), on impr serve's own loopback listener with a
+// one-time sign-in link. This page still works unchanged on a loopback
+// server.listen, and may be removed no earlier than v0.3.0
+// (audits/deprecations.md).
 
 // UISecret is a stored secret as the page lists it: its name and reference.
 type UISecret struct {

@@ -626,7 +626,7 @@ Usage:
   impr tools list [--json] | pin NAME
   impr events replay --to WEBHOOK [--since 24h|TIME] [--type GLOB]... [--limit N] [--dry-run] [--force] [--json]
   impr audit tail [--limit N] [--json] | verify [--against ANCHOR] [--json] | anchor [--json]
-  impr serve [--listen unix|HOST:PORT] [--check-config] [--yes]
+  impr serve [--listen unix|HOST:PORT] [--port N] [--no-open] [--no-web] [--verbose] [--check-config] [--yes]
   impr serve install-unit --print [--for systemd|launchd|task] [--exe PATH]
   impr server token add --scopes read,verify,sign,events | list [--json] | revoke ID
   impr completion bash|zsh|fish|powershell | install [bash|zsh|fish|all]... | uninstall [bash|zsh|fish|all]...

@@ -1,0 +1,21 @@
+{{define "content"}}{{with .Data}}
+<h1 class="h2">Create a test certificate</h1>
+<p class="text-secondary">A self-signed certificate and a test profile that uses it, as <code>impr cert create</code> makes. It can never sign a release.</p>
+{{template "err" .Err}}
+{{template "config_off" $}}
+<form method="post" action="/certs" autocomplete="off">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <fieldset{{if $.ConfigOff}} disabled{{end}}>
+  <div class="mb-3"><label class="form-label" for="cert-name">Name</label>
+    <input class="form-control" id="cert-name" name="name" value="{{.Name}}" required pattern="[a-z0-9][a-z0-9._\-]{0,62}" placeholder="test-signing">
+    <div class="form-hint">The test profile's name: lower-case letters, digits, . _ and -.</div></div>
+  <div class="mb-3"><label class="form-label" for="cert-subject">Subject</label>
+    <input class="form-control" id="cert-subject" name="subject" value="{{.Subject}}" maxlength="64" placeholder="Example Test">
+    <div class="form-hint">Optional. Left empty, impr uses its default, "impr test signing (your user name)".</div></div>
+  <div class="mb-3"><label class="form-label" for="cert-days">Days valid</label>
+    <input class="form-control" id="cert-days" name="days" type="number" min="1" max="825" value="{{.Days}}" required></div>
+  <button type="submit" class="btn btn-primary">{{icon "plus"}}<span class="ms-1">Create</span></button>
+  </fieldset>
+  <a href="/certs" class="btn btn-link">Cancel</a>
+</form>
+{{end}}{{end}}

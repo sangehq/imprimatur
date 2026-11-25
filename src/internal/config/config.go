@@ -137,7 +137,35 @@ type Server struct {
 	AllowAdmin bool      `json:"allowAdmin,omitempty"`
 	Tokens     []Token   `json:"tokens,omitempty"`
 	Inbound    []Inbound `json:"inbound,omitempty"`
+	// Web are the web UI's settings (design ID-35).
+	Web ServerWeb `json:"web,omitzero"`
 }
+
+// ServerWeb is server.web: how far the web UI lets an API-token sign-in reach,
+// and whether its webhook writes need server.allowAdmin (owner, 2026-11-25).
+type ServerWeb struct {
+	// TokenAccess is "secrets" (the default): a token sign-in reaches the
+	// Secrets page only; or "scopes": the token's scopes decide.
+	TokenAccess string `json:"tokenAccess,omitempty"`
+	// WebhookAdmin is "allowAdmin" (the default): adding or removing a webhook
+	// in the web UI needs server.allowAdmin, as over the API; or "owner": the
+	// owner signed in with impr serve's link may do it without.
+	WebhookAdmin string `json:"webhookAdmin,omitempty"`
+}
+
+const (
+	TokenAccessSecrets     = "secrets"
+	TokenAccessScopes      = "scopes"
+	WebhookAdminAllowAdmin = "allowAdmin"
+	WebhookAdminOwner      = "owner"
+)
+
+// TokenScopes reports whether a token sign-in's scopes decide what it reaches.
+func (w ServerWeb) TokenScopes() bool { return w.TokenAccess == TokenAccessScopes }
+
+// WebhooksNeedAllowAdmin reports whether the web UI's webhook writes need
+// server.allowAdmin.
+func (w ServerWeb) WebhooksNeedAllowAdmin() bool { return w.WebhookAdmin != WebhookAdminOwner }
 
 // ServerTLS is the server's certificate and the CA its clients' certificates
 // must chain to. The owner makes these; impr only reads them.
@@ -455,6 +483,16 @@ func (s Server) validate() []string {
 				ps = append(ps, "server.tls."+name+" must be an absolute path")
 			}
 		}
+	}
+	switch s.Web.TokenAccess {
+	case "", TokenAccessSecrets, TokenAccessScopes:
+	default:
+		ps = append(ps, "server.web.tokenAccess must be "+TokenAccessSecrets+" or "+TokenAccessScopes)
+	}
+	switch s.Web.WebhookAdmin {
+	case "", WebhookAdminAllowAdmin, WebhookAdminOwner:
+	default:
+		ps = append(ps, "server.web.webhookAdmin must be "+WebhookAdminAllowAdmin+" or "+WebhookAdminOwner)
 	}
 	for i, r := range s.Roots {
 		if !filepath.IsAbs(r) {

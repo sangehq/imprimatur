@@ -1,0 +1,14 @@
+{{define "content"}}{{with .Data}}
+<h1 class="h2">Validate {{.Name}}</h1>
+{{template "err" .Err}}
+{{if not .Err}}
+<p>{{if .Doc.OK}}<span class="badge badge-ok">{{icon "circle-check"}} Valid</span>{{else}}<span class="badge badge-bad">{{icon "alert-triangle"}} Not valid</span>{{end}}</p>
+{{range .Doc.Profiles}}
+<dl class="row">
+  <dt class="col-4">Identity</dt><dd class="col-8"><code>{{.IdentityDigest}}</code></dd>
+</dl>
+{{if .Problems}}<ul class="list-group">{{range .Problems}}<li class="list-group-item">{{.}}</li>{{end}}</ul>{{else}}<p class="text-secondary">No problems.</p>{{end}}
+{{end}}
+{{end}}
+<p class="text-secondary small mt-3">The same as <code>impr profile validate {{.Name}}</code>.</p>
+{{end}}{{end}}

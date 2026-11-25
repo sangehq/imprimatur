@@ -1,0 +1,15 @@
+{{define "content"}}{{with .Data}}
+<div class="container-tight py-4">
+  <div class="card">
+    <div class="card-body">
+      <h1 class="h2">Your new API token</h1>
+      <p class="text-secondary">This is the only time it is shown: impr keeps only its digest. Store it now, where the program will read it.</p>
+      <div class="d-flex gap-2 align-items-start">
+        <code class="once-secret flex-fill p-2" id="new-token">{{.Token}}</code>
+        <button type="button" class="btn" data-copy="new-token">{{icon "copy"}}<span class="ms-1">Copy</span></button>
+      </div>
+      <a href="/tokens" class="btn btn-primary mt-3">Done</a>
+    </div>
+  </div>
+</div>
+{{end}}{{end}}

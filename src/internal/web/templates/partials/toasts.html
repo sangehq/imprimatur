@@ -1,0 +1,13 @@
+{{/* The message a change leaves for the page it redirects to (PRG), as a
+     Tabler toast. It is visible without the script; app.js hides it after a
+     while. */}}
+{{define "toasts"}}<div class="toast-container position-fixed bottom-0 end-0 p-3" data-toasts>
+  {{if .Flash}}<div class="toast show" role="{{if .FlashBad}}alert{{else}}status{{end}}" aria-live="{{if .FlashBad}}assertive{{else}}polite{{end}}" aria-atomic="true" data-toast>
+    <div class="toast-header">
+      <span class="{{if .FlashBad}}text-danger{{else}}text-success{{end}} me-2" aria-hidden="true">{{if .FlashBad}}{{icon "alert-triangle"}}{{else}}{{icon "circle-check"}}{{end}}</span>
+      <strong class="me-auto">{{if .FlashBad}}Not done{{else}}Done{{end}}</strong>
+      <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close" title="Close"></button>
+    </div>
+    <div class="toast-body">{{.Flash}}</div>
+  </div>{{end}}
+</div>{{end}}

@@ -58,8 +58,9 @@ and a profile file others can write.
 
 ## The secrets page
 
-[`impr serve`](serve.md#the-secrets-page) serves the same thing as a local page, for adding a key without a
-terminal.
+The [web UI](web-ui.md)'s Secrets page, which `impr serve` starts, stores a secret the same way, for adding a
+key without a terminal. The API listener's older page at `/ui/` ([serve](serve.md#the-secrets-page)) still
+works too.
 
 ---
 

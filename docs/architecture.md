@@ -16,7 +16,10 @@ src/internal/signing/  signing and verifying a build manifest; certificates; cap
 src/internal/rules/    AppLocker and WDAC supplemental policies from a request
 src/internal/artifact/ the build manifest, safe path resolution, digests, file kinds
 src/internal/secrets/  credential references to values, temporary files for tools
-src/internal/execx/    the allow-listed exec adapter (the only importer of os/exec)
+src/internal/execx/    the allow-listed exec adapter (the only importer of os/exec), and the browser opener
+src/internal/server/   impr serve's REST API over the commands, and inbound webhooks
+src/internal/web/      impr serve's web UI: pages over the same commands, sign-in, embedded assets
+src/internal/tabler/   vendoring Tabler, its icons and Inter for the web UI (make tabler-vendor)
 src/internal/paths/    XDG and Windows config and state directories
 src/internal/guardtest/ repository guards: exec, workflows, build layout, docs, community files, notifications
 src/internal/notify/   desktop notifications through go-notifykit, and certificate expiry thresholds

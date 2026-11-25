@@ -1,0 +1,130 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="csrf-token" content="{{.CSRF}}">
+<title>{{.Title}} · imprimatur</title>
+<script src="{{asset "vendor/tabler/tabler-theme.min.js"}}"></script>
+<link rel="icon" type="image/svg+xml" href="{{asset "favicon.svg"}}">
+<link rel="stylesheet" href="{{asset "vendor/tabler/tabler.min.css"}}">
+<link rel="stylesheet" href="{{asset "app.css"}}">
+</head>
+<body>
+{{sprite}}
+<a class="visually-hidden-focusable skip-link" href="#main">Skip to content</a>
+<div class="page">
+  <header class="navbar navbar-expand-md d-print-none">
+    <div class="container-xl">
+      {{if .Authed}}<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar-menu" aria-controls="navbar-menu" aria-expanded="false" aria-label="Show the menu" title="Show the menu"><span class="navbar-toggler-icon"></span></button>{{end}}
+      <a class="navbar-brand navbar-brand-autodark pe-0 pe-md-3" href="/" aria-label="imprimatur home"><img class="navbar-brand-mark" src="{{asset "favicon.svg"}}" width="32" height="32" alt=""><span class="navbar-brand-text d-none d-sm-inline">imprimatur</span><span class="navbar-brand-text d-sm-none">impr</span></a>
+      <div class="navbar-nav flex-row order-md-last align-items-center">
+        {{if .Authed}}<div class="nav-item me-2">
+          <button type="button" class="btn btn-ghost-secondary header-search" data-bs-toggle="modal" data-bs-target="#command-palette" aria-keyshortcuts="Control+K Meta+K" aria-label="Search pages and actions" title="Search pages and actions (Ctrl K)">{{icon "search"}}<span class="d-none d-lg-inline ms-1">Search</span><kbd class="d-none d-lg-inline ms-2" data-palette-hint>Ctrl K</kbd></button>
+        </div>
+        <div class="nav-item me-2">
+          <button type="button" class="btn btn-ghost-secondary btn-icon" data-bs-toggle="modal" data-bs-target="#keyboard-shortcuts" aria-keyshortcuts="Shift+?" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)">{{icon "keyboard"}}</button>
+        </div>{{end}}
+        <div class="nav-item me-2">
+          <a href="?theme=dark" class="nav-link px-0 hide-theme-dark" aria-label="Dark theme" title="Dark theme">{{icon "moon"}}</a>
+          <a href="?theme=light" class="nav-link px-0 hide-theme-light" aria-label="Light theme" title="Light theme">{{icon "sun"}}</a>
+        </div>
+        {{if .Authed}}<div class="nav-item dropdown">
+          <a href="#" class="nav-link d-flex lh-1 text-reset p-0" id="navbar-user" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Account menu" title="Account menu">
+            <span class="avatar avatar-sm" aria-hidden="true">{{icon "user-circle"}}</span>
+            <span class="d-none d-xl-inline ps-2 align-self-center">{{if .User}}{{.User}}{{else}}impr{{end}}</span>
+          </a>
+          <div class="dropdown-menu dropdown-menu-end dropdown-menu-arrow" aria-labelledby="navbar-user">
+            <div class="dropdown-header text-wrap" data-running-as>Running as <strong>{{if .User}}{{.User}}{{else}}this user{{end}}</strong>{{if .Host}} on <strong>{{.Host}}</strong>{{end}}</div>
+            <div class="dropdown-divider"></div>
+            {{if .Can "read"}}<a href="/about" class="dropdown-item">{{icon "info-circle"}}<span class="ms-2">About</span></a>{{end}}
+            <form method="post" action="/signout" class="m-0"><input type="hidden" name="csrf" value="{{.CSRF}}"><button type="submit" class="dropdown-item">{{icon "logout"}}<span class="ms-2">Sign out</span></button></form>
+          </div>
+        </div>{{end}}
+      </div>
+    </div>
+  </header>
+  {{if .Authed}}
+  <header class="navbar-expand-md">
+    <div class="collapse navbar-collapse" id="navbar-menu">
+      <div class="navbar">
+        <div class="container-xl">
+          <nav aria-label="Main">
+            <ul class="navbar-nav">
+              {{/* Each entry shows only when the session may open it (view.Can):
+                   everything for the one-time link's session; a token
+                   sign-in's reach under server.web.tokenAccess. */}}
+              {{if .Can "read"}}<li class="nav-item{{if eq .Nav "overview"}} active{{end}}"><a class="nav-link" href="/"{{if eq .Nav "overview"}} aria-current="page"{{end}}><span class="nav-link-icon">{{icon "layout-dashboard"}}</span><span class="nav-link-title">Overview</span></a></li>{{end}}
+              {{if or (.Can "read") (.Can "secrets")}}<li class="nav-item dropdown{{if eq .Nav "profiles" "certs" "secrets"}} active{{end}}">
+                <a class="nav-link dropdown-toggle" href="#navbar-signing" id="navbar-signing" data-bs-toggle="dropdown" role="button" aria-expanded="false"><span class="nav-link-icon">{{icon "signature"}}</span><span class="nav-link-title">Signing</span></a>
+                <div class="dropdown-menu" aria-labelledby="navbar-signing">
+                  {{if $.Can "read"}}<a class="dropdown-item{{if eq $.Nav "profiles"}} active{{end}}" href="/profiles"{{if eq $.Nav "profiles"}} aria-current="page"{{end}}>{{icon "users"}}<span class="ms-2">Profiles</span></a>{{end}}
+                  {{if $.Can "read"}}<a class="dropdown-item{{if eq $.Nav "certs"}} active{{end}}" href="/certs"{{if eq $.Nav "certs"}} aria-current="page"{{end}}>{{icon "certificate"}}<span class="ms-2">Certificates</span></a>{{end}}
+                  {{if $.Can "secrets"}}<a class="dropdown-item{{if eq $.Nav "secrets"}} active{{end}}" href="/secrets"{{if eq $.Nav "secrets"}} aria-current="page"{{end}}>{{icon "key"}}<span class="ms-2">Secrets</span></a>{{end}}
+                </div>
+              </li>{{end}}
+              {{if .Can "admin"}}<li class="nav-item dropdown{{if eq .Nav "tokens" "webhooks"}} active{{end}}">
+                <a class="nav-link dropdown-toggle" href="#navbar-server" id="navbar-server" data-bs-toggle="dropdown" role="button" aria-expanded="false"><span class="nav-link-icon">{{icon "server"}}</span><span class="nav-link-title">Server</span></a>
+                <div class="dropdown-menu" aria-labelledby="navbar-server">
+                  {{if $.Can "admin"}}<a class="dropdown-item{{if eq $.Nav "tokens"}} active{{end}}" href="/tokens"{{if eq $.Nav "tokens"}} aria-current="page"{{end}}>{{icon "license"}}<span class="ms-2">API tokens</span></a>{{end}}
+                  {{if $.Can "admin"}}<a class="dropdown-item{{if eq $.Nav "webhooks"}} active{{end}}" href="/webhooks"{{if eq $.Nav "webhooks"}} aria-current="page"{{end}}>{{icon "bolt"}}<span class="ms-2">Webhooks</span></a>{{end}}
+                </div>
+              </li>{{end}}
+              {{if or (.Can "events") (.Can "read")}}<li class="nav-item dropdown{{if eq .Nav "events" "audit"}} active{{end}}">
+                <a class="nav-link dropdown-toggle" href="#navbar-activity" id="navbar-activity" data-bs-toggle="dropdown" role="button" aria-expanded="false"><span class="nav-link-icon">{{icon "activity"}}</span><span class="nav-link-title">Activity</span></a>
+                <div class="dropdown-menu" aria-labelledby="navbar-activity">
+                  {{if $.Can "events"}}<a class="dropdown-item{{if eq $.Nav "events"}} active{{end}}" href="/events"{{if eq $.Nav "events"}} aria-current="page"{{end}}>{{icon "history"}}<span class="ms-2">Events</span></a>{{end}}
+                  {{if $.Can "read"}}<a class="dropdown-item{{if eq $.Nav "audit"}} active{{end}}" href="/audit"{{if eq $.Nav "audit"}} aria-current="page"{{end}}>{{icon "report-search"}}<span class="ms-2">Audit</span></a>{{end}}
+                </div>
+              </li>{{end}}
+              {{if .Can "read"}}<li class="nav-item dropdown{{if eq .Nav "doctor" "about"}} active{{end}}">
+                <a class="nav-link dropdown-toggle" href="#navbar-system" id="navbar-system" data-bs-toggle="dropdown" role="button" aria-expanded="false"><span class="nav-link-icon">{{icon "settings"}}</span><span class="nav-link-title">System</span></a>
+                <div class="dropdown-menu" aria-labelledby="navbar-system">
+                  {{if $.Can "read"}}<a class="dropdown-item{{if eq $.Nav "doctor"}} active{{end}}" href="/doctor"{{if eq $.Nav "doctor"}} aria-current="page"{{end}}>{{icon "stethoscope"}}<span class="ms-2">Doctor</span></a>{{end}}
+                  {{if $.Can "read"}}<a class="dropdown-item{{if eq $.Nav "about"}} active{{end}}" href="/about"{{if eq $.Nav "about"}} aria-current="page"{{end}}>{{icon "info-circle"}}<span class="ms-2">About</span></a>{{end}}
+                </div>
+              </li>{{end}}
+            </ul>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </header>
+  {{end}}
+  <div class="page-wrapper">
+    <main id="main" class="page-body" tabindex="-1">
+      <div class="container-xl">
+        {{template "content" .}}
+      </div>
+    </main>
+    <footer class="footer footer-transparent d-print-none">
+      <div class="container-xl">
+        <div class="row text-center align-items-center flex-row-reverse">
+          <div class="col-lg-auto ms-lg-auto">
+            <ul class="list-inline list-inline-dots mb-0">
+              {{if .Can "read"}}<li class="list-inline-item"><a href="/about" class="link-secondary">About</a></li>{{end}}
+              <li class="list-inline-item"><a href="https://github.com/sangehq/imprimatur/tree/main/docs" class="link-secondary" rel="noopener">Documentation</a></li>
+              <li class="list-inline-item"><a href="https://github.com/sangehq/imprimatur" class="link-secondary" rel="noopener">Source</a></li>
+              {{if .Can "read"}}<li class="list-inline-item"><a href="/about#licences" class="link-secondary">Licences</a></li>{{end}}
+            </ul>
+          </div>
+          <div class="col-12 col-lg-auto mt-3 mt-lg-0">
+            <ul class="list-inline list-inline-dots mb-0">
+              <li class="list-inline-item">Copyright &copy; {{.Year}} Simtabi LLC</li>
+              <li class="list-inline-item"><span class="text-secondary">impr</span> {{.Version}}</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
+  {{template "toasts" .}}
+  {{if .Authed}}{{template "side_panel" .}}{{end}}
+</div>
+{{if .Authed}}{{template "palette" .}}{{end}}
+<script src="{{asset "vendor/tabler/tabler.min.js"}}" defer></script>
+<script type="module" src="{{asset "app.js"}}"></script>
+</body>
+</html>
+{{end}}

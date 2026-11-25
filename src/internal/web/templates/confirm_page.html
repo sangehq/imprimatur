@@ -1,0 +1,19 @@
+{{define "content"}}{{with .Data}}
+<div class="container-tight py-4">
+  <div class="card">
+    <div class="card-status-top bg-danger"></div>
+    <div class="card-body text-center">
+      <div class="text-danger mb-2" aria-hidden="true">{{icon "alert-triangle"}}</div>
+      <h1 class="h2">{{.Title}}</h1>
+      <p class="text-secondary">{{.Text}}</p>
+      <form method="post" action="{{.Action}}">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <div class="btn-list justify-content-center">
+          <a href="/" class="btn">Cancel</a>
+          <button type="submit" class="btn btn-danger" name="confirm" value="yes">{{.Label}}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{{end}}{{end}}

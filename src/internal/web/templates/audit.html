@@ -1,0 +1,20 @@
+{{define "content"}}{{with .Data}}
+<div class="page-header d-print-none mb-3">
+  <div class="page-pretitle">Activity</div>
+  <h1 class="page-title">Audit</h1>
+  <div class="text-secondary">Every impr command, from <code>impr audit tail</code>, newest first.</div>
+</div>
+{{template "err" .Err}}
+<div class="card mb-3"><div class="card-body">
+  {{if .VerifyErr}}<span class="badge badge-bad">{{icon "alert-triangle"}} Does not verify</span> <span class="ms-1">{{.VerifyErr}}</span>
+  {{else if .Verify.OK}}<span class="badge badge-ok">{{icon "shield-check"}} Verified</span> <span class="ms-1">Checked {{.Verify.Checked}} records: none was edited.</span>
+  {{else}}<span class="badge badge-bad">{{icon "alert-triangle"}} Does not verify</span>{{end}}
+</div></div>
+<div class="card">
+  {{if .Records}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">
+    <thead><tr><th>Time</th><th>Command</th><th>Exit</th><th>User</th></tr></thead>
+    <tbody>{{range .Records}}<tr><td data-label="Time">{{.When}}</td><td data-label="Command"><code>impr {{.Data.Command}}</code></td>
+      <td data-label="Exit">{{with .Data.ExitCode}}{{.}}{{end}}</td><td data-label="User">{{.Data.User}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}{{template "empty" (empty "report-search" "No audit records" "Every impr command is recorded here.")}}{{end}}
+</div>
+{{end}}{{end}}

@@ -74,6 +74,21 @@ Because a store reference resolves to a name, it is refused where impr needs the
 A value that is key material is written to an owner-only temporary file for
 the one tool call that needs it and removed afterwards. Nothing is printed.
 
+## The web UI
+
+Two settings under `server.web` in `config.json` shape the [web UI](tools/web-ui.md). `impr config set`
+checks each value, and `impr serve` reads them when it starts.
+
+| Key | Values | Default | Effect |
+| --- | --- | --- | --- |
+| `server.web.tokenAccess` | `secrets`, `scopes` | `secrets` | What signing in with an API token at `/signin` reaches: the Secrets page only, or whatever the token's scopes allow ([web UI](tools/web-ui.md#signing-in)) |
+| `server.web.webhookAdmin` | `allowAdmin`, `owner` | `allowAdmin` | Whether adding or removing a webhook in the web UI needs `server.allowAdmin`, as over the API, or is open to the owner signed in with `impr serve`'s link |
+
+```bash
+impr config set server.web.tokenAccess scopes
+impr config set server.allowAdmin true          # or: impr config set server.web.webhookAdmin owner
+```
+
 ## Environment variables
 
 | Variable | Effect |

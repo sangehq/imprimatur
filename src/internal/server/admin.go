@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -82,29 +84,50 @@ func (s *server) webhookAdd(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, contract.Usage, "the request is not a webhook: %v", err)
 		return
 	}
+	args, err := WebhookArgs(q)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, contract.Usage, "%v", err)
+		return
+	}
+	s.run(w, r, args...)
+}
+
+// WebhookArgs checks a webhook and returns its impr webhooks add command line
+// (without --json). The API and the web UI both add webhooks through it, so
+// both refuse the same requests.
+func WebhookArgs(q WebhookRequest) ([]string, error) {
 	switch {
-	case !s.nameRe.MatchString(q.Name):
-		writeErr(w, http.StatusBadRequest, contract.Usage, "name is lower-case letters, digits, . _ -")
-		return
+	case !ValidName(q.Name):
+		return nil, errors.New("name is lower-case letters, digits, . _ -")
 	case !strings.HasPrefix(q.URL, "https://") && !strings.HasPrefix(q.URL, "http://"):
-		writeErr(w, http.StatusBadRequest, contract.Usage, "url is an https URL")
-		return
+		return nil, errors.New("url is an https URL")
 	case !refRe.MatchString(q.SecretRef):
-		writeErr(w, http.StatusBadRequest, contract.Usage, "secretRef is a secret:// or env:// reference, never the secret")
-		return
+		return nil, errors.New("secretRef is a secret:// or env:// reference, never the secret")
 	}
 	args := []string{"webhooks", "add", q.Name, "--url=" + q.URL, "--secret-ref=" + q.SecretRef}
 	for _, t := range q.Types {
-		if !typeGlobRe.MatchString(t) || strings.HasPrefix(t, "-") || !events.KnownGlob(t) {
-			writeErr(w, http.StatusBadRequest, contract.Usage, "%q is not an event type glob", t)
-			return
+		if !ValidTypeGlob(t) {
+			return nil, fmt.Errorf("%q is not an event type glob", t)
 		}
 		args = append(args, "--types="+t)
 	}
 	if q.AllowPrivate {
 		args = append(args, "--allow-private")
 	}
-	s.run(w, r, args...)
+	return args, nil
+}
+
+// nameRe is a profile or webhook name, as every handler checks one.
+var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,62}$`)
+
+// ValidName reports whether name is a profile or webhook name the API
+// accepts.
+func ValidName(name string) bool { return nameRe.MatchString(name) }
+
+// ValidTypeGlob reports whether g is an event type glob that matches a known
+// event type, and cannot be read as an option.
+func ValidTypeGlob(g string) bool {
+	return typeGlobRe.MatchString(g) && !strings.HasPrefix(g, "-") && events.KnownGlob(g)
 }
 
 func (s *server) webhookRemove(w http.ResponseWriter, r *http.Request) {

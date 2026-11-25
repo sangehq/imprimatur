@@ -1,0 +1,25 @@
+{{define "content"}}{{with .Data}}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <div class="page-pretitle">Signing</div>
+      <h1 class="page-title">Certificates</h1>
+      <div class="text-secondary">The certificates and keys the profiles use, from <code>impr cert list</code>.</div>
+    </div>
+    {{if $.Can "admin"}}<div class="col-auto ms-auto"><a href="/certs/new" class="btn btn-primary" data-inline>{{icon "plus"}}<span class="ms-1">Create a test certificate</span></a></div>{{end}}
+  </div>
+</div>
+{{template "err" .Err}}
+{{template "config_off" $}}
+<div class="card">
+  {{if .List.Certificates}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">
+    <thead><tr><th>Profile</th><th>Platform</th><th>Subject</th><th>Expires</th><th>Thumbprint</th></tr></thead>
+    <tbody>{{range .List.Certificates}}<tr>
+      <td data-label="Profile"><a href="/profiles/{{.Profile}}">{{.Profile}}</a></td>
+      <td data-label="Platform">{{.Platform}}</td>
+      <td data-label="Subject">{{.Subject}}</td>
+      <td data-label="Expires">{{if .NotAfter.IsZero}}<span class="text-secondary">unknown</span>{{else}}{{.NotAfter.Format "2006-01-02"}}{{if .NotAfter.Before $.Data.Now}} <span class="badge badge-bad">expired</span>{{end}}{{end}}{{if not .Present}} <span class="badge badge-warn">missing</span>{{end}}</td>
+      <td data-label="Thumbprint"><code>{{.Thumbprint}}</code></td></tr>{{end}}</tbody>
+  </table></div>{{else}}{{template "empty" (empty "certificate" "No certificates" "Create a test certificate to try signing, or add a profile that names yours.")}}{{end}}
+</div>
+{{end}}{{end}}
