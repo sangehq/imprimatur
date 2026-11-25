@@ -112,12 +112,6 @@ func (s *Server) originAllowed(r *http.Request) bool {
 	return s.hostAllowed(u.Host) && strings.EqualFold(u.Host, r.Host)
 }
 
-// renderError answers with a status and a message.
-func (s *Server) renderError(w http.ResponseWriter, _ *http.Request, status int, heading, message string) {
-	w.Header().Set("Cache-Control", "no-store")
-	http.Error(w, heading+": "+message, status)
-}
-
 func (s *Server) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

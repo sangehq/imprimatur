@@ -29,20 +29,33 @@ type Options struct {
 	// never the query.
 	Log   func(format string, args ...any)
 	Debug func(format string, args ...any)
+	// User and Host are who the server runs as and where, for the user menu.
+	User, Host string
 }
 
 // Server is the web UI.
 type Server struct {
 	opts    Options
+	assets  *assetSet
+	pages   pageSet
 	handler http.Handler
 }
 
-// New builds a Server.
+// New builds a Server. It parses every template once, so a template error is
+// a start-up error, not a 500 on the first visit.
 func New(opts Options) (*Server, error) {
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
-	s := &Server{opts: opts}
+	assets, err := loadAssets()
+	if err != nil {
+		return nil, err
+	}
+	pages, err := parsePages(assets)
+	if err != nil {
+		return nil, err
+	}
+	s := &Server{opts: opts, assets: assets, pages: pages}
 	s.handler = s.logRequests(securityHeaders(s.hostCheck(s.sameOrigin(s.routes()))))
 	return s, nil
 }

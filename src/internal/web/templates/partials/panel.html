@@ -1,0 +1,14 @@
+{{/* "panel" frames a page for the side panel: its content alone, with its
+     title for the panel's header. "side_panel" is the panel's empty shell,
+     on every signed-in page. Without the script, every link that would open
+     in it goes to its own page, which works the same. */}}
+{{define "panel"}}<div data-panel-page data-title="{{.Title}}">{{template "content" .}}</div>{{end}}
+
+{{define "side_panel"}}<div class="offcanvas offcanvas-end side-panel" tabindex="-1" id="side-panel" aria-labelledby="side-panel-title" data-side-panel>
+  <div class="offcanvas-header gap-2">
+    <h2 class="offcanvas-title h3" id="side-panel-title" data-side-panel-title>Panel</h2>
+    <a class="btn btn-icon btn-ghost-secondary ms-auto" href="/" data-side-panel-full aria-label="Open as a page" title="Open as a page">{{icon "external-link"}}</a>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close" title="Close"></button>
+  </div>
+  <div class="offcanvas-body" data-side-panel-body aria-live="polite"></div>
+</div>{{end}}

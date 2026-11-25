@@ -1,0 +1,7 @@
+{{/* Tabler's empty state, for a list with nothing in it yet:
+     {{template "empty" (empty "icon" "Title" "What to do about it")}}. */}}
+{{define "empty"}}<div class="empty py-4">
+  <div class="empty-icon" aria-hidden="true">{{icon .Icon}}</div>
+  <p class="empty-title">{{.Title}}</p>
+  {{if .Text}}<p class="empty-subtitle text-secondary">{{.Text}}</p>{{end}}
+</div>{{end}}

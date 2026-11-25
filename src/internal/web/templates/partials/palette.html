@@ -1,0 +1,58 @@
+{{/* The command palette (Ctrl+K or ⌘K): a Tabler modal listing every page and
+     every form that opens in the side panel, each with its shortcut.
+     js/palette.js filters it as you type; without the script the links are
+     still links. The shortcuts sheet (?) reads the same data-palette-keys. */}}
+{{define "palette"}}<div class="modal fade palette-modal" id="command-palette" tabindex="-1" aria-labelledby="command-palette-title" aria-hidden="true" data-command-palette>
+  <div class="modal-dialog modal-lg" role="document">
+    <div class="modal-content">
+      <h2 class="visually-hidden" id="command-palette-title">Go to</h2>
+      <div class="palette-search">
+        <span class="palette-search-icon" aria-hidden="true">{{icon "search"}}</span>
+        <input type="text" class="palette-input" placeholder="Search pages and actions…" aria-label="Go to a page or an action" role="combobox" aria-expanded="true" aria-controls="command-palette-list" aria-autocomplete="list" autocomplete="off" spellcheck="false" data-palette-input>
+        <button type="button" class="palette-esc" data-bs-dismiss="modal" aria-label="Close" title="Close"><kbd>Esc</kbd></button>
+      </div>
+      <div class="palette-list" id="command-palette-list" role="listbox" aria-label="Pages and actions">
+        <div class="palette-section" role="group" aria-label="Pages" data-palette-section>
+          <div class="palette-heading" aria-hidden="true">Pages</div>
+          <a class="palette-item" href="/" role="option" aria-selected="false" data-palette-item data-palette-keys="g o" data-palette-keywords="home overview dashboard">{{icon "layout-dashboard"}}<span class="palette-label">Overview</span><kbd>g o</kbd></a>
+          <a class="palette-item" href="/profiles" role="option" aria-selected="false" data-palette-item data-palette-keys="g p" data-palette-keywords="signing profile default validate capabilities">{{icon "users"}}<span class="palette-label">Profiles</span><kbd>g p</kbd></a>
+          <a class="palette-item" href="/certs" role="option" aria-selected="false" data-palette-item data-palette-keys="g c" data-palette-keywords="certificate expiry thumbprint">{{icon "certificate"}}<span class="palette-label">Certificates</span><kbd>g c</kbd></a>
+          <a class="palette-item" href="/secrets" role="option" aria-selected="false" data-palette-item data-palette-keys="g s" data-palette-keywords="secret key p8 notary env">{{icon "key"}}<span class="palette-label">Secrets</span><kbd>g s</kbd></a>
+          <a class="palette-item" href="/tokens" role="option" aria-selected="false" data-palette-item data-palette-keys="g t" data-palette-keywords="api token scopes revoke">{{icon "license"}}<span class="palette-label">API tokens</span><kbd>g t</kbd></a>
+          <a class="palette-item" href="/webhooks" role="option" aria-selected="false" data-palette-item data-palette-keys="g w" data-palette-keywords="webhook delivery retry test">{{icon "bolt"}}<span class="palette-label">Webhooks</span><kbd>g w</kbd></a>
+          <a class="palette-item" href="/events" role="option" aria-selected="false" data-palette-item data-palette-keys="g e" data-palette-keywords="events log live stream">{{icon "history"}}<span class="palette-label">Events</span><kbd>g e</kbd></a>
+          <a class="palette-item" href="/audit" role="option" aria-selected="false" data-palette-item data-palette-keys="g a" data-palette-keywords="audit trail verify">{{icon "report-search"}}<span class="palette-label">Audit</span><kbd>g a</kbd></a>
+          <a class="palette-item" href="/doctor" role="option" aria-selected="false" data-palette-item data-palette-keys="g d" data-palette-keywords="doctor health tools problems">{{icon "stethoscope"}}<span class="palette-label">Doctor</span><kbd>g d</kbd></a>
+          <a class="palette-item" href="/about" role="option" aria-selected="false" data-palette-item data-palette-keys="g i" data-palette-keywords="about version licences paths companion">{{icon "info-circle"}}<span class="palette-label">About</span><kbd>g i</kbd></a>
+        </div>
+        <div class="palette-section" role="group" aria-label="Actions" data-palette-section>
+          <div class="palette-heading" aria-hidden="true">Actions</div>
+          <a class="palette-item" href="/certs/new" role="option" aria-selected="false" data-palette-item data-inline data-palette-keys="n c" data-palette-keywords="new create test certificate">{{icon "plus"}}<span class="palette-label">Create a test certificate</span><kbd>n c</kbd></a>
+          <a class="palette-item" href="/secrets/new" role="option" aria-selected="false" data-palette-item data-inline data-palette-keys="n s" data-palette-keywords="new store secret p8 key">{{icon "plus"}}<span class="palette-label">Store a secret</span><kbd>n s</kbd></a>
+          <a class="palette-item" href="/tokens/new" role="option" aria-selected="false" data-palette-item data-inline data-palette-keys="n t" data-palette-keywords="new add api token">{{icon "plus"}}<span class="palette-label">Add an API token</span><kbd>n t</kbd></a>
+          <a class="palette-item" href="/webhooks/new" role="option" aria-selected="false" data-palette-item data-inline data-palette-keys="n w" data-palette-keywords="new add webhook">{{icon "plus"}}<span class="palette-label">Add a webhook</span><kbd>n w</kbd></a>
+        </div>
+        <div class="palette-empty" role="status" aria-live="polite" data-palette-empty hidden>Nothing matches.</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="keyboard-shortcuts" tabindex="-1" aria-labelledby="keyboard-shortcuts-title" aria-hidden="true" data-shortcuts>
+  <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title" id="keyboard-shortcuts-title">Keyboard shortcuts</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" title="Close"></button>
+      </div>
+      <div class="modal-body">
+        <dl class="shortcuts-list">
+          <dt><kbd data-palette-hint>Ctrl K</kbd></dt><dd>Search pages and actions</dd>
+          <dt><kbd>?</kbd></dt><dd>This list</dd>
+          <dt><kbd>Esc</kbd></dt><dd>Close a dialog or the side panel</dd>
+        </dl>
+        <dl class="shortcuts-list" data-shortcuts-list></dl>
+        <p class="text-secondary small mb-0">Shortcuts never fire while you type in a field.</p>
+      </div>
+    </div>
+  </div>
+</div>{{end}}
