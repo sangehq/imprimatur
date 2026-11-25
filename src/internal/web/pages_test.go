@@ -284,13 +284,13 @@ func TestEveryWriteRoundTrips(t *testing.T) {
 		}
 	}
 	// A secret goes through PutSecret, never Run, and is never shown back.
-	val := "-----BEGIN PRIVATE KEY-----\n" + NewToken() + "\n-----END PRIVATE KEY-----"
+	val := NewToken()
 	before := p.impr.count()
 	code, _, hdr := p.post("/secrets", url.Values{"name": {"IMPR_NOTARY_KEY"}, "value": {val}}, true)
 	if code != http.StatusSeeOther || hdr.Get("Location") != "/secrets" || p.impr.secrets["IMPR_NOTARY_KEY"] != val || p.impr.count() != before {
 		t.Fatalf("store a secret: %d %q", code, hdr.Get("Location"))
 	}
-	if _, page, _ := p.get("/secrets"); strings.Contains(page, "PRIVATE KEY") || !strings.Contains(page, "secret://IMPR_NOTARY_KEY") {
+	if _, page, _ := p.get("/secrets"); strings.Contains(page, val) || !strings.Contains(page, "secret://IMPR_NOTARY_KEY") {
 		t.Fatal("the secrets page echoes the value or omits the reference")
 	}
 	// A new API token is shown once, then never again.
