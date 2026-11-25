@@ -143,18 +143,8 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 		Emit: func(short, subject string, data map[string]any) {
 			a.bus().Emit(context.Background(), short, subject, data)
 		},
-		PutSecret: a.PutSecret,
-		ListSecrets: func() ([]server.UISecret, error) {
-			m, err := secrets.ReadEnvFile(filepath.Join(d.Config, paths.EnvFile))
-			if err != nil {
-				return nil, err
-			}
-			out := make([]server.UISecret, 0, len(m))
-			for k, v := range m {
-				out = append(out, server.UISecret{Name: k, Ref: v})
-			}
-			return out, nil
-		}})
+		PutSecret:   a.PutSecret,
+		ListSecrets: func() ([]server.UISecret, error) { return envSecrets(d.Config) }})
 	srv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 60 * time.Second,
 		WriteTimeout: 35 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 64 << 10}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -387,4 +377,18 @@ func serverTLS(t config.ServerTLS) (*tls.Config, error) {
 	}
 	return &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert},
 		ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}, nil
+}
+
+// envSecrets lists the secrets the config's .env names, by name and
+// reference, for the secrets pages.
+func envSecrets(configDir string) ([]server.UISecret, error) {
+	m, err := secrets.ReadEnvFile(filepath.Join(configDir, paths.EnvFile))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]server.UISecret, 0, len(m))
+	for k, v := range m {
+		out = append(out, server.UISecret{Name: k, Ref: v})
+	}
+	return out, nil
 }
