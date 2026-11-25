@@ -265,3 +265,34 @@ func TestALinkNeedsTheControlKey(t *testing.T) {
 		t.Fatalf("healthz: %s", h.Body)
 	}
 }
+
+// A browser signed in with an API token that opens the owner's one-time link
+// becomes the owner: a new session, the token one ended. A browser already
+// signed in with a link only drops a new link from the address.
+func TestALinkReplacesATokenSession(t *testing.T) {
+	f := newFixture(t, nil)
+	body, hdr := form(url.Values{"token": {f.secrets}})
+	r := do(f.s.Handler(), "POST", "/signin", body, hdr)
+	tokCookie := strings.SplitN(r.Header().Get("Set-Cookie"), ";", 2)[0]
+	link := NewLink(f.s)
+	r = do(f.s.Handler(), "GET", "/doctor?token="+link.Token, nil, map[string]string{"Cookie": tokCookie})
+	owner := strings.SplitN(r.Header().Get("Set-Cookie"), ";", 2)[0]
+	if r.Code != http.StatusSeeOther || owner == "" || owner == tokCookie {
+		t.Fatalf("the link did not replace the token session: %d %q", r.Code, owner)
+	}
+	if r := do(f.s.Handler(), "GET", "/no-such-page", nil, map[string]string{"Cookie": tokCookie}); r.Code != http.StatusUnauthorized {
+		t.Fatalf("the token session lived on: %d", r.Code)
+	}
+	if r := do(f.s.Handler(), "GET", "/no-such-page", nil, map[string]string{"Cookie": owner}); r.Code != http.StatusNotFound {
+		t.Fatalf("the owner session: %d", r.Code)
+	}
+	// An owner session opening another link keeps its session; the link is spent.
+	again := NewLink(f.s)
+	r = do(f.s.Handler(), "GET", "/?token="+again.Token, nil, map[string]string{"Cookie": owner})
+	if r.Code != http.StatusSeeOther || r.Header().Get("Set-Cookie") != "" {
+		t.Fatalf("an owner session opening a link: %d %q", r.Code, r.Header().Get("Set-Cookie"))
+	}
+	if r := do(f.s.Handler(), "GET", "/?token="+again.Token, nil, nil); r.Code != http.StatusUnauthorized {
+		t.Fatalf("the spent link signed another browser in: %d", r.Code)
+	}
+}

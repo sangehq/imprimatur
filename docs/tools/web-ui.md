@@ -52,7 +52,8 @@ impr serve --verbose        # log page views too, not only changes
     with scopes it holds itself. Storing a secret needs the `secrets` scope only.
 
   Pages, menu entries, palette entries and buttons the session cannot use are not shown, and a request
-  for one answers 403. The one-time link's session reaches everything.
+  for one answers 403. The one-time link's session reaches everything, and a browser signed in with a
+  token that opens the link becomes the owner's: a new session, the token one ended.
 
 ## Pages
 

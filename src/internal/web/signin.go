@@ -107,7 +107,16 @@ func (s *Server) auth(next http.Handler) http.Handler {
 			// that name.
 			if sess := s.cookieSession(r); sess != nil {
 				if r.Method == http.MethodGet {
-					s.links.take(tok, s.now())
+					// A valid link opened by a browser signed in with an API token
+					// makes it the owner's: a new session, the token one ended.
+					if s.links.take(tok, s.now()) && sess.tokenID != "" {
+						if c, err := r.Cookie(SessionCookie); err == nil {
+							s.sessions.end(c.Value)
+						}
+						id, _ := s.sessions.create(s.now(), "", nil)
+						s.setSessionCookie(w, r, id)
+						s.logf("web       signed in with a sign-in link, in place of an API token session")
+					}
 					redirectWithoutToken(w, r)
 					return
 				}
