@@ -1,0 +1,27 @@
+{{/* A Tabler danger modal that confirms a destructive action. The trigger is
+     the form's own submit button with data-confirm="<modal id>"; app.js opens
+     the modal instead of submitting, and the modal's button submits the form
+     with confirm=yes. Without the script, the server answers the form with a
+     confirmation page of its own, so nothing is destroyed unasked either way:
+     {{template "confirm" (confirm "modal-id" "form-id" "Title" "What it does" "Button")}}. */}}
+{{define "confirm"}}<div class="modal modal-blur fade" id="{{.ID}}" tabindex="-1" aria-labelledby="{{.ID}}-title" aria-hidden="true">
+  <div class="modal-dialog modal-sm modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" title="Close"></button>
+      <div class="modal-status bg-danger"></div>
+      <div class="modal-body text-center py-4">
+        <div class="text-danger mb-2" aria-hidden="true">{{icon "alert-triangle"}}</div>
+        <h3 id="{{.ID}}-title">{{.Title}}</h3>
+        <div class="text-secondary">{{.Text}}</div>
+      </div>
+      <div class="modal-footer">
+        <div class="w-100">
+          <div class="row g-2">
+            <div class="col"><button type="button" class="btn w-100" data-bs-dismiss="modal">Cancel</button></div>
+            <div class="col"><button type="submit" class="btn btn-danger w-100" form="{{.Form}}" name="confirm" value="yes">{{.Label}}</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>{{end}}

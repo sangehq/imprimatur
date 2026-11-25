@@ -1,0 +1,31 @@
+{{define "content"}}{{with .Data}}
+<div class="page-header d-print-none mb-3">
+  <div class="page-pretitle">System</div>
+  <h1 class="page-title">Doctor</h1>
+  <div class="text-secondary">What <code>impr doctor</code> finds on this machine{{if .Doctor.Version}}, impr {{.Doctor.Version}}{{end}}.</div>
+</div>
+{{template "err" .Err}}
+<div class="card mb-3"><div class="card-body">
+  {{if .Doctor.OK}}<span class="badge badge-ok">{{icon "circle-check"}} No problems</span>{{else}}<span class="badge badge-warn">{{icon "alert-triangle"}} {{len .Doctor.Problems}} problem(s)</span>{{end}}
+  {{if .Doctor.DefaultProfile}}<span class="ms-2">Default profile: <a href="/profiles/{{.Doctor.DefaultProfile}}">{{.Doctor.DefaultProfile}}</a></span>{{end}}
+</div></div>
+{{if .Doctor.Problems}}<div class="card mb-3"><div class="card-header"><h2 class="card-title">Problems</h2></div>
+  <ul class="list-group list-group-flush">{{range .Doctor.Problems}}<li class="list-group-item">{{.}}</li>{{end}}</ul></div>{{end}}
+{{if .Doctor.Notes}}<div class="card mb-3"><div class="card-header"><h2 class="card-title">Notes</h2></div>
+  <ul class="list-group list-group-flush">{{range .Doctor.Notes}}<li class="list-group-item">{{.}}</li>{{end}}</ul></div>{{end}}
+{{if .Doctor.Profiles}}<div class="card mb-3"><div class="card-header"><h2 class="card-title">Profiles</h2></div>
+  <div class="table-responsive"><table class="table table-vcenter card-table table-stack">
+    <thead><tr><th>Profile</th><th>Valid</th><th>Ready to sign here</th></tr></thead>
+    <tbody>{{range .Doctor.Profiles}}<tr><td data-label="Profile"><a href="/profiles/{{.Name}}">{{.Name}}</a></td>
+      <td data-label="Valid">{{if .Valid}}<span class="badge badge-ok">valid</span>{{else}}<span class="badge badge-bad">not valid</span>{{end}}</td>
+      <td data-label="Ready">{{if .Ready}}{{join .Ready ", "}}{{else}}<span class="text-secondary">nothing</span>{{end}}</td></tr>{{end}}</tbody>
+  </table></div></div>{{end}}
+<div class="card"><div class="card-header"><h2 class="card-title">Tools</h2></div>
+  {{if .Doctor.Tools}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">
+    <thead><tr><th>Tool</th><th>Found at</th><th>Why impr runs it</th></tr></thead>
+    <tbody>{{range .Doctor.Tools}}<tr><td data-label="Tool"><code>{{.Name}}</code>{{if .Pinned}} <span class="badge badge-ok">pinned</span>{{end}}</td>
+      <td data-label="Found at">{{if .Path}}<code>{{.Path}}</code>{{else}}<span class="text-secondary">not installed</span>{{end}}</td>
+      <td data-label="Why">{{.Why}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}{{template "empty" (empty "tool" "No tools listed" "")}}{{end}}
+</div>
+{{end}}{{end}}

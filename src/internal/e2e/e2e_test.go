@@ -27,7 +27,7 @@ var (
 
 // minRun is the fewest e2e tests a full run must start, so a rename or a
 // skip that hides them fails instead of passing nothing.
-const minRun = 9
+const minRun = 10
 
 func TestMain(m *testing.M) {
 	flag.Parse()

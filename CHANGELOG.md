@@ -9,6 +9,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `impr serve` starts a web UI on `127.0.0.1:7823` beside the API (the next
+  free port when taken; `--port` pins it), following the sange and authama
+  web UI (design ID-34). It needs no API token: a one-time sign-in link
+  (10 minutes, single use, stripped from the address by a 303) is printed and,
+  at a desktop terminal, opened through an owner-only launch page; with nobody
+  at a terminal it goes to `<state>/web/signin-link` (0600). Sessions are
+  HttpOnly and `SameSite=Strict`, 8 hours idle or 24 hours; every change
+  carries a CSRF token and a same-origin check. Pages over the same commands
+  as the API: Overview, Doctor, Profiles, Certificates, Secrets, API tokens,
+  Webhooks, Events (live), Audit and About, with writes in a side panel,
+  remove and revoke behind a confirmation, a Ctrl-K palette and `?`
+  shortcuts. Tabler 1.7.5, its icons and Inter are vendored and embedded.
+  `--no-open`, `--no-web` (the API alone, as before) and `--verbose`. A
+  second `impr serve` at a terminal for the same API address opens the
+  running one with a fresh link (`<state>/web/serve.json`); any other (the
+  service unit, another address) starts its API and shares the running web
+  UI. A web UI that cannot start is logged and never stops the API. An API token with the `secrets` scope still
+  signs in, to the Secrets page only.
+- `server.web.tokenAccess` (`secrets`, the default, or `scopes`): with
+  `scopes`, an API token signed in to the web UI reaches what its scopes
+  allow (`read` the read-only pages, `secrets` the Secrets page, `events`
+  Events, `admin` the changes); what it cannot reach is hidden and answers
+  403 (owner, 2026-11-25). Its configuration changes also need
+  `server.allowAdmin`, as over the API, and it can only add tokens with
+  scopes it holds itself. The web UI reads the configured tokens live, at
+  each token sign-in and request: a token revoked with `impr server token
+  revoke` while `impr serve` runs stops working there at once, and an
+  unreadable config refuses token sessions (owner, 2026-11-25).
+- `server.web.webhookAdmin` (`allowAdmin`, the default, or `owner`): adding
+  or removing a webhook in the web UI needs `server.allowAdmin`, as over the
+  API, unless it is `owner`; when off, the controls stay visible but
+  disabled, with the reason and the setting to change, and a post answers
+  403 without running anything. Test and retry are not gated (owner,
+  2026-11-25).
+- `scripts/test-all.sh` checks the vendored web assets against
+  `MANIFEST.sha256`, and their versions against sange's and authama's.
+
 - An opt-in test (`IMPR_LIVE_KEYCHAIN=1`) checks `impr secret set`'s macOS
   path against the real login keychain: a throwaway item written, read back
   equal, deleted and gone. Run on 2026-11-23, it passed.
@@ -42,6 +79,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `azure-artifact-signing`) is proven for test and release purposes this way,
   and the Certum and Artifact Signing recipes cover test and release
   profiles and the real run.
+
+### Changed
+
+- Bare `impr serve` now starts the web UI as well as the API, and starts with
+  no API token configured; `--no-web` keeps the API-only behaviour and its
+  refusal without a token or inbound endpoint. `impr serve --check-config`
+  passes without a token unless `--no-web` is given.
+- The units `impr serve install-unit --print` writes run `impr serve
+  --no-open`, so the service never opens a browser.
+- The README and installation guide now offer the GitHub release download
+  (with its `checksums.txt` and attestation check) beside the source build,
+  and carry the release, CI and licence badges: they still said no version
+  was released and the repository was private.
+
+### Deprecated
+
+- The API listener's secrets page at `/ui/` is superseded by the web UI's
+  Secrets page. It still works as before, and may be removed no earlier than
+  v0.3.0.
 
 ## [0.2.0] - 2026-11-18
 

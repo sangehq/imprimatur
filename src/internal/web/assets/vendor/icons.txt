@@ -1,0 +1,39 @@
+# Tabler icons the web UI uses, by name (without the "tabler-" prefix). The
+# vendoring tool cuts exactly these out of @tabler/icons-sprite into
+# tabler-icons.svg, and fails if one no longer exists upstream. Add a name
+# here, then run `make tabler-vendor`.
+activity
+alert-triangle
+arrow-left
+ban
+bolt
+certificate
+circle-check
+copy
+external-link
+filter
+history
+info-circle
+key
+keyboard
+layout-dashboard
+license
+lock
+logout
+moon
+player-play
+plus
+refresh
+report-search
+search
+server
+settings
+shield-check
+signature
+star
+stethoscope
+sun
+tool
+trash
+user-circle
+users

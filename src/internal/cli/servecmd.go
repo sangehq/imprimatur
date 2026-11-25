@@ -29,9 +29,11 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/secrets"
 	"github.com/sangehq/imprimatur/src/internal/server"
+	"github.com/sangehq/imprimatur/src/internal/web"
 )
 
-var serveFlags = flagSpec{"listen": stringFlag, "check-config": boolFlag, "json": boolFlag, "yes": boolFlag}
+var serveFlags = flagSpec{"listen": stringFlag, "check-config": boolFlag, "json": boolFlag, "yes": boolFlag,
+	"port": stringFlag, "no-open": boolFlag, "no-web": boolFlag, "verbose": boolFlag}
 
 // runCaptured runs one command line in a copy of the app with its own output
 // buffers: what the API returns is what the CLI prints.
@@ -67,9 +69,17 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	if ps := cfg.Validate(); len(ps) > 0 {
 		return 0, contract.New(contract.Usage, "the server config is not valid").WithDetails(ps...)
 	}
-	if len(cfg.Server.Tokens) == 0 && len(cfg.Server.Inbound) == 0 {
+	// The web UI needs no API token (owner, 2026-11-25): it signs in with a
+	// one-time link. API-only, as before, a server nothing could call is
+	// refused.
+	noWeb := p.on("no-web")
+	if noWeb && len(cfg.Server.Tokens) == 0 && len(cfg.Server.Inbound) == 0 {
 		return 0, contract.New(contract.Usage, "no API token or inbound endpoint is configured, so nothing could call the server").
-			WithFix("impr server token add --scopes read,verify")
+			WithFix("impr server token add --scopes read,verify", "or leave out --no-web: the web UI signs in with a one-time link")
+	}
+	port, pinned, err := webPort(p)
+	if err != nil {
+		return 0, contract.Wrap(contract.Usage, err, "the web UI's port")
 	}
 	var tlsCfg *tls.Config
 	if cfg.Server.TLS != nil {
@@ -79,6 +89,9 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	}
 	if p.on("check-config") {
 		a.say("server    config ok: %d token(s), %d inbound endpoint(s), %d root(s), sign %v", len(cfg.Server.Tokens), len(cfg.Server.Inbound), len(cfg.Server.Roots), cfg.Server.AllowSign)
+		if !noWeb {
+			a.say("web       the web UI starts on 127.0.0.1:%d (or the next free port); the API answers 401 to any call without a token", port)
+		}
 		return 0, nil
 	}
 	if cfg.Server.Remote() && a.Interactive != nil && a.Interactive() && !p.on("yes") {
@@ -92,6 +105,39 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 		}
 		if answer != "yes" {
 			return 0, contract.New(contract.Usage, "not started")
+		}
+	}
+	// The web part never stops the API: whatever keeps it from starting is
+	// logged, and the API is served (review B1).
+	var wdir string
+	var wln net.Listener
+	var running *webInstance // a web UI another impr serve runs for this state directory
+	if !noWeb {
+		if wdir, err = webDir(d.State); err != nil {
+			a.say("web       not started: %v", err)
+		} else {
+			if r := readWebInstance(wdir); r != nil && r.alive() {
+				running = r
+			}
+			// At a terminal, an impr serve for the same API address as the
+			// running one only opens it with a fresh link. Anything else (the
+			// service unit, another address) starts its own API and opens the
+			// running web UI rather than a second one (review B2).
+			terminal := a.Interactive != nil && a.Interactive()
+			if running != nil && terminal && running.Listen == cfg.Server.Listen {
+				if a.openRunning(wdir, p.on("no-open")) {
+					return 0, nil
+				}
+				running = nil
+			}
+			if running == nil {
+				if wln, err = web.Listen(nil, "127.0.0.1", port, pinned, web.DefaultPortAttempts); err != nil {
+					a.say("web       not started: %v", err)
+					wln = nil
+				} else {
+					defer func() { _ = wln.Close() }()
+				}
+			}
 		}
 	}
 	ln, where, err := listen(d.State, cfg.Server.Listen)
@@ -114,18 +160,8 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 		Emit: func(short, subject string, data map[string]any) {
 			a.bus().Emit(context.Background(), short, subject, data)
 		},
-		PutSecret: a.PutSecret,
-		ListSecrets: func() ([]server.UISecret, error) {
-			m, err := secrets.ReadEnvFile(filepath.Join(d.Config, paths.EnvFile))
-			if err != nil {
-				return nil, err
-			}
-			out := make([]server.UISecret, 0, len(m))
-			for k, v := range m {
-				out = append(out, server.UISecret{Name: k, Ref: v})
-			}
-			return out, nil
-		}})
+		PutSecret:   a.PutSecret,
+		ListSecrets: func() ([]server.UISecret, error) { return envSecrets(d.Config) }})
 	srv := &http.Server{Handler: h, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 60 * time.Second,
 		WriteTimeout: 35 * time.Minute, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 64 << 10}
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -136,8 +172,19 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	if !cfg.Server.Remote() && cfg.Server.Listen != "" && cfg.Server.Listen != "unix" {
 		a.say("server    secrets page: http://%s/ui/ (sign in with a token holding the secrets scope)", cfg.Server.Listen)
 	}
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
 	go func() { errc <- srv.Serve(ln) }()
+	var webDone <-chan struct{}
+	if wln != nil {
+		webDone = a.startWeb(ctx, wln, wdir, cfg, d, p.on("verbose"), p.on("no-open"))
+	} else if running != nil {
+		a.say("web       already running for this state directory (pid %d, http://%s/); this impr serve uses it", running.PID, running.Addr)
+		if link, err := running.newLink(); err != nil {
+			a.say("web       not started: the running web UI gave no link: %v", err)
+		} else if err := a.showLink(wdir, link, running.Addr, p.on("no-open")); err != nil {
+			a.say("web       the sign-in link could not be written: %v", err)
+		}
+	}
 	// The long-running mode: answer impr notify ping, and check certificate
 	// expiry every six hours.
 	if n := a.notifier(); n != nil {
@@ -179,6 +226,10 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	shut, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shut)
+	if webDone != nil {
+		stop()    // ends ctx, if the API stopped first
+		<-webDone // the web UI shuts down with the API, and removes its record
+	}
 	bus.Emit(context.Background(), "server.stopped", "server", map[string]any{})
 	a.say("server    stopped")
 	return 0, nil
@@ -338,4 +389,18 @@ func serverTLS(t config.ServerTLS) (*tls.Config, error) {
 	}
 	return &tls.Config{MinVersion: tls.VersionTLS13, Certificates: []tls.Certificate{cert},
 		ClientAuth: tls.RequireAndVerifyClientCert, ClientCAs: pool}, nil
+}
+
+// envSecrets lists the secrets the config's .env names, by name and
+// reference, for the secrets pages.
+func envSecrets(configDir string) ([]server.UISecret, error) {
+	m, err := secrets.ReadEnvFile(filepath.Join(configDir, paths.EnvFile))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]server.UISecret, 0, len(m))
+	for k, v := range m {
+		out = append(out, server.UISecret{Name: k, Ref: v})
+	}
+	return out, nil
 }

@@ -1,22 +1,32 @@
 # sangehq/imprimatur
 
+[![Release](https://img.shields.io/github/v/release/sangehq/imprimatur)](https://github.com/sangehq/imprimatur/releases)
+[![CI](https://github.com/sangehq/imprimatur/actions/workflows/ci.yml/badge.svg)](https://github.com/sangehq/imprimatur/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 > Sign and verify release artifacts with named, scoped signing profiles, and render Windows allow rules for them.
 
-Go 1.27.4 or newer, built from source; runs on macOS, Linux and Windows. No registry version, Tests or Static analysis badge yet: no version has been released yet and the repository ([sangehq/imprimatur](https://github.com/sangehq/imprimatur)) is private, so there is nothing those badges could truthfully show. The licence is MIT.
+Go 1.27.4 or newer to build; runs on macOS, Linux, Windows and FreeBSD. There is no registry badge: binaries ship on the GitHub release only. The one CI workflow runs the tests and the static analysis (gofmt, vet, golangci-lint, govulncheck), so a single CI badge stands for both.
 
 ## Install
 
-No version has been released yet. Binaries will ship on the GitHub release
-only, never through a package manager or `go install`. Build from source:
+Download the binary for your platform from the [latest GitHub release](https://github.com/sangehq/imprimatur/releases/latest)
+(`impr_{os}_{arch}`, `.exe` on Windows) and check it against the release's `checksums.txt`:
+
+```bash
+sha256sum -c --ignore-missing checksums.txt   # shasum -a 256 -c on macOS
+```
+
+Or build from source:
 
 ```bash
 git clone https://github.com/sangehq/imprimatur.git
 cd imprimatur
-make build            # writes build/{macos,linux,windows}/impr
+make build            # writes build/{host-os}/impr
 ```
 
-Put `build/<your OS>/impr` on your `PATH`. To pin a version, check out its tag
-before building. See [installation](docs/installation.md).
+Put the binary on your `PATH`. impr is never published through a package manager or `go install`.
+See [installation](docs/installation.md).
 
 ## Quick start guide and usage
 
@@ -84,6 +94,7 @@ else is in the [documentation](#documentation) below.
 - [`impr config`](docs/tools/config.md) — layered configuration (system, user, configuration profiles) and locked keys
 - [`impr hooks`](docs/tools/hooks.md) — pinned programs that gate signing and verification or react to events
 - [`impr serve`](docs/tools/serve.md) — the REST API and signed inbound webhooks, over a private socket
+- [Web UI](docs/tools/web-ui.md) — the browser UI `impr serve` starts on 127.0.0.1:7823, signed in with a one-time link
 - [`impr webhooks`](docs/tools/webhooks.md) — signed Standard Webhooks deliveries of impr's events to other apps
 - [`impr audit`](docs/tools/audit.md) — the hash-chained record of every command that signs or changes configuration
 - [`impr notify`](docs/tools/notify.md) — desktop notifications for failures, vetoes and certificate expiry

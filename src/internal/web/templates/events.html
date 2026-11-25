@@ -1,0 +1,27 @@
+{{define "content"}}{{with .Data}}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <div class="page-pretitle">Activity</div>
+      <h1 class="page-title">Events</h1>
+      <div class="text-secondary">From the event log every impr writes, newest first. <span class="badge badge-muted" data-events-status role="status">As of loading</span></div>
+    </div>
+    <div class="col-auto ms-auto">
+      <form method="get" action="/events" class="d-flex gap-2" role="search">
+        <label class="visually-hidden" for="events-type">Event type</label>
+        <input class="form-control" id="events-type" name="type" value="{{.Type}}" placeholder="profile.*">
+        <button type="submit" class="btn">{{icon "filter"}}<span class="ms-1">Filter</span></button>
+      </form>
+    </div>
+  </div>
+</div>
+{{template "err" .Err}}
+<div class="card">
+  <div class="table-responsive"><table class="table table-vcenter card-table table-stack">
+    <thead><tr><th>Time</th><th>Type</th><th>Subject</th></tr></thead>
+    <tbody data-events-live data-events-src="/events/stream{{if .Type}}?type={{.Type}}{{end}}">
+      {{range .Events}}<tr><td data-label="Time">{{.When}}</td><td data-label="Type"><code>{{.Short}}</code></td><td data-label="Subject">{{.Subject}}</td></tr>{{else}}<tr data-events-empty><td colspan="3">{{template "empty" (empty "history" "No events yet" "They show here as they happen.")}}</td></tr>{{end}}
+    </tbody>
+  </table></div>
+</div>
+{{end}}{{end}}
