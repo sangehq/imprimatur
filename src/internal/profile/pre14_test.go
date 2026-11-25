@@ -31,7 +31,7 @@ func toolkit(t *testing.T, files map[string]string) string {
 // and so does an import from that toolkit, before reading them.
 func TestImportLegacyMovesPre14FilesIntoConfig(t *testing.T) {
 	root := toolkit(t, map[string]string{
-		LegacySettingsFile:      `{"WINDOWS_SIGNER":"Certum","CERTUM_SUBJECT":"Open Source Developer, Pat Doe"}`,
+		LegacySettingsFile:       `{"WINDOWS_SIGNER":"Certum","CERTUM_SUBJECT":"Open Source Developer, Pat Doe"}`,
 		".imprimatur-state.json": `{}`,
 		"metadata.json":          `{"Endpoint":"https://weu.codesigning.azure.net"}`,
 	})
