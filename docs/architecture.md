@@ -44,6 +44,12 @@ The module's dependencies outside the Go standard library are listed, each with 
   talks to Apple's notary API with its own standard-library client. 12 modules are compiled in, up
   from 2; the stripped binary grew by about 0.9 MB.
 
+Their licence texts, and the Go standard library's, are in `third-party-notices-go.md`, written by
+`make notices` from `go list -deps ./cmd/impr` and the module cache. It is a file of its own, beside
+the web UI's `third-party-notices.md`, because the Tabler tool rewrites that file whole: two files let
+each generator own one, deterministically. `scripts/test-all.sh` regenerates it in memory and fails on
+any difference, and both files ship as release assets beside the binaries.
+
 ## The backend port
 
 ```go

@@ -19,7 +19,10 @@ src/internal/guardtest repository guards
 build/                 targets.txt is tracked; everything else there is generated
 ```
 
-The module has no third-party dependencies. Adding one needs a reason in the pull request.
+The module keeps its dependencies few: each is listed with its reason in `docs/architecture.md` and in
+`src/internal/guardtest/deps_test.go`. Adding, removing or moving one needs a reason in the pull request
+and `make notices`, which rewrites `third-party-notices-go.md` (the licence of every Go module compiled
+into impr); `scripts/test-all.sh` fails while that file is out of date.
 
 ## Build and test
 

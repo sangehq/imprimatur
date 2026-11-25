@@ -24,7 +24,10 @@ gh workflow run release.yml --repo sangehq/imprimatur -f tag=vX.Y.Z
   section; that section becomes the release body.
 - The release carries one bare binary per line of `build/targets.txt`, named
   `impr_{os}_{arch}[.exe]` (`macos`, never `darwin`; `armv7` for 32-bit ARM),
-  and `checksums.txt` with bare file names:
+  the two licence notices files, `third-party-notices.md` (the web UI's
+  embedded assets) and `third-party-notices-go.md` (every Go module compiled
+  in, with its licence text), and `checksums.txt` with bare file names over
+  all of them:
 
   ```bash
   sha256sum -c --ignore-missing checksums.txt

@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `codesign` and `notarytool` are used as before. impr now depends on 12
   modules, up from 2.
 
+- `third-party-notices-go.md` lists every Go module compiled into impr with
+  its licence text, and the Go standard library's; `make notices` writes it,
+  the test gate fails while it is out of date, and each release ships it and
+  `third-party-notices.md` beside the binaries, in `checksums.txt`.
+
 - `impr init [--main PKG] [--force]`, as the PowerShell line had: it writes
   `build/targets.txt` with the old template's targets (in place of
   `.goreleaser.yaml`, which impr no longer reads), adds the build output to
