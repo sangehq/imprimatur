@@ -198,17 +198,30 @@ func (s *server) auth(scope string, next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// token finds the configured token whose sha256 equals the presented one's,
-// comparing every entry in constant time.
+// token finds the configured token whose sha256 equals the presented one's
+// (MatchToken).
 func (s *server) token(raw string) (config.Token, bool) {
 	if !s.tokenRe.MatchString(raw) {
+		return config.Token{}, false
+	}
+	return MatchToken(s.o.Config.Server.Tokens, raw)
+}
+
+// tokenShape is an API token: impr_ and 32 random bytes, base64url.
+var tokenShape = regexp.MustCompile(`^impr_[A-Za-z0-9_-]{43}$`)
+
+// MatchToken finds the token in tokens whose sha256 equals the presented
+// one's, comparing every entry in constant time. The web UI's token sign-in
+// uses it too, so both check a token the same way.
+func MatchToken(tokens []config.Token, raw string) (config.Token, bool) {
+	if !tokenShape.MatchString(raw) {
 		return config.Token{}, false
 	}
 	sum := sha256.Sum256([]byte(raw))
 	got := hex.EncodeToString(sum[:])
 	var match config.Token
 	found := false
-	for _, t := range s.o.Config.Server.Tokens {
+	for _, t := range tokens {
 		if subtle.ConstantTimeCompare([]byte(t.SHA256), []byte(got)) == 1 {
 			match, found = t, true
 		}
