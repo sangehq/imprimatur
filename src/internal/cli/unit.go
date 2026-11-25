@@ -191,7 +191,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=` + systemdQuote(u.Exe) + ` serve
+ExecStart=` + systemdQuote(u.Exe) + ` serve --no-open
 Restart=on-failure
 RestartSec=5
 UMask=0077
@@ -232,6 +232,7 @@ func LaunchdPlist(u Unit) string {
   <array>
     <string>` + xmlText(u.Exe) + `</string>
     <string>serve</string>
+    <string>--no-open</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
@@ -264,7 +265,7 @@ func TaskXML(u Unit) string {
     <Hidden>true</Hidden>
   </Settings>
   <Actions Context="Author">
-    <Exec><Command>` + xmlText(u.Exe) + `</Command><Arguments>serve</Arguments></Exec>
+    <Exec><Command>` + xmlText(u.Exe) + `</Command><Arguments>serve --no-open</Arguments></Exec>
   </Actions>
 </Task>
 `

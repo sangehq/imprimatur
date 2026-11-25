@@ -7,6 +7,7 @@ import "net/http"
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /assets/{hash}/{path...}", s.serveAsset)
+	mux.HandleFunc("GET /{$}", s.overview)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /signin", s.signinPage)
 	mux.HandleFunc("POST /signin", s.signinToken)

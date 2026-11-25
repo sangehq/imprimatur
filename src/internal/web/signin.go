@@ -102,9 +102,12 @@ func (s *Server) auth(next http.Handler) http.Handler {
 		tok := r.URL.Query().Get("token")
 		if tok != "" {
 			// A browser already signed in keeps its session; a link it carries
-			// is used up and dropped from the address.
+			// (a reload, a used link) is used up if it still works, and dropped
+			// from the address either way. No page here has a parameter of
+			// that name.
 			if sess := s.cookieSession(r); sess != nil {
-				if r.Method == http.MethodGet && s.links.take(tok, s.now()) {
+				if r.Method == http.MethodGet {
+					s.links.take(tok, s.now())
 					redirectWithoutToken(w, r)
 					return
 				}

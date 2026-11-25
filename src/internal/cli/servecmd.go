@@ -29,9 +29,11 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/paths"
 	"github.com/sangehq/imprimatur/src/internal/secrets"
 	"github.com/sangehq/imprimatur/src/internal/server"
+	"github.com/sangehq/imprimatur/src/internal/web"
 )
 
-var serveFlags = flagSpec{"listen": stringFlag, "check-config": boolFlag, "json": boolFlag, "yes": boolFlag}
+var serveFlags = flagSpec{"listen": stringFlag, "check-config": boolFlag, "json": boolFlag, "yes": boolFlag,
+	"port": stringFlag, "no-open": boolFlag, "no-web": boolFlag, "verbose": boolFlag}
 
 // runCaptured runs one command line in a copy of the app with its own output
 // buffers: what the API returns is what the CLI prints.
@@ -67,9 +69,17 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	if ps := cfg.Validate(); len(ps) > 0 {
 		return 0, contract.New(contract.Usage, "the server config is not valid").WithDetails(ps...)
 	}
-	if len(cfg.Server.Tokens) == 0 && len(cfg.Server.Inbound) == 0 {
+	// The web UI needs no API token (owner, 2026-11-25): it signs in with a
+	// one-time link. API-only, as before, a server nothing could call is
+	// refused.
+	noWeb := p.on("no-web")
+	if noWeb && len(cfg.Server.Tokens) == 0 && len(cfg.Server.Inbound) == 0 {
 		return 0, contract.New(contract.Usage, "no API token or inbound endpoint is configured, so nothing could call the server").
-			WithFix("impr server token add --scopes read,verify")
+			WithFix("impr server token add --scopes read,verify", "or leave out --no-web: the web UI signs in with a one-time link")
+	}
+	port, pinned, err := webPort(p)
+	if err != nil {
+		return 0, contract.Wrap(contract.Usage, err, "the web UI's port")
 	}
 	var tlsCfg *tls.Config
 	if cfg.Server.TLS != nil {
@@ -79,6 +89,9 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	}
 	if p.on("check-config") {
 		a.say("server    config ok: %d token(s), %d inbound endpoint(s), %d root(s), sign %v", len(cfg.Server.Tokens), len(cfg.Server.Inbound), len(cfg.Server.Roots), cfg.Server.AllowSign)
+		if !noWeb {
+			a.say("web       the web UI starts on 127.0.0.1:%d (or the next free port); the API answers 401 to any call without a token", port)
+		}
 		return 0, nil
 	}
 	if cfg.Server.Remote() && a.Interactive != nil && a.Interactive() && !p.on("yes") {
@@ -93,6 +106,22 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 		if answer != "yes" {
 			return 0, contract.New(contract.Usage, "not started")
 		}
+	}
+	var wdir string
+	var wln net.Listener
+	if !noWeb {
+		if wdir, err = webDir(d.State); err != nil {
+			return 0, contract.Wrap(contract.Unavailable, err, "the web UI's state directory")
+		}
+		// A web UI already running for this state directory is opened with a
+		// fresh link instead of starting a second server.
+		if a.openRunning(wdir, p.on("no-open")) {
+			return 0, nil
+		}
+		if wln, err = web.Listen(nil, "127.0.0.1", port, pinned, web.DefaultPortAttempts); err != nil {
+			return 0, contract.Wrap(contract.Unavailable, err, "the web UI cannot listen")
+		}
+		defer func() { _ = wln.Close() }()
 	}
 	ln, where, err := listen(d.State, cfg.Server.Listen)
 	if err != nil {
@@ -136,8 +165,28 @@ func cmdServe(ctx context.Context, a *App, args []string) (int, error) {
 	if !cfg.Server.Remote() && cfg.Server.Listen != "" && cfg.Server.Listen != "unix" {
 		a.say("server    secrets page: http://%s/ui/ (sign in with a token holding the secrets scope)", cfg.Server.Listen)
 	}
-	errc := make(chan error, 1)
+	errc := make(chan error, 2)
 	go func() { errc <- srv.Serve(ln) }()
+	if wln != nil {
+		ws, rec, link, err := a.newWeb(wln, cfg, p.on("verbose"))
+		if err != nil {
+			_ = srv.Close()
+			return 0, contract.Wrap(contract.Unavailable, err, "the web UI cannot start")
+		}
+		if err := writeWebInstance(wdir, rec); err != nil {
+			_ = srv.Close()
+			return 0, contract.Wrap(contract.Unavailable, err, "the web UI's record cannot be written")
+		}
+		defer removeWebInstance(wdir, rec.Instance)
+		go func() {
+			if err := ws.Serve(ctx, wln); err != nil && !errors.Is(err, net.ErrClosed) {
+				errc <- err
+			}
+		}()
+		if err := a.showLink(wdir, link, rec.Addr, p.on("no-open")); err != nil {
+			a.say("web       the sign-in link could not be written: %v", err)
+		}
+	}
 	// The long-running mode: answer impr notify ping, and check certificate
 	// expiry every six hours.
 	if n := a.notifier(); n != nil {

@@ -840,7 +840,8 @@ func TestServerAnswersWhatTheCLIPrints(t *testing.T) {
 		t.Fatalf("token list: %+v %v", list, err)
 	}
 	h.ok("server", "token", "revoke", list.Tokens[0].ID)
-	h.exits(1, "serve", "--check-config") // no token left: nothing could call the server
+	h.exits(1, "serve", "--check-config", "--no-web") // no token left: nothing could call the API-only server
+	h.ok("serve", "--check-config")                   // the web UI signs in with a one-time link (owner, 2026-11-25)
 }
 
 // TestConfigProfiles: create a configuration profile, set a key in it,
