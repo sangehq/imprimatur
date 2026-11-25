@@ -89,6 +89,9 @@ var ownerSafe = regexp.MustCompile(`[^a-z0-9._-]`)
 // only read.
 func ImportLegacy(s Store, source string, e LegacyEnv) (LegacyReport, error) {
 	rep := LegacyReport{Contract: contract.Version, Source: source, Imported: []string{}, Problems: map[string][]string{}}
+	if err := movePre14(source, &rep); err != nil {
+		return rep, err
+	}
 	dir, settingsPath := source, ""
 	if st, err := os.Stat(source); err != nil {
 		return rep, contract.Wrap(contract.Usage, err, "the legacy configuration %s cannot be read", source).
@@ -205,6 +208,43 @@ func FirstRunDefault(s Store, e LegacyEnv) (LegacyReport, error) {
 		rep.Problems = nil
 	}
 	return rep, nil
+}
+
+// pre14Files are the files impr 1.3 and earlier kept in the toolkit's root,
+// which 1.4 moved into config/ (Move-LegacyConfig).
+var pre14Files = []string{LegacySettingsFile, ".imprimatur-state.json", "metadata.json"}
+
+// movePre14 moves a pre-1.4 toolkit's files from its root into config/, as
+// the PowerShell line did on every run (O-09), so an import from such a
+// toolkit finds them. It acts only on configDir named config inside a
+// PowerShell toolkit (one with src/impr.ps1); a file already in config/ wins
+// and the old one is left in place, reported.
+func movePre14(configDir string, rep *LegacyReport) error {
+	root := filepath.Dir(configDir)
+	if filepath.Base(configDir) != "config" {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(root, "src", "impr.ps1")); err != nil {
+		return nil
+	}
+	for _, name := range pre14Files {
+		from, to := filepath.Join(root, name), filepath.Join(configDir, name)
+		if st, err := os.Lstat(from); err != nil || !st.Mode().IsRegular() {
+			continue
+		}
+		if _, err := os.Lstat(to); err == nil {
+			rep.Notes = append(rep.Notes, "both "+from+" and "+to+" exist; used "+to+" (delete the old one)")
+			continue
+		}
+		if err := os.MkdirAll(configDir, 0o700); err != nil {
+			return err
+		}
+		if err := os.Rename(from, to); err != nil {
+			return contract.Wrap(contract.Unavailable, err, "move %s into %s", from, configDir)
+		}
+		rep.Notes = append(rep.Notes, "moved "+name+" from the toolkit root (impr 1.3 and earlier) to "+to)
+	}
+	return nil
 }
 
 func (s Store) importOne(p Profile, ps Problems, rep *LegacyReport) error {

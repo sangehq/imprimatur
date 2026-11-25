@@ -92,6 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - On Windows, impr's first run with no PowerShell settings makes the personal
   test profile `default` (the self-signed test certificate, which can never
   sign a release), as the PowerShell line's migration did (O-120).
+- An import from a pre-1.4 PowerShell toolkit moves its settings, state and
+  `metadata.json` from the toolkit root into `config/` first, as the
+  PowerShell line did (O-09).
 - Bare `impr serve` now starts the web UI as well as the API, and starts with
   no API token configured; `--no-web` keeps the API-only behaviour and its
   refusal without a token or inbound endpoint. `impr serve --check-config`
