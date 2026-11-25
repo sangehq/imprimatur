@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"bufio"
 	"os/signal"
 	"syscall"
 
@@ -62,6 +63,9 @@ type App struct {
 	// its usage, as scripts and sange expect.
 	Stdin       io.Reader
 	Interactive func() bool
+	// stdinLines is one buffered reader over Stdin for every question a run
+	// asks, so an answer read ahead by one is there for the next.
+	stdinLines *bufio.Reader
 	// Notifier replaces the desktop notifier; tests give it a recorder.
 	Notifier *notifykit.Notifier
 }

@@ -118,7 +118,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `impr install` asks, at a terminal, to put its folder on the Windows user
   PATH and to set up completion for your shell, as the PowerShell line did;
   `--yes` answers yes, `--no-path` and `--no-completion` leave one out, and
-  with nobody at a terminal it changes nothing (O-78, O-80).
+  with nobody at a terminal it changes nothing (O-78, O-80). Your PATH
+  entries are written back unchanged, and a folder already there as a
+  `%VAR%` reference is not added again.
 - `impr rules --wdac-base` (or `options.basePolicy`) renders a WDAC base
   policy to merge, as the PowerShell line did without `--base`: audit mode
   unless `--enforce`, never the default (O-182). On Windows, a WDAC policy

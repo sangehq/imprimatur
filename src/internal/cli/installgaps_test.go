@@ -234,3 +234,57 @@ func TestCompareVersions(t *testing.T) {
 		}
 	}
 }
+
+// The user PATH is written back with the user's own entries byte for byte
+// (spaces and empty entries kept), and a folder already there under a %VAR%
+// reference, in another case or with a trailing backslash is not added again.
+func TestInstallKeepsTheUserPathAsItWas(t *testing.T) {
+	h := newHarness(t)
+	h.os = "windows"
+	h.env["PATH"] = `C:\Windows`
+	h.env["USERPROFILE"] = `C:\Users\Pat`
+	for name, tc := range map[string]struct{ cur, dir, want string }{
+		"spaces and empty entries kept": {`C:\Tools;; C:\Go\bin ;`, `D:\impr`, `C:\Tools;; C:\Go\bin ;D:\impr`},
+		"no trailing separator":         {` C:\Tools`, `D:\impr`, ` C:\Tools;D:\impr`},
+		"empty":                         {``, `D:\impr`, `D:\impr`},
+		"a %VAR% reference":             {`C:\Tools;%USERPROFILE%\.local\bin`, `C:\Users\Pat\.local\bin`, `C:\Tools;%USERPROFILE%\.local\bin`},
+		"case and a trailing backslash": {`c:\users\pat\.LOCAL\bin\;C:\Tools`, `C:\Users\Pat\.local\bin`, `c:\users\pat\.LOCAL\bin\;C:\Tools`},
+		"a %var% in another case":       {`%userprofile%\.local\bin`, `C:\Users\Pat\.local\bin`, `%userprofile%\.local\bin`},
+	} {
+		up := &fakeUserPath{value: tc.cur}
+		withUserPath(t, up)
+		a := &App{Stderr: &bytes.Buffer{}, Stdout: &bytes.Buffer{}, GOOS: "windows", Getenv: func(k string) string { return h.env[k] }}
+		if !a.addToUserPath(tc.dir, true) {
+			t.Errorf("%s: not on the user PATH", name)
+		}
+		if up.value != tc.want {
+			t.Errorf("%s: user PATH %q, want %q", name, up.value, tc.want)
+		}
+		if tc.want == tc.cur && up.sets != 0 {
+			t.Errorf("%s: written although the folder was there", name)
+		}
+	}
+}
+
+// Both install questions read one input: the second answer is not lost to
+// the first question's buffer.
+func TestInstallQuestionsShareTheInput(t *testing.T) {
+	h := newHarness(t)
+	h.os = "windows"
+	h.home = t.TempDir()
+	h.env["PATH"] = `C:\Windows`
+	h.env["SHELL"] = "/bin/bash"
+	up := &fakeUserPath{value: `C:\Tools`}
+	withUserPath(t, up)
+	dir := t.TempDir()
+	if code, errOut := runAt(t, h, "y\nn\n", "install", "--dir", dir); code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	if up.value != `C:\Tools;`+dir {
+		t.Fatalf("the first yes was not taken: %q", up.value)
+	}
+	f, _ := (&App{Home: h.home, Getenv: func(k string) string { return h.env[k] }}).completionFile("bash")
+	if _, owned := completionOwned(f, "bash"); owned {
+		t.Fatal("the second answer, no, was lost: completion was installed")
+	}
+}

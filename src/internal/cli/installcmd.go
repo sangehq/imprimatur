@@ -157,7 +157,10 @@ func (a *App) yesNo(prompt string, def bool) bool {
 		hint = " [Y/n]: "
 	}
 	_, _ = fmt.Fprint(a.Stderr, prompt+hint)
-	line, _ := bufio.NewReader(a.Stdin).ReadString('\n')
+	if a.stdinLines == nil {
+		a.stdinLines = bufio.NewReader(a.Stdin)
+	}
+	line, _ := a.stdinLines.ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(line)) {
 	case "":
 		return def
@@ -175,26 +178,69 @@ func (a *App) addToUserPath(dir string, yes bool) bool {
 		a.say("install   the user PATH cannot be read: %v", err)
 		return false
 	}
-	var parts []string
 	for _, e := range strings.Split(cur, ";") {
-		if e = strings.TrimSpace(e); e == "" {
-			continue
-		}
-		if strings.EqualFold(strings.TrimRight(e, `\`), strings.TrimRight(dir, `\`)) {
+		if samePathDir(a.expandPathVars(strings.TrimSpace(e)), dir) {
 			a.say("install   %s is already on your user PATH; a terminal opened before it was added needs reopening", dir)
 			return true
 		}
-		parts = append(parts, e)
 	}
 	if !yes && !a.yesNo("Put "+dir+" on your user PATH, so impr works in every folder?", true) {
 		return false
 	}
-	if err := userPath.Set(strings.Join(append(parts, dir), ";")); err != nil {
+	// The user's entries go back exactly as they were; only dir is added.
+	next := dir
+	switch {
+	case cur == "":
+	case strings.HasSuffix(cur, ";"):
+		next = cur + dir
+	default:
+		next = cur + ";" + dir
+	}
+	if err := userPath.Set(next); err != nil {
 		a.say("install   the user PATH was not changed: %v", err)
 		return false
 	}
 	a.say("install   added %s to your user PATH; new terminals pick it up (an open editor needs a restart)", dir)
 	return true
+}
+
+// samePathDir compares two Windows folders as PATH does: without regard to
+// case, and ignoring a trailing backslash.
+func samePathDir(a, b string) bool {
+	return a != "" && strings.EqualFold(strings.TrimRight(a, `\`), strings.TrimRight(b, `\`))
+}
+
+// expandPathVars expands %NAME% references in a user PATH entry (a
+// REG_EXPAND_SZ value), names matched without regard to case; an unknown
+// name is left as written, as Windows does.
+func (a *App) expandPathVars(e string) string {
+	var b strings.Builder
+	for {
+		i := strings.IndexByte(e, '%')
+		if i < 0 {
+			break
+		}
+		j := strings.IndexByte(e[i+1:], '%')
+		if j < 0 {
+			break
+		}
+		name := e[i+1 : i+1+j]
+		v := ""
+		if name != "" && a.Getenv != nil {
+			if v = a.Getenv(name); v == "" {
+				v = a.Getenv(strings.ToUpper(name))
+			}
+		}
+		if v == "" {
+			b.WriteString(e[:i+2+j])
+		} else {
+			b.WriteString(e[:i])
+			b.WriteString(v)
+		}
+		e = e[i+2+j:]
+	}
+	b.WriteString(e)
+	return b.String()
 }
 
 // offerCompletion sets up completion for the shell in $SHELL, with yes or a

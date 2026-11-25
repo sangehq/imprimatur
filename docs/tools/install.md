@@ -27,7 +27,9 @@ impr path --json               # config, state, system config and install folder
 - **The user PATH on Windows, and nothing else.** When you agree (or pass `--yes`), impr adds its folder
   to the *user* PATH in the registry, read unexpanded and written back as `REG_EXPAND_SZ`, so it neither
   copies the machine PATH into yours nor turns `%VAR%` entries into fixed text, and tells running programs
-  the environment changed. A folder already there is left as it is. Shell profiles are never edited, and
+  the environment changed. Your own entries are written back byte for byte, spaces and empty entries
+  included; only the folder is appended. A folder already there, even as a `%VAR%` reference such as
+  `%USERPROFILE%\.local\bin`, in another case or with a trailing backslash, is left as it is. Shell profiles are never edited, and
   elsewhere impr prints the line to add. `impr uninstall` does not take the folder off PATH, since
   `~/.local/bin` is shared with other programs.
 - **`impr path`** prints the folders and, when the install folder is not on PATH, the same line to add
