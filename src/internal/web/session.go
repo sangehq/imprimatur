@@ -51,6 +51,10 @@ type sessions struct {
 	byID map[string]*session
 }
 
+// create starts a session; with the table full it ends the oldest token
+// session to make room, never an owner's link session for a token one. A
+// token sign-in into a table of link sessions gets no session ("", nil);
+// a link sign-in then ends the oldest link session.
 func (ss *sessions) create(now time.Time, tokenID string, scopes []string) (string, *session) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
@@ -58,13 +62,23 @@ func (ss *sessions) create(now time.Time, tokenID string, scopes []string) (stri
 		ss.byID = map[string]*session{}
 	}
 	if len(ss.byID) >= maxSessions {
-		var oldest string
-		for k, v := range ss.byID {
-			if oldest == "" || v.created.Before(ss.byID[oldest].created) {
-				oldest = k
+		oldest := func(tokenOnly bool) string {
+			var o string
+			for k, v := range ss.byID {
+				if (!tokenOnly || v.tokenID != "") && (o == "" || v.created.Before(ss.byID[o].created)) {
+					o = k
+				}
 			}
+			return o
 		}
-		delete(ss.byID, oldest)
+		victim := oldest(true)
+		if victim == "" && tokenID == "" {
+			victim = oldest(false)
+		}
+		if victim == "" {
+			return "", nil
+		}
+		delete(ss.byID, victim)
 	}
 	id := NewToken()
 	sess := &session{csrf: NewToken(), created: now, seen: now, tokenID: tokenID, scopes: scopes}

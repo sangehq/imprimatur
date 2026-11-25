@@ -298,3 +298,56 @@ func TestALinkReplacesATokenSession(t *testing.T) {
 		t.Fatalf("the spent link signed another browser in: %d", r.Code)
 	}
 }
+
+// Failed token sign-ins are counted and checked in one locked step: twenty
+// at once still allow no more than five through to a token check.
+func TestFailedSignInsAreCountedAtomically(t *testing.T) {
+	f := newFixture(t, nil)
+	codes := make(chan int, 20)
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			body, hdr := form(url.Values{"token": {"impr_" + strings.Repeat("B", 43)}})
+			codes <- do(f.s.Handler(), "POST", "/signin", body, hdr).Code
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(codes)
+	refused := 0
+	for c := range codes {
+		if c == http.StatusUnauthorized {
+			refused++
+		}
+	}
+	if refused > loginsPerMinute {
+		t.Fatalf("%d sign-ins were checked in a minute, want at most %d", refused, loginsPerMinute)
+	}
+}
+
+// A full session table makes room by ending the oldest token session, never
+// an owner's link session; with nothing but link sessions, a token sign-in
+// is refused.
+func TestATokenSignInNeverEvictsTheOwner(t *testing.T) {
+	f := newFixture(t, nil)
+	var owners []string
+	for i := 0; i < maxSessions; i++ {
+		c, _ := f.signIn(t)
+		owners = append(owners, c)
+		f.clk.add(time.Second)
+	}
+	body, hdr := form(url.Values{"token": {f.secrets}})
+	r := do(f.s.Handler(), "POST", "/signin", body, hdr)
+	if r.Code != http.StatusTooManyRequests || len(styled(t, f.s, r.Body.String())) > 0 {
+		t.Fatalf("a token sign-in into a table of owners: %d", r.Code)
+	}
+	for i, c := range owners {
+		if r := do(f.s.Handler(), "GET", "/no-such-page", nil, map[string]string{"Cookie": c}); r.Code != http.StatusNotFound {
+			t.Fatalf("owner session %d was evicted: %d", i, r.Code)
+		}
+	}
+}

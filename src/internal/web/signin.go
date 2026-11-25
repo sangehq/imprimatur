@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sangehq/imprimatur/src/internal/config"
 	"github.com/sangehq/imprimatur/src/internal/server"
 )
 
@@ -216,23 +217,29 @@ func (s *Server) signinPage(w http.ResponseWriter, r *http.Request) {
 // signinToken is POST /signin.
 func (s *Server) signinToken(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
+	// The limit is checked, the token matched and a failure counted in one
+	// locked step, so requests at once cannot all pass the check.
 	s.failMu.Lock()
 	s.failures = slices.DeleteFunc(s.failures, func(t time.Time) bool { return now.Sub(t) > time.Minute })
 	limited := len(s.failures) >= loginsPerMinute
+	var tok config.Token
+	found := false
+	if !limited {
+		tok, found = server.MatchToken(s.opts.Tokens, r.PostFormValue("token"))
+		if found && s.isRevoked(tok.ID) {
+			found = false
+		}
+		if !found {
+			s.failures = append(s.failures, now)
+		}
+	}
 	s.failMu.Unlock()
 	if limited {
 		w.Header().Set("Retry-After", "60")
 		s.render(w, http.StatusTooManyRequests, "signin", s.newView(r, "", "Sign in", signinData{Message: "Too many failed sign-ins; wait a minute."}))
 		return
 	}
-	tok, found := server.MatchToken(s.opts.Tokens, r.PostFormValue("token"))
-	if found && s.isRevoked(tok.ID) {
-		found = false
-	}
 	if !found {
-		s.failMu.Lock()
-		s.failures = append(s.failures, now)
-		s.failMu.Unlock()
 		s.logf("web       a token sign-in was refused")
 		s.render(w, http.StatusUnauthorized, "signin", s.newView(r, "", "Sign in", signinData{Message: "That is not a valid API token."}))
 		return
@@ -255,7 +262,13 @@ func (s *Server) signinToken(w http.ResponseWriter, r *http.Request) {
 			signinData{Message: "Token " + tok.ID + " lacks the secrets scope (impr server token add --scopes secrets)."}))
 		return
 	}
-	id, _ := s.sessions.create(now, tok.ID, tok.Scopes)
+	id, sess := s.sessions.create(now, tok.ID, tok.Scopes)
+	if sess == nil {
+		w.Header().Set("Retry-After", "60")
+		s.renderError(w, r, http.StatusTooManyRequests, "Too many sessions",
+			"Every session is in use by a sign-in link; sign out of one, or open the link impr serve printed.")
+		return
+	}
 	s.setSessionCookie(w, r, id)
 	s.logf("web       %s signed in with an API token", tok.ID)
 	http.Redirect(w, r, landing, http.StatusSeeOther)
