@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/sangehq/imprimatur/src/internal/config"
+	"github.com/sangehq/imprimatur/src/internal/events"
+	"github.com/sangehq/imprimatur/src/internal/server"
 )
 
 // Options configure a Server.
@@ -44,6 +46,20 @@ type Options struct {
 	// Tokens are the configured API tokens: one with the secrets scope still
 	// signs in on /signin, into a session that reaches the secrets page only.
 	Tokens []config.Token
+
+	// Run runs one impr command line and returns its exit code and stdout:
+	// the same bridge the API uses (App.runCaptured), so every page shows
+	// what the CLI prints and every write is the CLI's own command.
+	Run func(ctx context.Context, args []string) (int, []byte)
+	// PutSecret stores a signing secret and returns its reference; it takes
+	// the value as data, never on a command line. ListSecrets lists the
+	// stored ones by name and reference.
+	PutSecret   func(ctx context.Context, name, value string) (string, error)
+	ListSecrets func() ([]server.UISecret, error)
+	// Events is the event log the events page streams; Poll is how often it
+	// is read (default a second).
+	Events events.Log
+	Poll   time.Duration
 }
 
 // Server is the web UI.
@@ -54,6 +70,8 @@ type Server struct {
 	sessions sessions
 	links    links
 	handler  http.Handler
+
+	streams streamCount
 
 	failMu   sync.Mutex
 	failures []time.Time // failed token sign-ins in the last minute

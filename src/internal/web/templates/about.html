@@ -1,0 +1,30 @@
+{{define "content"}}{{with .Data}}
+<div class="page-header d-print-none mb-3">
+  <div class="page-pretitle">System</div>
+  <h1 class="page-title">About imprimatur</h1>
+  <div class="text-secondary">impr {{.Version}}: sign and verify release artifacts with signing profiles.</div>
+</div>
+{{template "err" .Err}}
+<div class="row row-cards mb-3">
+  <div class="col-lg-6"><div class="card"><div class="card-header"><h2 class="card-title">Paths</h2></div><div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-5">Config</dt><dd class="col-7"><code>{{.Path.Config}}</code></dd>
+      <dt class="col-5">State</dt><dd class="col-7"><code>{{.Path.State}}</code></dd>
+      <dt class="col-5">Install folder</dt><dd class="col-7"><code>{{.Path.InstallDir}}</code>{{if .Path.OnPath}} <span class="badge badge-ok">on PATH</span>{{end}}</dd>
+    </dl>
+  </div></div></div>
+  <div class="col-lg-6"><div class="card"><div class="card-header"><h2 class="card-title">For sange</h2></div><div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-5">Host</dt><dd class="col-7">{{.Companion.Host}}</dd>
+      <dt class="col-5">Capabilities</dt><dd class="col-7">{{join .Companion.CapabilityList ", "}}</dd>
+    </dl>
+  </div></div></div>
+</div>
+<div class="card" id="licences">
+  <div class="card-header"><h2 class="card-title">Licences</h2></div>
+  <div class="card-body">
+    <p>imprimatur is MIT-licensed, copyright Simtabi LLC. The web UI embeds the following, each under its own licence:</p>
+    {{range .Licences}}<details class="mb-2"><summary><strong>{{.Package}}</strong> {{.Version}}: {{.What}}</summary><pre class="licence-text" tabindex="0">{{printf "%s" .Text}}</pre></details>{{end}}
+  </div>
+</div>
+{{end}}{{end}}

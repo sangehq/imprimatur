@@ -139,7 +139,8 @@ func parsePages(a *assetSet) (pageSet, error) {
 		"confirm": func(id, form, title, text, label string) confirmModal {
 			return confirmModal{ID: id, Form: form, Title: title, Text: text, Label: label}
 		},
-		"join": strings.Join,
+		"join":      strings.Join,
+		"platforms": platformNames,
 	}
 	base, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/partials/*.html")
 	if err != nil {

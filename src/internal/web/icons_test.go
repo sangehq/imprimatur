@@ -7,7 +7,9 @@ import (
 )
 
 var (
-	iconUseRe = regexp.MustCompile(`icon "([a-z0-9-]+)"`)
+	// iconUseRe is an icon a template names: {{icon "x"}}, or the first
+	// argument of an empty state, (empty "x" ...).
+	iconUseRe = regexp.MustCompile(`(?:icon|\(empty) "([a-z0-9-]+)"`)
 	symbolRe  = regexp.MustCompile(`<symbol id="tabler-([a-z0-9-]+)"`)
 )
 
@@ -51,5 +53,20 @@ func TestEveryIconIsInTheSprite(t *testing.T) {
 	}
 	if len(missing) > 0 {
 		t.Fatalf("the sprite lacks %s: add them to assets/vendor/icons.txt and run make tabler-vendor", strings.Join(missing, ", "))
+	}
+}
+
+// The sprite holds exactly the icons the templates name: an unused one is
+// dead weight in every page, and icons.txt says what to cut.
+func TestTheSpriteHoldsOnlyUsedIcons(t *testing.T) {
+	used, in := usedIcons(t), spriteIcons(t)
+	var extra []string
+	for name := range in {
+		if !used[name] {
+			extra = append(extra, name)
+		}
+	}
+	if len(extra) > 0 {
+		t.Fatalf("the sprite holds icons no template names: %s; take them out of assets/vendor/icons.txt and run make tabler-vendor", strings.Join(extra, ", "))
 	}
 }

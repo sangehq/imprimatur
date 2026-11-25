@@ -1,0 +1,28 @@
+{{define "content"}}{{$csrf := $.CSRF}}{{with .Data}}
+<div class="page-header d-print-none mb-3">
+  <div class="row g-2 align-items-center">
+    <div class="col">
+      <div class="page-pretitle"><a href="/profiles">Profiles</a></div>
+      <h1 class="page-title">{{.Name}}</h1>
+    </div>
+    <div class="col-auto ms-auto btn-list">
+      <a href="/profiles/{{.Name}}/validate" class="btn" data-inline>{{icon "circle-check"}}<span class="ms-1">Validate</span></a>
+      <form method="post" action="/profiles/{{.Name}}/default" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn">{{icon "star"}}<span class="ms-1">Set default</span></button></form>
+      <form method="post" action="/profiles/{{.Name}}/remove" id="rm-profile" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-outline-danger" data-confirm="confirm-rm-profile">{{icon "trash"}}<span class="ms-1">Remove</span></button></form>
+    </div>
+  </div>
+</div>
+{{template "confirm" (confirm "confirm-rm-profile" "rm-profile" (printf "Remove %s?" .Name) "The signing profile is deleted. Its keys and certificates stay where they are." "Remove")}}
+{{template "err" .Err}}
+<div class="card mb-3"><div class="card-header"><h2 class="card-title">What it can do on this machine</h2></div>
+  {{if .Capabilities}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">
+    <thead><tr><th>Platform</th><th>Kind</th><th>Sign</th><th>Verify</th><th>Why not</th></tr></thead>
+    <tbody>{{range .Capabilities}}<tr><td data-label="Platform">{{.Platform}}</td><td data-label="Kind">{{.Kind}}{{if .Backend}} · {{.Backend}}{{end}}</td>
+      <td data-label="Sign">{{if .Sign}}<span class="badge badge-ok">yes</span>{{else}}<span class="badge badge-muted">no</span>{{end}}</td>
+      <td data-label="Verify">{{if .Verify}}<span class="badge badge-ok">yes</span>{{else}}<span class="badge badge-muted">no</span>{{end}}</td>
+      <td data-label="Why not">{{.Reason}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}{{template "empty" (empty "info-circle" "No capabilities reported" "")}}{{end}}
+</div>
+<div class="card"><div class="card-header"><h2 class="card-title">Profile</h2><div class="card-subtitle ms-2 text-secondary">impr profile show {{.Name}} --json</div></div>
+  <div class="card-body"><pre class="code-block" tabindex="0">{{.Pretty}}</pre></div></div>
+{{end}}{{end}}

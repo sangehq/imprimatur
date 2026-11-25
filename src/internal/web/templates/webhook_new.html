@@ -1,0 +1,20 @@
+{{define "content"}}{{with .Data}}
+<h1 class="h2">Add a webhook</h1>
+<p class="text-secondary">The secret is a reference to where it is stored (make one with <code>impr webhooks secret</code>), never the secret itself.</p>
+{{template "err" .Err}}
+<form method="post" action="/webhooks" autocomplete="off">
+  <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <div class="mb-3"><label class="form-label" for="wh-name">Name</label>
+    <input class="form-control" id="wh-name" name="name" value="{{.Name}}" required pattern="[a-z0-9][a-z0-9._\-]{0,62}" placeholder="ci"></div>
+  <div class="mb-3"><label class="form-label" for="wh-url">URL</label>
+    <input class="form-control" id="wh-url" name="url" type="url" value="{{.URL}}" required placeholder="https://ci.example.com/hooks/impr"></div>
+  <div class="mb-3"><label class="form-label" for="wh-secret">Secret reference</label>
+    <input class="form-control" id="wh-secret" name="secretRef" value="{{.SecretRef}}" required placeholder="secret://imprimatur/webhooks/ci"></div>
+  <div class="mb-3"><label class="form-label" for="wh-types">Event types</label>
+    <input class="form-control" id="wh-types" name="types" value="{{.Types}}" placeholder="signing.*, cert.*">
+    <div class="form-hint">Globs, separated by commas; empty sends every internal event.</div></div>
+  <div class="mb-3"><label class="form-check" for="wh-private"><input class="form-check-input" type="checkbox" name="allowPrivate" value="1" id="wh-private"{{if .AllowPrivate}} checked{{end}}><span class="form-check-label">Allow a private address (a receiver on this network)</span></label></div>
+  <button type="submit" class="btn btn-primary">{{icon "plus"}}<span class="ms-1">Add</span></button>
+  <a href="/webhooks" class="btn btn-link">Cancel</a>
+</form>
+{{end}}{{end}}

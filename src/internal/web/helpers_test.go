@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -89,3 +91,30 @@ func newAPIToken() (raw, id, sum string, err error) {
 	}
 	return raw, "tok_" + hex.EncodeToString(idb), hex.EncodeToString(h[:]), nil
 }
+
+// httptestRequest is a signed-in GET on ctx.
+func httptestRequest(ctx context.Context, target, cookie string) *http.Request {
+	req := httptest.NewRequest("GET", target, nil).WithContext(ctx)
+	req.Host = testHost
+	req.Header.Set("Cookie", cookie)
+	return req
+}
+
+// streamRecorder is a ResponseRecorder safe to read while a stream writes.
+type streamRecorder struct {
+	mu  sync.Mutex
+	hdr http.Header
+	buf strings.Builder
+}
+
+func newStreamRecorder() *streamRecorder { return &streamRecorder{hdr: http.Header{}} }
+
+func (s *streamRecorder) Header() http.Header { return s.hdr }
+func (s *streamRecorder) WriteHeader(int)     {}
+func (s *streamRecorder) Flush()              {}
+func (s *streamRecorder) Write(b []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(b)
+}
+func (s *streamRecorder) String() string { s.mu.Lock(); defer s.mu.Unlock(); return s.buf.String() }

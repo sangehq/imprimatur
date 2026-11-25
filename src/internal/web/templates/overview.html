@@ -1,6 +1,28 @@
-{{define "content"}}
+{{define "content"}}{{with .Data}}
 <div class="page-header d-print-none mb-3">
   <div class="page-pretitle">imprimatur</div>
   <h1 class="page-title">Overview</h1>
 </div>
-{{end}}
+{{template "err" .Err}}
+<div class="row row-cards mb-3">
+  <div class="col-sm-6 col-lg-4"><div class="card card-sm"><div class="card-body">
+    <div class="d-flex align-items-center gap-2"><span class="{{if .Doctor.OK}}text-success{{else}}text-warning{{end}}" aria-hidden="true">{{icon "stethoscope"}}</span>
+      <a href="/doctor" class="fw-medium">Doctor</a></div>
+    <div class="text-secondary mt-1">{{if .Doctor.OK}}No problems found{{else}}{{len .Doctor.Problems}} problem(s), {{len .Doctor.Notes}} note(s){{end}}</div>
+  </div></div></div>
+  <div class="col-sm-6 col-lg-4"><div class="card card-sm"><div class="card-body"><a href="/profiles" class="fw-medium">Profiles</a><div class="h2 mb-0">{{.Profiles}}</div></div></div></div>
+  <div class="col-sm-6 col-lg-4"><div class="card card-sm"><div class="card-body"><a href="/certs" class="fw-medium">Certificates</a><div class="h2 mb-0">{{.Certs}}</div></div></div></div>
+  <div class="col-sm-6 col-lg-4"><div class="card card-sm"><div class="card-body"><a href="/secrets" class="fw-medium">Secrets</a><div class="h2 mb-0">{{.Secret}}</div></div></div></div>
+  <div class="col-sm-6 col-lg-4"><div class="card card-sm"><div class="card-body"><a href="/tokens" class="fw-medium">API tokens</a><div class="h2 mb-0">{{.Tokens}}</div></div></div></div>
+  <div class="col-sm-6 col-lg-4"><div class="card card-sm"><div class="card-body"><a href="/webhooks" class="fw-medium">Webhooks</a><div class="h2 mb-0">{{.Webhooks}}</div></div></div></div>
+</div>
+{{if .Doctor.Problems}}<div class="card mb-3"><div class="card-header"><h2 class="card-title">Problems</h2></div>
+  <ul class="list-group list-group-flush">{{range .Doctor.Problems}}<li class="list-group-item">{{.}}</li>{{end}}</ul></div>{{end}}
+<div class="card">
+  <div class="card-header"><h2 class="card-title">Recent events</h2><div class="card-actions"><a href="/events" class="btn btn-outline-primary btn-sm">All events</a></div></div>
+  {{if .Events}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">
+    <thead><tr><th>Time</th><th>Type</th><th>Subject</th></tr></thead>
+    <tbody>{{range .Events}}<tr><td data-label="Time">{{.When}}</td><td data-label="Type"><code>{{.Short}}</code></td><td data-label="Subject">{{.Subject}}</td></tr>{{end}}</tbody>
+  </table></div>{{else}}{{template "empty" (empty "history" "No events yet" "Signing, verification and changes show here as they happen.")}}{{end}}
+</div>
+{{end}}{{end}}

@@ -38,6 +38,9 @@ type session struct {
 	// flash is the message a change leaves for the page it redirects to.
 	flash    string
 	flashBad bool
+	// once is a value shown once on the next page (a new API token), then
+	// dropped.
+	once string
 }
 
 type sessions struct {
@@ -88,6 +91,28 @@ func (ss *sessions) end(id string) {
 	ss.mu.Lock()
 	defer ss.mu.Unlock()
 	delete(ss.byID, id)
+}
+
+// setFlash leaves a message for the next page.
+func (sess *session) setFlash(msg string, bad bool) {
+	sess.mu.Lock()
+	sess.flash, sess.flashBad = msg, bad
+	sess.mu.Unlock()
+}
+
+// setOnce keeps a value for one showing; takeOnce returns it and forgets it.
+func (sess *session) setOnce(v string) {
+	sess.mu.Lock()
+	sess.once = v
+	sess.mu.Unlock()
+}
+
+func (sess *session) takeOnce() string {
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	v := sess.once
+	sess.once = ""
+	return v
 }
 
 // takeFlash returns the message and forgets it.
