@@ -7,4 +7,4 @@ type userPathStore interface {
 }
 
 // userPath is the user PATH store: the registry on Windows, nil elsewhere.
-var userPath userPathStore = osUserPath()
+var userPath = osUserPath()

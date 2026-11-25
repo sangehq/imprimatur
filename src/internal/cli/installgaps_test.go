@@ -133,7 +133,7 @@ func TestInstalledCompletionFollowsAnUpgrade(t *testing.T) {
 	a := &App{Home: h.home, Getenv: func(k string) string { return h.env[k] }}
 	f, _ := a.completionFile("bash")
 	cur, _ := os.ReadFile(f)
-	old := strings.Replace(string(cur), "release", "an-old-value", -1)
+	old := strings.ReplaceAll(string(cur), "release", "an-old-value")
 	if err := os.WriteFile(f, []byte(old), 0o644); err != nil { //nolint:gosec // a completion script
 		t.Fatal(err)
 	}
