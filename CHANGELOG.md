@@ -30,6 +30,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   allow (`read` the read-only pages, `secrets` the Secrets page, `events`
   Events, `admin` the changes); what it cannot reach is hidden and answers
   403 (owner, 2026-11-25).
+- `server.web.webhookAdmin` (`allowAdmin`, the default, or `owner`): adding
+  or removing a webhook in the web UI needs `server.allowAdmin`, as over the
+  API, unless it is `owner`; when off, the controls stay visible but
+  disabled, with the reason and the setting to change, and a post answers
+  403 without running anything. Test and retry are not gated (owner,
+  2026-11-25).
 - `scripts/test-all.sh` checks the vendored web assets against
   `MANIFEST.sha256`, and their versions against sange's and authama's.
 

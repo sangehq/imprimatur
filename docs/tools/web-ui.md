@@ -78,7 +78,11 @@ its document. Every change is that command too: nothing in the UI is a second im
 - **A secret's value** goes to the OS secret store as data, never on a command line, is never shown back,
   and is held to 64 KiB.
 - **Webhooks** are added through the API's own checks: a name, an http(s) URL, and a `secret://` or
-  `env://` reference, never the secret itself.
+  `env://` reference, never the secret itself. Adding or removing one needs `server.allowAdmin`, as over
+  the API, unless `server.web.webhookAdmin` is `owner`, which lets the session from `impr serve`'s link do
+  it without ([configuration](../configuration.md#the-web-ui)). When it is off, the Webhooks page and its
+  form show the controls disabled, with the reason and the setting that turns it on, and a post is refused
+  (403) without running anything. Test, retry and retry all change no configuration and always work.
 - **Ctrl-K** (⌘K on a Mac) opens the command palette; **?** lists the keyboard shortcuts, such as `g p` for
   Profiles and `n c` for a new test certificate. The moon and sun switch the theme.
 

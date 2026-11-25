@@ -639,6 +639,9 @@ type delivery struct {
 }
 
 type webhooksData struct {
+	// WritesOff says why adding and removing webhooks is off here, and how
+	// to turn it on; "" when allowed.
+	WritesOff  string
 	List       webhookList
 	Deliveries struct {
 		Pending []delivery `json:"pending"`
@@ -650,6 +653,7 @@ type webhooksData struct {
 // webhooks is GET /webhooks: impr webhooks list and deliveries --json.
 func (s *Server) webhooks(w http.ResponseWriter, r *http.Request) {
 	var d webhooksData
+	d.WritesOff = s.webhookWritesOff(r)
 	if err := s.runJSON(r, &d.List, "webhooks", "list"); err != nil {
 		d.Err = err.Error()
 	}
@@ -660,6 +664,7 @@ func (s *Server) webhooks(w http.ResponseWriter, r *http.Request) {
 }
 
 type webhookForm struct {
+	WritesOff                   string
 	Name, URL, SecretRef, Types string
 	AllowPrivate                bool
 	Err                         string
@@ -667,12 +672,31 @@ type webhookForm struct {
 
 // webhookNew is GET /webhooks/new.
 func (s *Server) webhookNew(w http.ResponseWriter, r *http.Request) {
-	s.page(w, r, "webhook_new", "webhooks", "Add a webhook", webhookForm{})
+	s.page(w, r, "webhook_new", "webhooks", "Add a webhook", webhookForm{WritesOff: s.webhookWritesOff(r)})
+}
+
+// webhookWritesOff says why this session may not add or remove a webhook,
+// with the fix, or "" when it may. A webhook can carry internal events off
+// the machine, so by default the web UI needs server.allowAdmin as the API
+// does; server.web.webhookAdmin owner lets the one-time link's session do it
+// without (owner, 2026-11-25). Test and retry change no configuration and
+// are not gated.
+func (s *Server) webhookWritesOff(r *http.Request) string {
+	sess := sessionFrom(r.Context())
+	if s.opts.AllowAdmin || (!s.opts.Web.WebhooksNeedAllowAdmin() && sess != nil && sess.tokenID == "") {
+		return ""
+	}
+	return "Adding and removing webhooks is off: server.allowAdmin is false, as for the API. " +
+		"Turn it on with impr config set server.allowAdmin true (or, for this web UI's owner only, impr config set server.web.webhookAdmin owner), then restart impr serve."
 }
 
 // webhookAdd is POST /webhooks: the API's own checks (server.WebhookArgs),
 // then impr webhooks add.
 func (s *Server) webhookAdd(w http.ResponseWriter, r *http.Request) {
+	if off := s.webhookWritesOff(r); off != "" {
+		s.renderError(w, r, http.StatusForbidden, "Webhook changes are off", off)
+		return
+	}
 	f := webhookForm{Name: strings.TrimSpace(r.PostFormValue("name")), URL: strings.TrimSpace(r.PostFormValue("url")),
 		SecretRef: strings.TrimSpace(r.PostFormValue("secretRef")), Types: strings.TrimSpace(r.PostFormValue("types")),
 		AllowPrivate: r.PostFormValue("allowPrivate") == "1"}
@@ -702,6 +726,10 @@ func (s *Server) webhookAdd(w http.ResponseWriter, r *http.Request) {
 // webhookRemove is POST /webhooks/{name}/remove: impr webhooks rm, after a
 // confirmation.
 func (s *Server) webhookRemove(w http.ResponseWriter, r *http.Request) {
+	if off := s.webhookWritesOff(r); off != "" {
+		s.renderError(w, r, http.StatusForbidden, "Webhook changes are off", off)
+		return
+	}
 	name := r.PathValue("name")
 	if !server.ValidName(name) {
 		s.refuse(w, r, "That is not a webhook name.")

@@ -307,7 +307,7 @@ func (a *App) newWeb(wln net.Listener, cfg config.Config, d paths.Dirs, verbose 
 		Run: a.runCaptured, PutSecret: a.PutSecret,
 		ListSecrets: func() ([]server.UISecret, error) { return envSecrets(d.Config) },
 		Events:      events.Log{Dir: filepath.Join(d.State, "events")},
-		Web:         cfg.Server.Web}
+		Web:         cfg.Server.Web, AllowAdmin: cfg.Server.AllowAdmin}
 	if verbose { // --verbose: page views too, not only changes
 		opts.Debug = a.say
 	}

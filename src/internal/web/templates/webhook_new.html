@@ -2,8 +2,10 @@
 <h1 class="h2">Add a webhook</h1>
 <p class="text-secondary">The secret is a reference to where it is stored (make one with <code>impr webhooks secret</code>), never the secret itself.</p>
 {{template "err" .Err}}
+{{if .WritesOff}}<div class="alert alert-warning" role="status">{{icon "lock"}}<span class="ms-1">{{.WritesOff}}</span></div>{{end}}
 <form method="post" action="/webhooks" autocomplete="off">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <fieldset{{if .WritesOff}} disabled{{end}}>
   <div class="mb-3"><label class="form-label" for="wh-name">Name</label>
     <input class="form-control" id="wh-name" name="name" value="{{.Name}}" required pattern="[a-z0-9][a-z0-9._\-]{0,62}" placeholder="ci"></div>
   <div class="mb-3"><label class="form-label" for="wh-url">URL</label>
@@ -15,6 +17,7 @@
     <div class="form-hint">Globs, separated by commas; empty sends every internal event.</div></div>
   <div class="mb-3"><label class="form-check" for="wh-private"><input class="form-check-input" type="checkbox" name="allowPrivate" value="1" id="wh-private"{{if .AllowPrivate}} checked{{end}}><span class="form-check-label">Allow a private address (a receiver on this network)</span></label></div>
   <button type="submit" class="btn btn-primary">{{icon "plus"}}<span class="ms-1">Add</span></button>
+  </fieldset>
   <a href="/webhooks" class="btn btn-link">Cancel</a>
 </form>
 {{end}}{{end}}

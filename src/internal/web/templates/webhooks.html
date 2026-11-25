@@ -14,6 +14,7 @@
   </div>
 </div>
 {{template "err" .Err}}
+{{if .WritesOff}}<div class="alert alert-warning" role="status">{{icon "lock"}}<span class="ms-1">{{.WritesOff}}</span></div>{{end}}
 <div class="card mb-3">
   {{if .List.Subscriptions}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">
     <thead><tr><th>Name</th><th>URL</th><th>Types</th><th>Secret</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
@@ -23,7 +24,7 @@
       <td data-label="Secret"><code>{{.SecretRef}}</code></td>
       <td data-label="Actions" class="text-end"><div class="btn-list justify-content-end">
         <form method="post" action="/webhooks/{{.Name}}/test" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm">{{icon "player-play"}}<span class="ms-1">Test</span></button></form>
-        <form method="post" action="/webhooks/{{.Name}}/remove" id="rm-webhook-{{.Name}}" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="confirm-rm-webhook-{{.Name}}">{{icon "trash"}}<span class="ms-1">Remove</span></button></form>
+        <form method="post" action="/webhooks/{{.Name}}/remove" id="rm-webhook-{{.Name}}" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="confirm-rm-webhook-{{.Name}}"{{if $.Data.WritesOff}} disabled{{end}}>{{icon "trash"}}<span class="ms-1">Remove</span></button></form>
       </div>
       {{template "confirm" (confirm (printf "confirm-rm-webhook-%s" $n) (printf "rm-webhook-%s" $n) (printf "Remove %s?" $n) "impr stops delivering events to this webhook." "Remove")}}
       </td></tr>{{end}}</tbody>
