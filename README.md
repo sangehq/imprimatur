@@ -84,6 +84,7 @@ else is in the [documentation](#documentation) below.
 - [`impr config`](docs/tools/config.md) — layered configuration (system, user, configuration profiles) and locked keys
 - [`impr hooks`](docs/tools/hooks.md) — pinned programs that gate signing and verification or react to events
 - [`impr serve`](docs/tools/serve.md) — the REST API and signed inbound webhooks, over a private socket
+- [Web UI](docs/tools/web-ui.md) — the browser UI `impr serve` starts on 127.0.0.1:7823, signed in with a one-time link
 - [`impr webhooks`](docs/tools/webhooks.md) — signed Standard Webhooks deliveries of impr's events to other apps
 - [`impr audit`](docs/tools/audit.md) — the hash-chained record of every command that signs or changes configuration
 - [`impr notify`](docs/tools/notify.md) — desktop notifications for failures, vetoes and certificate expiry

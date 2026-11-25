@@ -1,7 +1,8 @@
 # `impr serve`
 
 `impr serve` runs impr as a local REST API. Other apps can then list profiles, verify signatures, and, if
-you allow it, sign build manifests, without running the CLI themselves.
+you allow it, sign build manifests, without running the CLI themselves. It also starts the
+[web UI](web-ui.md) on `127.0.0.1:7823`, for people.
 
 ## Start it
 
@@ -24,7 +25,11 @@ impr serve --listen 127.0.0.1:8743             # or a loopback port
   `NamedPipeClientStream` does; impr opens the next instance as it accepts each connection.
 - **Addresses.** A loopback port is the other everyday choice. An address other machines can reach is
   allowed only with `server.allowRemote` and `server.tls` set (see below).
-- **Stopping.** Ctrl-C or SIGTERM stops it gracefully.
+- **Stopping.** Ctrl-C or SIGTERM stops it gracefully, the web UI with it.
+- **The web UI.** Bare `impr serve` also starts the [web UI](web-ui.md), which needs no API token: it
+  prints a one-time sign-in link. `--port N` pins its port, `--no-open` opens no browser, `--verbose` logs
+  page views, and `--no-web` serves the API alone, as before. Without `--no-web`, `--check-config` passes
+  with no token configured, and says the API will answer 401.
 
 ```bash
 curl --unix-socket ~/.local/state/imprimatur/server/impr.sock \
@@ -128,7 +133,10 @@ impr serve install-unit --print --for systemd    # systemd, launchd or task
 | `task` (Windows default) | a Task Scheduler task that starts at logon and restarts on failure | impr is not a Windows service, which would need a service control handler |
 
 - **Checks first.** It refuses when the config is not valid or no token or inbound endpoint is
-  configured, because the service would not start.
+  configured.
+- **No browser.** The unit runs `impr serve --no-open`, and nobody is at a terminal under it, so it never
+  opens a browser. The web UI still starts; its sign-in link is written to `<state>/web/signin-link`
+  (0600), and the log names the file, never the link.
 - **The binary path.** The unit runs this binary by its absolute path, symlinks resolved. `--exe`
   names another one.
 - **After an upgrade.** Re-run it when the binary moves, and after you add a signing root, so the
@@ -210,6 +218,9 @@ data: {"specversion":"1.0","id":"6f0c…","type":"com.simtabi.sange.imprimatur.s
 - **Revoking.** `impr server token revoke` takes effect when the server restarts.
 
 ## The secrets page
+
+> Superseded by the [web UI](web-ui.md)'s Secrets page, which needs no API token. This page still works as
+> described, and may be removed no earlier than v0.3.0.
 
 A local server (`server.listen` on `127.0.0.1`, `[::1]` or `localhost`) also serves a page at
 `http://127.0.0.1:PORT/ui/` for adding a signing secret, such as the App Store Connect `.p8` key, without a
