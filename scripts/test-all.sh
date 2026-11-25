@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-E2E_MIN=${E2E_MIN:-9}
+E2E_MIN=${E2E_MIN:-10}
 
 echo "== vendored web assets"
 # Every vendored file matches MANIFEST.sha256 (the web package's test checks
