@@ -574,6 +574,10 @@ func (s *Server) tokenAdd(w http.ResponseWriter, r *http.Request) {
 			tokenForm{Scopes: config.Scopes, Err: "Choose at least one scope from the list."}))
 		return
 	}
+	if s.opts.Run == nil {
+		s.done(w, r, "/tokens", "Not added: this server runs no commands.", true)
+		return
+	}
 	_, out := s.opts.Run(r.Context(), []string{"server", "token", "add", "--scopes=" + strings.Join(scopes, ","), "--json"})
 	tok := strings.TrimSpace(string(out))
 	if !apiTokenRe.MatchString(tok) {

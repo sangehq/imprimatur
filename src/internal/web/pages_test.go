@@ -556,3 +556,16 @@ func TestACertificateSubjectIsOptional(t *testing.T) {
 	}
 	t.Fatalf("ran %v, want cert create --name=t3 --days=30 --json", p.impr.ran)
 }
+
+// A server with no command bridge answers a token form with a message, not
+// a crash.
+func TestATokenFormWithoutTheBridgeRefuses(t *testing.T) {
+	p := newPagesWith(t, false, func(o *Options) { o.Run = nil })
+	code, _, hdr := p.post("/tokens", url.Values{"scopes": {"read"}}, true)
+	if code != http.StatusSeeOther || hdr.Get("Location") != "/tokens" {
+		t.Fatalf("POST /tokens with no bridge: %d %q", code, hdr.Get("Location"))
+	}
+	if _, page, _ := p.get("/tokens"); !strings.Contains(page, "runs no commands") {
+		t.Fatal("the refusal is not shown")
+	}
+}
