@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A release signs and notarises macOS binaries from Windows and Linux too, as
+  the PowerShell line's GoReleaser template did (O-140, design ID-36): signing
+  with anchore/quill's code-signing packages from the profile's `.p12`, and
+  notarising through impr's own client for Apple's notary API (no AWS SDK).
+  On a Mac, `codesign` and `notarytool` are used as before. impr now depends
+  on 12 modules, up from 2.
+
 - `impr init [--main PKG] [--force]`, as the PowerShell line had: it writes
   `build/targets.txt` with the old template's targets (in place of
   `.goreleaser.yaml`, which impr no longer reads), adds the build output to

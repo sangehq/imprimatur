@@ -36,7 +36,17 @@ func (a *Apple) Capability(h Host) Capability {
 		c.Tools = append(c.Tools, "xcrun", "ditto")
 	}
 	if h.GOOS != "darwin" {
-		c.Reason = "Developer ID signing needs a macOS host"
+		// Off a Mac impr signs in Go from a .p12 (ID-36); notarisation needs
+		// the App Store Connect key itself, not a keychain profile.
+		c.Tools = nil
+		switch {
+		case a.Spec.CertRef == "":
+			c.Reason = "Developer ID signing off a Mac needs the identity as a .p12 (certRef, with passwordRef)"
+		case a.Spec.Notary != nil && a.Spec.Notary.APIKeyRef == "":
+			c.Reason = "notarisation off a Mac needs the App Store Connect key (notary.apiKeyRef); a keychain profile exists only on a Mac"
+		default:
+			c.Sign = true
+		}
 		return c
 	}
 	if ok, why := tool(h, c.Tools...); !ok {
@@ -86,6 +96,9 @@ func (a *Apple) Certificate(ctx context.Context, p profile.Profile) CertEntry {
 
 // Sign runs codesign with the pinned identity and checks the result.
 func (a *Apple) Sign(ctx context.Context, art Artifact, p profile.Profile) (Signature, error) {
+	if a.offMacSign() {
+		return a.signOffMac(ctx, art)
+	}
 	if c := a.Capability(a.H); !c.Sign {
 		return Signature{}, contract.New(contract.Unavailable, "Developer ID signing is not available here: %s", c.Reason)
 	}
@@ -177,6 +190,9 @@ func (a *Apple) Notarize(ctx context.Context, files []Artifact) (string, error) 
 	n := a.Spec.Notary
 	if n == nil {
 		return "", nil
+	}
+	if a.H.GOOS != "darwin" {
+		return a.notarizeOffMac(ctx, files)
 	}
 	// The credentials notarytool takes: a stored keychain profile, which
 	// keeps the .p8 out of impr entirely (old security finding 7), or the

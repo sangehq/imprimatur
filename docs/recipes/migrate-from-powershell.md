@@ -25,7 +25,7 @@ impr profile import-legacy --from ~/tools/imprimatur/config --json
 | `WINDOWS_SIGNER=Certum` + `CERTUM_SUBJECT` (+ `CERTUM_THUMBPRINT`) | profile `default`: personal, `internal`, certum, pinned by the thumbprint from `CERTUM_THUMBPRINT` (the environment at import time, or the settings file). Without one, pin it; then add `allowedRepos` and `release` |
 | `WINDOWS_SIGNER=Artifact` + `ARTIFACT_DLIB`, `ARTIFACT_METADATA` | profile `default`: personal, `internal`, azure-artifact-signing. With no `ARTIFACT_METADATA`, the old default `<toolkit>/config/metadata.json` is used when it exists. Pin the subject, add `allowedRepos`, then `release` |
 | `GPG_FINGERPRINT` | `platforms.checksums` of `default`: gpg, `gpg-agent://<fingerprint>` |
-| `MACOS_SIGN_P12`, `MACOS_NOTARY_KEY`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID` set in the environment | profile `default-macos`: `env://` references only, never the values. Set `teamId` and `identity` |
+| `MACOS_SIGN_P12`, `MACOS_NOTARY_KEY`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID` set in the environment | profile `default-macos`: `env://` references only, never the values. Set `teamId` and `identity`. As with the old GoReleaser template, it signs and notarises from Windows and Linux too ([signing off a Mac](macos-notarization.md#signing-off-a-mac)) |
 
 The source is only read. A profile that already exists is kept, never
 replaced. Imported profiles may have things to finish; `impr profile validate`

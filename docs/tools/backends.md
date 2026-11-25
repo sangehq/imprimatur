@@ -9,7 +9,7 @@ type. Each runs only allow-listed tools, by absolute path, with no shell.
 | windows | `certum` | Windows | `signtool /sha1 <thumbprint>` | thumbprint and/or exact subject |
 | windows | `cert-store` | Windows | `signtool /sha1 <thumbprint>` | thumbprint and/or exact subject |
 | windows | `pfx` | any | `osslsigncode` | thumbprint and/or exact subject |
-| macos | `developer-id` | macOS | `codesign`; `xcrun notarytool`, `ditto`, `xcrun stapler` with `notary`; `spctl` to verify | team ID and identity |
+| macos | `developer-id` | macOS; Windows and Linux with a `.p12` (in Go, ID-36) | `codesign`; `xcrun notarytool`, `ditto`, `xcrun stapler` with `notary`; `spctl` to verify. Off a Mac: none (anchore/quill's signing packages and impr's own notary client); verifying needs a Mac | team ID and identity |
 | checksums | `gpg` | any | `gpg` | key fingerprint |
 | checksums | `minisign` | any | `minisign` | key id |
 | checksums | `ssh` | any | `ssh-keygen -Y` | key fingerprint (`SHA256:...`) |
