@@ -1,8 +1,19 @@
 # Installation
 
-impr is built from source. No version has been released yet; binaries will ship
-on the GitHub release only, never through a package manager or `go install`
-(see [release](release.md)).
+impr ships as binaries on the GitHub release only, never through a package manager or `go install`
+(see [release](release.md)). Download one, or build from source.
+
+## Download
+
+Take `impr_{os}_{arch}` (`.exe` on Windows; `macos`, never `darwin`) and `checksums.txt` from the
+[latest release](https://github.com/sangehq/imprimatur/releases/latest), then check it:
+
+```bash
+sha256sum -c --ignore-missing checksums.txt   # shasum -a 256 -c --ignore-missing on macOS
+gh attestation verify impr_linux_amd64 --repo sangehq/imprimatur --signer-workflow simtabi/.github/.github/workflows/go-release.yml
+```
+
+Put it on your `PATH` as `impr` (`chmod +x` it first on macOS, Linux and FreeBSD).
 
 ## Requirements
 

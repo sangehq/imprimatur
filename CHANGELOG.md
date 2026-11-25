@@ -88,6 +88,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passes without a token unless `--no-web` is given.
 - The units `impr serve install-unit --print` writes run `impr serve
   --no-open`, so the service never opens a browser.
+- The README and installation guide now offer the GitHub release download
+  (with its `checksums.txt` and attestation check) beside the source build,
+  and carry the release, CI and licence badges: they still said no version
+  was released and the repository was private.
 
 ### Deprecated
 
