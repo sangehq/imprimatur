@@ -914,13 +914,29 @@ func TestCosignCertificate(t *testing.T) {
 
 // O-133 to O-135: with no timestamp in the profile, each backend tries the
 // PowerShell line's servers, in order.
+// pinnedTimestamps are the default timestamp servers, written out as literals
+// from the PowerShell line (src/lib/common.ps1:391 SelfSigned, :420 Certum,
+// :452 Artifact Signing; O-133..O-135), so a URL changed or dropped in
+// defaultTimestamps fails here rather than agreeing with itself. pfx is the
+// Go port's own backend for a .pfx file and takes the first two of the
+// SelfSigned list.
+var pinnedTimestamps = map[string][]string{
+	profile.BackendCertStore: {"http://timestamp.digicert.com", "http://timestamp.sectigo.com", "http://timestamp.globalsign.com/tsa/r6advanced1"},
+	profile.BackendCertum:    {"http://time.certum.pl", "http://timestamp.digicert.com"},
+	profile.BackendAzure:     {"http://timestamp.acs.microsoft.com"},
+	profile.BackendPFX:       {"http://timestamp.digicert.com", "http://timestamp.sectigo.com"},
+}
+
 func TestDefaultTimestampServersPerBackend(t *testing.T) {
 	path, thumb := signedPE(t, t.TempDir(), pkix.Name{CommonName: "Acme"}, true)
 	dir := t.TempDir()
 	dlib, meta := filepath.Join(dir, "Azure.CodeSigning.Dlib.dll"), filepath.Join(dir, "metadata.json")
 	_ = os.WriteFile(dlib, []byte("x"), 0o600)
 	_ = os.WriteFile(meta, []byte(`{"Endpoint":"https://weu.codesigning.azure.net","CodeSigningAccountName":"a","CertificateProfileName":"p"}`), 0o600)
-	for backend, want := range defaultTimestamps {
+	if len(defaultTimestamps) != len(pinnedTimestamps) {
+		t.Fatalf("%d backends have default timestamp servers, %d are pinned", len(defaultTimestamps), len(pinnedTimestamps))
+	}
+	for backend, want := range pinnedTimestamps {
 		var tried []string
 		f := execx.NewFake("signtool", "osslsigncode")
 		f.Handle = func(c execx.Cmd) execx.Result {
