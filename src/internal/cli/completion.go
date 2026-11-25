@@ -318,6 +318,30 @@ func (a *App) completionFileDo(verb, shell string) error {
 	return nil
 }
 
+// refreshCompletion rewrites each completion script impr installed when it
+// is not this impr's, quietly: after an upgrade the installed one offers the
+// old commands and values, and the PowerShell line regenerated its cache on
+// a version change (O-97). A file impr did not write is never touched.
+func (a *App) refreshCompletion() {
+	if a.Home == "" {
+		return
+	}
+	for _, sh := range []string{"bash", "zsh", "fish"} {
+		f, _ := a.completionFile(sh)
+		if _, owned := completionOwned(f, sh); !owned {
+			continue
+		}
+		want, err := CompletionScript(sh)
+		if err != nil {
+			continue
+		}
+		if have, err := os.ReadFile(f); err != nil || string(have) == want { //nolint:gosec // G304: impr's own completion file
+			continue
+		}
+		_ = os.WriteFile(f, []byte(want), 0o644) //nolint:gosec // G306: a completion script the shell reads
+	}
+}
+
 func cmdCompletion(_ context.Context, a *App, args []string) (int, error) {
 	p, err := parse(args, completionFlags)
 	if err != nil {

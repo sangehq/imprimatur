@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -16,9 +18,10 @@ import (
 )
 
 var installFlags = flagSpec{"json": boolFlag, "dir": stringFlag, "force": boolFlag,
-	// The PowerShell toolkit's options (ID-13): impr install never asks, so
-	// --yes changes nothing; --no-completion leaves out the completion hint.
-	"yes": boolFlag, "no-completion": boolFlag}
+	// The PowerShell toolkit's options (ID-13): --yes answers yes to the
+	// questions install asks at a terminal (the user PATH on Windows, O-78;
+	// completion, O-80); --no-completion and --no-path leave those out.
+	"yes": boolFlag, "no-completion": boolFlag, "no-path": boolFlag}
 
 // binName is impr's file name on this OS.
 func (a *App) binName() string {
@@ -73,9 +76,11 @@ func fileSum(path string) string {
 	return hex.EncodeToString(s[:])
 }
 
-// cmdInstall copies the running binary into ~/.local/bin. It never edits
-// PATH or a shell profile; it says what to add when the folder is not on
-// PATH. A different program already at the target is never overwritten.
+// cmdInstall copies the running binary into ~/.local/bin. On Windows it puts
+// that folder on the user PATH, as the PowerShell line did, with --yes or a
+// yes at the terminal (O-78); elsewhere it says what to add. It then sets up
+// completion for the shell in use the same way (O-80). It never edits a shell
+// profile. A different program already at the target is never overwritten.
 func cmdInstall(_ context.Context, a *App, args []string) (int, error) {
 	p, err := parse(args, installFlags)
 	if err != nil {
@@ -128,13 +133,86 @@ func cmdInstall(_ context.Context, a *App, args []string) (int, error) {
 		return 0, err
 	}
 	a.say("install   copied impr to %s", dst)
-	if !a.onPath(dir) {
+	added := false
+	if a.GOOS == "windows" && userPath != nil && !p.on("no-path") {
+		added = a.addToUserPath(dir, p.on("yes"))
+	}
+	if !added && !a.onPath(dir) {
 		a.pathHint("install  ", dir)
 	}
 	if !p.on("no-completion") {
-		a.say("install   shell completion: impr completion install bash|zsh|fish")
+		a.offerCompletion(p.on("yes"))
 	}
 	return 0, nil
+}
+
+// yesNo asks the person at the terminal; an empty answer is def. With nobody
+// there it answers no, so a script is never asked.
+func (a *App) yesNo(prompt string, def bool) bool {
+	if a.Interactive == nil || !a.Interactive() || a.Stdin == nil {
+		return false
+	}
+	hint := " [y/N]: "
+	if def {
+		hint = " [Y/n]: "
+	}
+	_, _ = fmt.Fprint(a.Stderr, prompt+hint)
+	line, _ := bufio.NewReader(a.Stdin).ReadString('\n')
+	switch strings.ToLower(strings.TrimSpace(line)) {
+	case "":
+		return def
+	case "y", "yes":
+		return true
+	}
+	return false
+}
+
+// addToUserPath puts dir on the user PATH (Windows), with yes or when the
+// person at the terminal agrees, and reports whether it is there now.
+func (a *App) addToUserPath(dir string, yes bool) bool {
+	cur, err := userPath.Get()
+	if err != nil {
+		a.say("install   the user PATH cannot be read: %v", err)
+		return false
+	}
+	var parts []string
+	for _, e := range strings.Split(cur, ";") {
+		if e = strings.TrimSpace(e); e == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimRight(e, `\`), strings.TrimRight(dir, `\`)) {
+			a.say("install   %s is already on your user PATH; a terminal opened before it was added needs reopening", dir)
+			return true
+		}
+		parts = append(parts, e)
+	}
+	if !yes && !a.yesNo("Put "+dir+" on your user PATH, so impr works in every folder?", true) {
+		return false
+	}
+	if err := userPath.Set(strings.Join(append(parts, dir), ";")); err != nil {
+		a.say("install   the user PATH was not changed: %v", err)
+		return false
+	}
+	a.say("install   added %s to your user PATH; new terminals pick it up (an open editor needs a restart)", dir)
+	return true
+}
+
+// offerCompletion sets up completion for the shell in $SHELL, with yes or a
+// yes at the terminal, as the PowerShell line's install did; otherwise, or
+// for a shell impr writes no file for, it says how.
+func (a *App) offerCompletion(yes bool) {
+	sh := filepath.Base(a.Getenv("SHELL"))
+	if f, _ := a.completionFile(sh); f == "" {
+		a.say("install   shell completion: impr completion install bash|zsh|fish")
+		return
+	}
+	if !yes && !a.yesNo("Also set up tab completion for "+sh+"?", true) {
+		a.say("install   shell completion: impr completion install %s", sh)
+		return
+	}
+	if err := a.completionFileDo("install", sh); err != nil {
+		a.say("install   completion was not set up: %v", err)
+	}
 }
 
 // cmdUninstall removes an installed impr, and only impr.

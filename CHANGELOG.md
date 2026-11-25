@@ -95,6 +95,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An import from a pre-1.4 PowerShell toolkit moves its settings, state and
   `metadata.json` from the toolkit root into `config/` first, as the
   PowerShell line did (O-09).
+- `impr install` asks, at a terminal, to put its folder on the Windows user
+  PATH and to set up completion for your shell, as the PowerShell line did;
+  `--yes` answers yes, `--no-path` and `--no-completion` leave one out, and
+  with nobody at a terminal it changes nothing (O-78, O-80).
+- An installed bash, zsh or fish completion script is rewritten on the next
+  run after an upgrade, as the PowerShell line's cache was (O-97).
 - Bare `impr serve` now starts the web UI as well as the API, and starts with
   no API token configured; `--no-web` keeps the API-only behaviour and its
   refusal without a token or inbound endpoint. `impr serve --check-config`

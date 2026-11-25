@@ -40,7 +40,7 @@ Each old spelling still works as an alias of the Go name (design ID-13):
 | `impr profile add NAME --file FILE` | `--from-file FILE` (`--file` still works) |
 | `impr profile export NAME --out FILE` | `--out-file FILE` (`--out` still works) |
 | `impr install --yes` | accepted; impr install never asks |
-| `impr install --no-completion` | leaves out the completion hint |
+| `impr install --no-completion` | leaves out the completion question and hint |
 | `impr build VERSION` stamping `main.version` | the same; `--version-var` names another variable |
 | `impr build` signing with `--profile`, `--signer`, `--thumbprint` … | moved to `impr release --profile NAME --purpose P` |
 | `impr rules --scope file` (product + binary) | the same meaning (ID-11); `--scope product` is product only |
@@ -104,7 +104,7 @@ the Go `impr` does instead. Everything left out on purpose is also under
 | macOS signing from `MACOS_SIGN_P12` and `MACOS_SIGN_PASSWORD` (a temporary keychain) | **ported**: `platforms.macos.certRef` and `passwordRef` put the `.p12` in a keychain that exists for one run and is deleted after it; the import maps both variables |
 | Azure login check (`az account show`) before Artifact Signing | **ported**: run before Artifact Signing when the Azure CLI is the credential (`az` allowed in that one form only) |
 | GPG keys other than the agent's | **ported**: a `keyRef` of `secret://` or `env://` holding the armored key (with an optional `passwordRef`) is imported into a throwaway gpg home for the run; `publicKey` names the armored public key to verify against |
-| `impr install`/`uninstall`, `impr path`, `impr completion`, `impr help <command>` | **ported**: [`impr install`](../tools/install.md) copies the binary to `~/.local/bin` (it never edits PATH), [`impr completion`](../tools/completion.md) for bash, zsh, fish and PowerShell, `impr help <command>` and `--help` on every command, and the aliases `s`, `v`, `d`, `h` |
+| `impr install`/`uninstall`, `impr path`, `impr completion`, `impr help <command>` | **ported**: [`impr install`](../tools/install.md) copies the binary to `~/.local/bin` and, on Windows, puts it on the user PATH when you agree or pass `--yes` (`--no-path` leaves it out), then offers completion for your shell as the PowerShell line did; an installed completion follows an upgrade by itself, [`impr completion`](../tools/completion.md) for bash, zsh, fish and PowerShell, `impr help <command>` and `--help` on every command, and the aliases `s`, `v`, `d`, `h` |
 | The interactive menu | **ported** as [`impr menu`](../tools/menu.md), also opened by `impr` alone at a terminal, with build (`b`), release (`r`) and install (`n`); the rest is dropped (ID-18) |
 | `make/impr.mk` Make integration | **ported**: [`make/impr.mk`](../tools/make.md) with sign, verify, doctor, build, release, config, completion, install and path targets (ID-21) |
 | `impr doctor` checks for go, goreleaser, go-winres and git | doctor lists `go` and `git` (with path and digest) among its tools, since `impr build` runs them; goreleaser and go-winres are not needed (impr runs `go build` and writes Windows resources itself). Doctor notes a missing go or git, impr off PATH, missing completion, expiring certificates, Azure sign-in and gpg secret keys (ID-19); colour markers and `~` paths are dropped |

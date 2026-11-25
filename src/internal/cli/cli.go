@@ -553,6 +553,10 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		}
 		return a.fail(contract.New(contract.Usage, "unknown command %q", cmd).WithFix(fix...), asJSON)
 	}
+	// An installed completion script follows an upgrade (O-97).
+	if cmd != "completion" && cmd != "uninstall" {
+		a.refreshCompletion()
+	}
 	start := a.Now()
 	code, err := c.run(ctx, a, rest)
 	if err != nil {

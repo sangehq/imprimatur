@@ -37,6 +37,8 @@ file is written.
   they are offered after `--purpose=` as well as after `--purpose `.
   Profile names and config keys are not completed (ID-17).
 - Anything else falls back to file names.
+- **After an upgrade** the bash, zsh and fish files impr installed are rewritten on the next impr command,
+  quietly, when they no longer match this impr's; a file impr did not write is never touched.
 - The scripts are generated from impr's usage text, so they always match the impr that wrote them.
   Re-run `install` after upgrading.
 
