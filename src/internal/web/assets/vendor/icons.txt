@@ -86,3 +86,6 @@ file-zip
 file-import
 binary-tree
 plug-connected
+certificate
+keyboard
+signature
