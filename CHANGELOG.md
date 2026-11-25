@@ -23,7 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `build/targets.txt` with the old template's targets (in place of
   `.goreleaser.yaml`, which impr no longer reads), adds the build output to
   `.gitignore`, and refuses to overwrite targets without `--force`
-  (O-36..O-39).
+  (O-36..O-39). It refuses a `build` folder, targets file or `.gitignore`
+  that is a symbolic link, and writes each through a temporary file and a
+  rename, never through a link.
 
 - `impr serve` starts a web UI on `127.0.0.1:7823` beside the API (the next
   free port when taken; `--port` pins it), following the sange and authama

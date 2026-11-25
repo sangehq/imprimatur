@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -53,6 +54,11 @@ func cmdInit(_ context.Context, a *App, args []string) (int, error) {
 		}
 	}
 	targets := filepath.Join(o.RepoRoot, "build", "targets.txt")
+	for _, f := range []string{filepath.Dir(targets), targets, filepath.Join(o.RepoRoot, ".gitignore")} {
+		if err := refuseSymlink(f); err != nil {
+			return 0, err
+		}
+	}
 	if _, err := os.Lstat(targets); err == nil && !p.on("force") {
 		return 0, contract.New(contract.Usage, "this project is already set up (%s exists); impr init does not overwrite it, so your edits are safe", targets).
 			WithFix("impr build", "impr init --force   (start the targets over; your edits to it are lost)")
@@ -61,7 +67,7 @@ func cmdInit(_ context.Context, a *App, args []string) (int, error) {
 		return 0, err
 	}
 	body := "# Release targets: \"GOOS GOARCH [GOARM]\". Written by impr init; impr build reads it.\n" + strings.Join(initTargets, "\n") + "\n"
-	if err := os.WriteFile(targets, []byte(body), 0o644); err != nil { //nolint:gosec // G306: a tracked source file
+	if err := writeNoFollow(targets, []byte(body)); err != nil {
 		return 0, err
 	}
 	a.say("init      wrote %s (%d targets)", targets, len(initTargets))
@@ -106,9 +112,42 @@ func (a *App) initIgnore(root string) error {
 		text += "\n"
 	}
 	text += "# impr build output\n" + strings.Join(add, "\n") + "\n"
-	if err := os.WriteFile(path, []byte(text), 0o644); err != nil { //nolint:gosec // G306: a tracked source file
+	if err := writeNoFollow(path, []byte(text)); err != nil {
 		return err
 	}
 	a.say("init      added %s to %s", strings.Join(add, ", "), path)
 	return nil
+}
+
+// refuseSymlink refuses a path that is a symbolic link: impr init writes only
+// the project's own files, never one a link points at.
+func refuseSymlink(path string) error {
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return contract.New(contract.Usage, "%s is a symbolic link; impr init does not write through one", path).
+			WithFix("replace it with a regular file or folder, then run impr init again")
+	}
+	return nil
+}
+
+// writeNoFollow writes data to a temporary file beside path and renames it
+// over path, so a link that appeared after the check is replaced, never
+// followed. The file is 0644, as a tracked source file is.
+func writeNoFollow(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil && runtime.GOOS != "windows" { //nolint:gosec // G302: a tracked source file
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }

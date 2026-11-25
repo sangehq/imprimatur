@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -104,4 +105,69 @@ func TestInitChoosesTheProgram(t *testing.T) {
 	if code, _, errOut := h.impr("init", "--repo-root", goModule(t, false)); code != 1 || !strings.Contains(errOut, "no program") {
 		t.Fatalf("no programs: %d %s", code, errOut)
 	}
+}
+
+// impr init never writes through a symbolic link: a targets.txt, .gitignore
+// or build folder that links outside the project is refused, and the file
+// the link points at is left alone, with or without --force.
+func TestInitRefusesSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symbolic links need a privilege on Windows")
+	}
+	h := newHarness(t)
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	const keep = "not impr's\n"
+	link := func(t *testing.T, path string) {
+		t.Helper()
+		if err := os.WriteFile(outside, []byte(keep), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(outside, path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	untouched := func(t *testing.T) {
+		t.Helper()
+		if b, _ := os.ReadFile(outside); string(b) != keep {
+			t.Fatalf("the file outside the project was written:\n%s", b)
+		}
+	}
+
+	t.Run("targets.txt", func(t *testing.T) {
+		root := goModule(t, true, "tool")
+		link(t, filepath.Join(root, "build", "targets.txt"))
+		for _, args := range [][]string{{"init", "--repo-root", root}, {"init", "--repo-root", root, "--force"}} {
+			code, _, errOut := h.impr(args...)
+			if code != 1 || !strings.Contains(errOut, "symbolic link") {
+				t.Fatalf("%v: %d %s", args, code, errOut)
+			}
+			untouched(t)
+		}
+	})
+	t.Run(".gitignore", func(t *testing.T) {
+		root := goModule(t, false, "tool")
+		link(t, filepath.Join(root, ".gitignore"))
+		code, _, errOut := h.impr("init", "--repo-root", root)
+		if code != 1 || !strings.Contains(errOut, "symbolic link") {
+			t.Fatalf("%d %s", code, errOut)
+		}
+		untouched(t)
+	})
+	t.Run("build folder", func(t *testing.T) {
+		root := goModule(t, true, "tool")
+		dir := t.TempDir()
+		if err := os.Symlink(dir, filepath.Join(root, "build")); err != nil {
+			t.Fatal(err)
+		}
+		code, _, errOut := h.impr("init", "--repo-root", root)
+		if code != 1 || !strings.Contains(errOut, "symbolic link") {
+			t.Fatalf("%d %s", code, errOut)
+		}
+		if _, err := os.Stat(filepath.Join(dir, "targets.txt")); !os.IsNotExist(err) {
+			t.Fatal("targets.txt was written through the linked build folder")
+		}
+	})
 }

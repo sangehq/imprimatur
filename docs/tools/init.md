@@ -22,6 +22,9 @@ impr init --force                 # write build/targets.txt again (your edits to
   tree: `build/*/` (the per-OS folders and archives), `build/build-manifest.json`, and
   `zz_impr_winres_windows_*.syso` (the Windows resource file a cut-short build can leave). Lines already
   there are not added again.
+- **Nothing through a link.** A `build` folder, `build/targets.txt` or `.gitignore` that is a symbolic
+  link is refused, with or without `--force`, and each file is written to a temporary file beside it and
+  renamed into place, so a link that appears meanwhile is replaced rather than followed.
 - **Not `.goreleaser.yaml`.** impr builds with `go build` itself (design ID-09), so a GoReleaser config would
   never be read, and impr does not run a repository's GoReleaser config (threat I-06).
 
