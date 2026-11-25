@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -59,5 +62,37 @@ func TestConfigSetTrimsQuotes(t *testing.T) {
 	}
 	if code, _, _ := h.impr("config", "set", "server.listen", `""`); code != 1 {
 		t.Errorf("a value that is only quotes was accepted: %d", code)
+	}
+}
+
+// O-95: bash splits --purpose=re at the "=" (COMP_WORDBREAKS), and the
+// completer still offers the option's values, as the PowerShell line's did.
+func TestBashCompletesAfterAnEqualsSign(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("needs bash")
+	}
+	script, err := CompletionScript("bash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(t.TempDir(), "impr.bash")
+	if err := os.WriteFile(f, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for words, want := range map[string]string{
+		`impr sign --purpose = re`: "release",
+		`impr sign --purpose =`:    "release test internal",
+		`impr sign --purpose re`:   "release",
+		`impr rules --scope = pu`:  "publisher",
+	} {
+		w := strings.Fields(words)
+		cword := len(w) - 1
+		cmd := exec.Command(bash, "-c", `source "$1"; COMP_WORDS=(`+words+`); COMP_CWORD=`+strconv.Itoa(cword)+`; _impr; echo "${COMPREPLY[*]}"`, "x", f)
+		out, err := cmd.CombinedOutput()
+		got := strings.Join(strings.Fields(string(out)), " ")
+		if err != nil || got != want {
+			t.Errorf("%q: %q (%v), want %q", words, got, err, want)
+		}
 	}
 }

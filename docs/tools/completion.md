@@ -33,7 +33,8 @@ file is written.
 - Commands, plus each command's subcommands and options. After a one-letter alias (`impr s `), the
   subcommands and options of the command it stands for.
 - An option's values where impr lists them: `--purpose` (release, test, internal), `--platforms`,
-  `rules --scope`, `server token add --scopes`, `--for`. They are read from the same usage text.
+  `rules --scope`, `server token add --scopes`, `--for`. They are read from the same usage text. In bash
+  they are offered after `--purpose=` as well as after `--purpose `.
   Profile names and config keys are not completed (ID-17).
 - Anything else falls back to file names.
 - The scripts are generated from impr's usage text, so they always match the impr that wrote them.
