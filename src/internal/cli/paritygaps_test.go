@@ -42,3 +42,22 @@ func TestFixedSetValuesIgnoreCase(t *testing.T) {
 		t.Errorf("rules: scope %q product %q (%v)", p.str("scope"), p.str("product"), err)
 	}
 }
+
+// O-74: config set trims the spaces and the quotes around a value, as the
+// PowerShell line did (impr.ps1:474), so a value quoted twice is stored bare.
+func TestConfigSetTrimsQuotes(t *testing.T) {
+	h := newHarness(t)
+	for _, v := range []string{`'127.0.0.1:8765'`, `"127.0.0.1:8765"`, ` "127.0.0.1:8765" `} {
+		h.ok("config", "set", "server.listen", v)
+		if got := strings.TrimSpace(h.ok("config", "get", "server.listen")); got != `"127.0.0.1:8765"` { // get prints JSON
+			t.Errorf("set %q: got %q", v, got)
+		}
+	}
+	h.ok("config", "set", "server.roots", `'["/srv/a", "/srv/b"]'`)
+	if got := h.ok("config", "get", "server.roots"); !strings.Contains(got, "/srv/b") {
+		t.Errorf("a quoted JSON list: %q", got)
+	}
+	if code, _, _ := h.impr("config", "set", "server.listen", `""`); code != 1 {
+		t.Errorf("a value that is only quotes was accepted: %d", code)
+	}
+}

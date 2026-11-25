@@ -130,6 +130,10 @@ func (a *App) configEdit(ctx context.Context, d paths.Dirs, sub string, p parsed
 	// The value's words are joined, as the PowerShell toolkit did (ID-16):
 	// a JSON list split by the shell still arrives whole.
 	value := strings.Join(p.pos[min(2, len(p.pos)):], " ")
+	// Spaces and the quotes around it are trimmed, as the PowerShell toolkit
+	// did (O-74): a value quoted once by the shell and once by hand is stored
+	// bare.
+	value = strings.Trim(strings.TrimSpace(value), `"'`)
 	if sub == "set" && strings.TrimSpace(value) == "" {
 		return 0, contract.New(contract.Usage, "config set %s needs a value; to remove the key: impr config unset %s", p.pos[1], p.pos[1])
 	}

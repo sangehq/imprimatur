@@ -92,8 +92,9 @@ impr config profile rm ci              # refused while it is active
 ```
 
 - **Values.** A `set` value is parsed as JSON when it is JSON, and kept as a string otherwise. Its words
-  are joined with spaces first, so `impr config set server.roots ["/a", "/b"]` works unquoted. An empty
-  value is refused; `unset` removes a key.
+  are joined with spaces first, so `impr config set server.roots ["/a", "/b"]` works unquoted, and the
+  spaces and quotes around the result are trimmed, so `'127.0.0.1:8765'` is stored bare. An empty value is
+  refused; `unset` removes a key.
 - **Safe edits.** A change is written, the configuration is reloaded, and the file is put back as it was
   if the result does not load.
 - **Events.** Changes are recorded as `config.changed` in the [event log](events.md).
