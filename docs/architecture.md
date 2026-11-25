@@ -27,8 +27,8 @@ src/internal/approval/ signed approvals for profiles that require them
 src/internal/bundle/   signed profile bundles
 ```
 
-The module has two dependencies outside the Go standard library, and a guard
-(`internal/guardtest/deps_test.go`) fails if `go.mod` names any other:
+The module's dependencies outside the Go standard library are listed, each with its reason, in a guard
+(`internal/guardtest/deps_test.go`) that fails if `go.mod` names any other:
 
 - `github.com/simtabi/go-notifykit`, which every Go program in the estate uses for desktop
   notifications. It runs the platform notifier itself (a helper app on macOS, `notify-send`, a
@@ -37,6 +37,18 @@ The module has two dependencies outside the Go standard library, and a guard
 - `golang.org/x/sys`, the Go project's own system-call package, for what the standard library cannot
   do: the macOS socket peer check (`LOCAL_PEERCRED`) and the Windows named pipe with an owner-only
   DACL (owner decision, 2026-11-17).
+- `github.com/anchore/quill`'s code-signing packages, for Developer ID signing off a Mac (design ID-36,
+  2026-11-25), with what they pull: `go-macholibre`, `go-logger`, `smimesign`, `go-pkcs12`,
+  `golang.org/x/crypto`, `restruct`, `uuid`, `pkg/errors` and `go-set` (Apache-2.0, MIT, ISC and BSD).
+  Never quill's notary client (the AWS SDK) or its CLI (a terminal UI): the guard refuses both, and impr
+  talks to Apple's notary API with its own standard-library client. 12 modules are compiled in, up
+  from 2; the stripped binary grew by about 0.9 MB.
+
+Their licence texts, and the Go standard library's, are in `third-party-notices-go.md`, written by
+`make notices` from `go list -deps ./cmd/impr` and the module cache. It is a file of its own, beside
+the web UI's `third-party-notices.md`, because the Tabler tool rewrites that file whole: two files let
+each generator own one, deterministically. `scripts/test-all.sh` regenerates it in memory and fails on
+any difference, and both files ship as release assets beside the binaries.
 
 ## The backend port
 

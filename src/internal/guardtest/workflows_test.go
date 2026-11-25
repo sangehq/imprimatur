@@ -405,6 +405,22 @@ func TestGoReleaserBuildsTheTargetsList(t *testing.T) {
 	atLeast(t, "release targets", len(got), 10)
 }
 
+// TestGoReleaserShipsTheNotices: both licence notices files are release
+// assets and checksummed, since the bare-binary archives cannot hold them,
+// and both exist at the repository root.
+func TestGoReleaserShipsTheNotices(t *testing.T) {
+	root := repoRoot(t)
+	text := readFile(t, filepath.Join(root, "src", ".goreleaser.yaml"))
+	for _, f := range []string{"third-party-notices.md", "third-party-notices-go.md"} {
+		if n := strings.Count(text, "- glob: ./"+f+"\n"); n != 2 {
+			t.Errorf("src/.goreleaser.yaml lists %s %d times; want it in release.extra_files and checksum.extra_files", f, n)
+		}
+		if len(readFile(t, filepath.Join(root, f))) < 1000 {
+			t.Errorf("%s is missing or nearly empty", f)
+		}
+	}
+}
+
 // TestActionPinForm checks every `uses:` in every workflow.
 func TestActionPinForm(t *testing.T) {
 	files := workflowFiles(t)

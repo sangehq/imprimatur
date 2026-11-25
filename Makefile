@@ -35,7 +35,7 @@ GOFILES_DIRS := $(MODULE)/cmd $(MODULE)/internal
 # directory fails instead of passing nothing.
 BUILD_LAYOUT_MIN ?= 1
 
-.PHONY: help build test test-all vet fmt fmt-check lint check cross check-build clean fuzz vuln tabler-check tabler-update tabler-vendor
+.PHONY: help build test test-all vet fmt fmt-check lint check cross check-build clean fuzz vuln notices notices-check tabler-check tabler-update tabler-vendor
 
 # Each fuzzer runs this long in `make fuzz`; FUZZ_MIN is the fewest fuzzers it
 # must find, so a rename that hides them fails instead of fuzzing nothing.
@@ -102,6 +102,15 @@ fuzz: ## run every Fuzz function for FUZZTIME each (default 30s)
 
 vuln: ## report known vulnerabilities in the code paths impr uses (govulncheck)
 	$(GO) run $(GOVULNCHECK) ./...
+
+# The listing gonotices reads on stdin: the modules ./cmd/impr compiles (gonotices.ListFormat).
+NOTICES_LIST := $(GO) list -deps -f '{{if .Module}}{{if not .Module.Main}}{{.Module.Path}}{{"\t"}}{{.Module.Version}}{{"\t"}}{{.Module.Dir}}{{end}}{{end}}' $(PKG)
+
+notices: ## rewrite third-party-notices-go.md from the Go modules ./cmd/impr compiles (module cache)
+	$(NOTICES_LIST) | $(GO) run ./internal/tools/gonotices -root .. -goroot "$$(go env GOROOT)"
+
+notices-check: ## fail when third-party-notices-go.md is out of date (scripts/test-all.sh runs it)
+	$(NOTICES_LIST) | $(GO) run ./internal/tools/gonotices -check -root .. -goroot "$$(go env GOROOT)"
 
 tabler-check: ## say whether a newer Tabler or Tabler Icons release is out (writes nothing)
 	$(GO) run ./internal/tools/tablervendor -check -root ..

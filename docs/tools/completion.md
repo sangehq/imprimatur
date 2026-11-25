@@ -33,9 +33,15 @@ file is written.
 - Commands, plus each command's subcommands and options. After a one-letter alias (`impr s `), the
   subcommands and options of the command it stands for.
 - An option's values where impr lists them: `--purpose` (release, test, internal), `--platforms`,
-  `rules --scope`, `server token add --scopes`, `--for`. They are read from the same usage text.
+  `rules --scope`, `server token add --scopes`, `--for`. They are read from the same usage text. In bash
+  they are offered after `--purpose=` as well as after `--purpose `.
   Profile names and config keys are not completed (ID-17).
 - Anything else falls back to file names.
+- **After an upgrade** the bash, zsh and fish files impr installed are rewritten once, on the next impr
+  command, quietly. Each script's header carries the version that wrote it (`# impr-version: 1.5.0`), and a
+  script is rewritten only when that version is older than the running impr: never by the same version, an
+  older impr or a `dev` build, so other commands only read the header. A file impr did not write is never
+  touched.
 - The scripts are generated from impr's usage text, so they always match the impr that wrote them.
   Re-run `install` after upgrading.
 

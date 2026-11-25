@@ -79,6 +79,12 @@ impr rules build/windows/tool.exe build/windows/core.dll --scope version --produ
   Before 2026-11-17 `product` wrote what `file` writes now, and `file` was refused.
 - **WDAC needs a base policy.** A WDAC supplemental policy is rendered only with `--base-policy`, the base
   policy's `{GUID}`. Without one, the output is AppLocker only, and impr says so.
+- **A base policy, only when asked.** `--wdac-base` (or `options.basePolicy` in a request) renders the WDAC
+  policy as a base policy instead, as the PowerShell line did without `--base`: its own `PolicyID` as its
+  `BasePolicyID`, `Enabled:UMCI`, and `Enabled:Audit Mode` unless `--enforce`, written as `wdac-base.xml`.
+  It is for merging into the machine's base policy (`Merge-CIPolicy`); deployed on its own in enforced mode
+  it would allow only this program and block Windows itself, and a note says so. It cannot be combined with
+  `--base-policy`.
 - **Product name.** Without `--product`, impr reads the ProductName from the files' own version information
   (which `impr build` embeds), and every file must name the same product. `--product` overrides it, and a
   file with no ProductName needs it.
@@ -119,7 +125,10 @@ impr rules test --policy policies\applocker.xml build\windows\tool.exe build\win
 `files` are the request's, sorted by path, and `manifestDigest` is the
 request's: sange accepts the answer only when both match. Without `--json` the
 XML is printed on stdout; `--out-dir` also writes `applocker.xml` and
-`wdac-supplemental.xml`.
+`wdac-supplemental.xml` (or `wdac-base.xml`). On Windows, the WDAC policy written there is compiled into a
+`.cip` beside it with `ConvertFrom-CIPolicy`, through impr's own embedded script, which proves Windows
+accepts it; a policy that does not compile fails the run and is kept to look at, and a Windows without the
+ConfigCI module (Home editions) skips it with a note.
 
 ## What the policies allow
 
@@ -134,17 +143,16 @@ XML is printed on stdout; `--out-dir` also writes `applocker.xml` and
   mode from its base policy, so `enforce` does not change it; a note says so.
 - The WDAC `PolicyID` is derived from the base policy, publisher, leaf, product and name (or taken from
   `policyId`), so each build of one product replaces the same supplemental policy.
-- WDAC is always a supplemental policy of `basePolicyId`, its signer pinned by
+- WDAC is a supplemental policy of `basePolicyId` unless `basePolicy` asks for a base policy, its signer pinned by
   the TBS hash of the certificate below the root (`issuerTbs`), the leaf's common name and, when given,
   the EKU.
-- No file-hash rules, no base policy, and no randomness: rule and policy ids
+- No file-hash rules, no base policy unless asked, and no randomness: rule and policy ids
   are derived from the inputs, so the same request renders the same bytes.
 
 A request with no files, a non-Windows file, a wrong collection, a missing
 publisher fact, no base policy id for WDAC, or another contract version is a
-usage error (exit 1). Unlike the PowerShell line, impr does not read signatures
-from files on Windows or compile the policy; see
-[migration](../recipes/migrate-from-powershell.md).
+usage error (exit 1). See [migration](../recipes/migrate-from-powershell.md) for how this compares with the
+PowerShell line.
 
 ---
 

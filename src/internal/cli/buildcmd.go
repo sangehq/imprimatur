@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,7 +16,7 @@ import (
 
 var buildFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "repo-root": stringFlag, "module": stringFlag, "main": stringFlag,
 	"binary": stringFlag, "version": stringFlag, "version-var": stringFlag, "targets": listFlag, "clean": boolFlag,
-	"allow-dirty": boolFlag, "profile": stringFlag, "purpose": stringFlag, "repo": stringFlag, "platforms": listFlag,
+	"allow-dirty": boolFlag, "profile": stringFlag, "purpose": foldFlag, "repo": stringFlag, "platforms": listFlag,
 	"product": stringFlag, "company": stringFlag, "description": stringFlag, "copyright": stringFlag, "icon": stringFlag, "no-winres": boolFlag, "archives": boolFlag}
 
 // BuildResult is `impr build --json`.
@@ -39,6 +40,9 @@ type ReleaseResult struct {
 // buildOptions turns flags into build options, with the estate defaults:
 // the module in src/ when it has a go.mod, the only command under cmd/,
 // targets from build/targets.txt, else this host.
+// errNoProgram is buildOptions' cause when the module has no cmd/NAME/main.go.
+var errNoProgram = errors.New("no program under cmd/")
+
 func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -69,6 +73,9 @@ func (a *App) buildOptions(p parsed) (gobuild.Options, error) {
 	main := p.str("main")
 	if main == "" {
 		cmds, _ := filepath.Glob(filepath.Join(mod, "cmd", "*", "main.go"))
+		if len(cmds) == 0 {
+			return gobuild.Options{}, contract.Wrap(contract.Usage, errNoProgram, "--main is required: found 0 commands under %s/cmd", mod)
+		}
 		if len(cmds) != 1 {
 			var names []string
 			for _, c := range cmds {

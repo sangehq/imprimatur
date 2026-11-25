@@ -50,10 +50,37 @@ func encodeCommand(script string) string {
 	return base64.StdEncoding.EncodeToString(b)
 }
 
-// checkPowerShell allows exactly PowerShellArgs.
+// checkPowerShell allows exactly PowerShellArgs or CompileCIPolicyArgs.
 func checkPowerShell(args []string) error {
-	if !slices.Equal(args, PowerShellArgs()) {
-		return fmt.Errorf("powershell %s: %w (only impr's Test-AppLockerPolicy script)", strings.Join(args, " "), ErrNotAllowed)
+	if !slices.Equal(args, PowerShellArgs()) && !slices.Equal(args, CompileCIPolicyArgs()) {
+		return fmt.Errorf("powershell %s: %w (only impr's Test-AppLockerPolicy and ConvertFrom-CIPolicy scripts)", strings.Join(args, " "), ErrNotAllowed)
 	}
 	return nil
+}
+
+// CompileCIPolicyScript compiles the WDAC policy impr rules wrote into a .cip
+// with ConvertFrom-CIPolicy, which proves Windows accepts it (O-183). Its
+// inputs arrive as environment variables (CompileCIPolicyEnv), never as code.
+// It prints "compiled", or "skipped" where this Windows has no ConfigCI
+// module (Home editions); a policy that does not compile is an error.
+const CompileCIPolicyScript = `$ErrorActionPreference = 'Stop'
+if (-not (Get-Command ConvertFrom-CIPolicy -ErrorAction SilentlyContinue)) { 'skipped'; exit 0 }
+ConvertFrom-CIPolicy -XmlFilePath $env:IMPR_CIP_XML -BinaryFilePath $env:IMPR_CIP_OUT | Out-Null
+'compiled'
+`
+
+// CompileCIPolicyArgs is the PowerShell command line for CompileCIPolicyScript,
+// in the same form as PowerShellArgs.
+func CompileCIPolicyArgs() []string {
+	return []string{"-NoProfile", "-NonInteractive", "-EncodedCommand", encodeCommand(CompileCIPolicyScript)}
+}
+
+// CompileCIPolicyEnv carries the policy and the .cip paths.
+func CompileCIPolicyEnv(xmlPath, cipPath string) ([]string, error) {
+	for _, v := range []string{xmlPath, cipPath} {
+		if strings.ContainsAny(v, "\r\n") {
+			return nil, fmt.Errorf("%q holds a line break", v)
+		}
+	}
+	return []string{"IMPR_CIP_XML=" + xmlPath, "IMPR_CIP_OUT=" + cipPath}, nil
 }

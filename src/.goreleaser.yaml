@@ -12,7 +12,8 @@ version: 2
 # The release carries exactly what the hand-written release.yml published before
 # it: one bare binary per line of build/targets.txt, named
 # impr_{os}_{arch}[.exe] with darwin written as macos and arm as armvN, plus
-# checksums.txt. src/internal/guardtest pins the targets to build/targets.txt.
+# checksums.txt; and, since 2026-11-25, the two licence notices files.
+# src/internal/guardtest pins the targets to build/targets.txt.
 
 # The shared workflow pushes src/vX.Y.Z (the Go module alias) on the same commit
 # as vX.Y.Z. Without this, GoReleaser can take src/vX.Y.Z as the current tag.
@@ -65,9 +66,13 @@ archives:
       {{- if eq .Arch "arm" }}armv{{ .Arm }}{{ else }}{{ .Arch }}{{ end }}
 
 # Bare filenames, so `sha256sum -c checksums.txt` resolves next to the downloads.
+# The two notices files are checksummed with the binaries.
 checksum:
   name_template: "checksums.txt"
   algorithm: sha256
+  extra_files:
+    - glob: ./third-party-notices.md
+    - glob: ./third-party-notices-go.md
 
 release:
   github:
@@ -75,6 +80,13 @@ release:
     name: imprimatur
   draft: false
   prerelease: auto
+  # The archives are bare binaries, which cannot hold a file, so the licence
+  # notices for what every binary embeds ship beside them on the release: the
+  # web UI's assets (make tabler-vendor) and the Go modules (make notices).
+  # src/internal/guardtest checks both are listed.
+  extra_files:
+    - glob: ./third-party-notices.md
+    - glob: ./third-party-notices-go.md
 
 # The release body is the tagged CHANGELOG section, passed with --release-notes.
 # Not disabled: `disable: true` also drops --release-notes.

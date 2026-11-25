@@ -3,6 +3,7 @@ package profile
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -89,6 +90,9 @@ var ownerSafe = regexp.MustCompile(`[^a-z0-9._-]`)
 // only read.
 func ImportLegacy(s Store, source string, e LegacyEnv) (LegacyReport, error) {
 	rep := LegacyReport{Contract: contract.Version, Source: source, Imported: []string{}, Problems: map[string][]string{}}
+	if err := movePre14(source, &rep); err != nil {
+		return rep, err
+	}
 	dir, settingsPath := source, ""
 	if st, err := os.Stat(source); err != nil {
 		return rep, contract.Wrap(contract.Usage, err, "the legacy configuration %s cannot be read", source).
@@ -172,6 +176,126 @@ func ImportLegacy(s Store, source string, e LegacyEnv) (LegacyReport, error) {
 		rep.Problems = nil
 	}
 	return rep, nil
+}
+
+// FirstRunDefault makes, on a first run on Windows with no PowerShell
+// settings at all, the profile the PowerShell line's migration made there
+// (Invoke-ProfileMigration, O-120): the self-signed test certificate as the
+// personal test profile "default", which can never sign a release, and the
+// default. It reports what it did; elsewhere it does nothing.
+func FirstRunDefault(s Store, e LegacyEnv) (LegacyReport, error) {
+	rep := LegacyReport{Contract: contract.Version, Source: "first run on Windows", Imported: []string{}, Problems: map[string][]string{}}
+	if e.GOOS != "windows" {
+		return rep, nil
+	}
+	idx, _, err := s.LoadIndex()
+	if err != nil {
+		return rep, err
+	}
+	p := settingsProfile(map[string]string{"WINDOWS_SIGNER": "SelfSigned"}, "", e)
+	p.Notes = "Made on impr's first run on Windows, as the PowerShell line did: the self-signed test certificate. It can never sign a release."
+	if err := s.importOne(*p, p.Validate(), &rep); err != nil {
+		return rep, err
+	}
+	if idx.Default == "" && len(rep.Imported) == 1 {
+		idx.Default, rep.Default = p.Name, p.Name
+	}
+	idx.MigratedFrom = rep.Source
+	idx.MigratedAt = e.Now().UTC().Format(time.RFC3339)
+	if err := s.SaveIndex(idx); err != nil {
+		return rep, err
+	}
+	if len(rep.Problems) == 0 {
+		rep.Problems = nil
+	}
+	return rep, nil
+}
+
+// pre14Files are the files impr 1.3 and earlier kept in the toolkit's root,
+// which 1.4 moved into config/ (Move-LegacyConfig).
+var pre14Files = []string{LegacySettingsFile, ".imprimatur-state.json", "metadata.json"}
+
+// movePre14 moves a pre-1.4 toolkit's files from its root into config/, as
+// the PowerShell line did on every run (O-09), so an import from such a
+// toolkit finds them. Unlike the rest of import-legacy, which only reads the
+// toolkit, this changes the toolkit's own tree: it renames files within it
+// (root to config/), copying nothing out and deleting nothing. It acts only
+// on configDir named config inside a PowerShell toolkit (one with
+// src/impr.ps1). A file already in config/ wins and the old one is left in
+// place, reported; the move never replaces one, even one that appears after
+// the check (moveNoReplace).
+// linkFile is os.Link; a test replaces it to take the copy path.
+var linkFile = os.Link
+
+// beforePre14Move is a test seam that runs just before each move, so a test
+// can make the target appear between the check and the move.
+var beforePre14Move = func(string) {}
+
+func movePre14(configDir string, rep *LegacyReport) error {
+	root := filepath.Dir(configDir)
+	if filepath.Base(configDir) != "config" {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(root, "src", "impr.ps1")); err != nil {
+		return nil
+	}
+	for _, name := range pre14Files {
+		from, to := filepath.Join(root, name), filepath.Join(configDir, name)
+		if st, err := os.Lstat(from); err != nil || !st.Mode().IsRegular() {
+			continue
+		}
+		if _, err := os.Lstat(to); err == nil {
+			rep.Notes = append(rep.Notes, "both "+from+" and "+to+" exist; used "+to+" (delete the old one)")
+			continue
+		}
+		if err := os.MkdirAll(configDir, 0o700); err != nil {
+			return err
+		}
+		beforePre14Move(to)
+		if err := moveNoReplace(from, to); err != nil {
+			if errors.Is(err, fs.ErrExist) {
+				rep.Notes = append(rep.Notes, "both "+from+" and "+to+" exist; used "+to+" (delete the old one)")
+				continue
+			}
+			return contract.Wrap(contract.Unavailable, err, "move %s into %s", from, configDir)
+		}
+		rep.Notes = append(rep.Notes, "moved "+name+" from the toolkit root (impr 1.3 and earlier) to "+to)
+	}
+	return nil
+}
+
+// moveNoReplace moves from to to, failing with fs.ErrExist rather than
+// replacing a file at to: a hard link (which the system refuses atomically
+// when to exists) then the old name removed; where links are not supported,
+// an exclusive create and a copy.
+func moveNoReplace(from, to string) error {
+	lerr := linkFile(from, to)
+	if lerr == nil {
+		return os.Remove(from)
+	}
+	if errors.Is(lerr, fs.ErrExist) {
+		return lerr
+	}
+	src, err := os.Open(from) //nolint:gosec // G304: a pre-1.4 file in the toolkit the user named
+	if err != nil {
+		return err
+	}
+	defer func() { _ = src.Close() }()
+	dst, err := os.OpenFile(to, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // G304: config/ in the same toolkit
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
+		_ = os.Remove(to)
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		_ = os.Remove(to)
+		return err
+	}
+	_ = src.Close()
+	return os.Remove(from)
 }
 
 func (s Store) importOne(p Profile, ps Problems, rep *LegacyReport) error {

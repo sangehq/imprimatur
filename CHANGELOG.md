@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A release signs and notarises macOS binaries from Windows and Linux too, as
+  the PowerShell line's GoReleaser template did (O-140, design ID-36): signing
+  with anchore/quill's code-signing packages from the profile's `.p12`, and
+  notarising through impr's own client for Apple's notary API (no AWS SDK).
+  Off a Mac the `.p12`'s certificate must chain to Apple Root CA through a
+  Developer ID CA (embedded, pinned by SHA-256), carry the code-signing usage
+  and be in date, as well as name the pinned identity and team. On a Mac,
+  `codesign` and `notarytool` are used as before. impr now depends on 12
+  modules, up from 2.
+
+- `third-party-notices-go.md` lists every Go module compiled into impr with
+  its licence text, and the Go standard library's; `make notices` writes it,
+  the test gate fails while it is out of date, and each release ships it and
+  `third-party-notices.md` beside the binaries, in `checksums.txt`.
+
+- `impr init [--main PKG] [--force]`, as the PowerShell line had: it writes
+  `build/targets.txt` with the old template's targets (in place of
+  `.goreleaser.yaml`, which impr no longer reads), adds the build output to
+  `.gitignore`, and refuses to overwrite targets without `--force`
+  (O-36..O-39). It refuses a `build` folder, targets file or `.gitignore`
+  that is a symbolic link, and writes each through a temporary file and a
+  rename, never through a link.
+
 - `impr serve` starts a web UI on `127.0.0.1:7823` beside the API (the next
   free port when taken; `--port` pins it), following the sange and authama
   web UI (design ID-34). It needs no API token: a one-time sign-in link
@@ -82,6 +105,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Option values from a fixed set match without regard to case, as the
+  PowerShell line's did: `--purpose Release` (sign, build, release, approve)
+  and `impr rules --scope Product` work (O-12).
+- `impr config set` trims the spaces and one matched pair of quotes around a
+  value (O-74). The PowerShell line trimmed every quote at either end; impr
+  keeps quotes inside the pair, or with no partner, as part of the value.
+- Bash completion offers an option's values after `--opt=` too, as the
+  PowerShell line's completer did (O-95).
+- On Windows, impr's first run with no PowerShell settings makes the personal
+  test profile `default` (the self-signed test certificate, which can never
+  sign a release), as the PowerShell line's migration did (O-120).
+- An import from a pre-1.4 PowerShell toolkit moves its settings, state and
+  `metadata.json` from the toolkit root into `config/` first, as the
+  PowerShell line did (O-09). The move renames files inside the toolkit and
+  never replaces a file already in `config/`, even one that appears
+  meanwhile.
+- `impr install` asks, at a terminal, to put its folder on the Windows user
+  PATH and to set up completion for your shell, as the PowerShell line did;
+  `--yes` answers yes, `--no-path` and `--no-completion` leave one out, and
+  with nobody at a terminal it changes nothing (O-78, O-80). Your PATH
+  entries are written back unchanged, and a folder already there as a
+  `%VAR%` reference is not added again.
+- `impr rules --wdac-base` (or `options.basePolicy`) renders a WDAC base
+  policy to merge, as the PowerShell line did without `--base`: audit mode
+  unless `--enforce`, never the default (O-182). On Windows, a WDAC policy
+  written with `--out-dir` is compiled into a `.cip` with
+  `ConvertFrom-CIPolicy` to prove Windows accepts it (O-183).
+- An installed bash, zsh or fish completion script is rewritten on the next
+  run after an upgrade, as the PowerShell line's cache was (O-97): once, when
+  the version stamped in its header is older than the running impr; never
+  from a `dev` build and never to downgrade.
 - Bare `impr serve` now starts the web UI as well as the API, and starts with
   no API token configured; `--no-web` keeps the API-only behaviour and its
   refusal without a token or inbound endpoint. `impr serve --check-config`

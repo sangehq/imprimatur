@@ -65,6 +65,13 @@ else
   echo "skipped: no authama checkout with origin/main at $sib/authama"
 fi
 
+echo "== Go module notices"
+# third-party-notices-go.md must match the modules ./cmd/impr compiles, at the
+# versions go.mod resolves, with their licence texts: a dependency added,
+# removed or moved without `make notices` fails here. gonotices asserts a
+# floor on the module count, so an empty listing cannot pass.
+make --no-print-directory notices-check
+
 echo "== gofmt"
 out=$(gofmt -l src/cmd src/internal)
 if [ -n "$out" ]; then echo "not gofmt-clean:"; echo "$out"; exit 1; fi

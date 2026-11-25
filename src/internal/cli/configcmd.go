@@ -130,6 +130,8 @@ func (a *App) configEdit(ctx context.Context, d paths.Dirs, sub string, p parsed
 	// The value's words are joined, as the PowerShell toolkit did (ID-16):
 	// a JSON list split by the shell still arrives whole.
 	value := strings.Join(p.pos[min(2, len(p.pos)):], " ")
+	// Spaces and one matched pair of quotes around it are trimmed (O-74).
+	value = trimValueQuotes(value)
 	if sub == "set" && strings.TrimSpace(value) == "" {
 		return 0, contract.New(contract.Usage, "config set %s needs a value; to remove the key: impr config unset %s", p.pos[1], p.pos[1])
 	}
@@ -264,4 +266,18 @@ func (a *App) configProfile(ctx context.Context, d paths.Dirs, p parsed) (int, e
 		return 0, nil
 	}
 	return 0, contract.New(contract.Usage, "unknown config profile subcommand %q", p.pos[1])
+}
+
+// trimValueQuotes trims the spaces around a config value, then one matched
+// pair of quotes (both " or both '), so a value quoted once by the shell and
+// once by hand is stored bare. The PowerShell toolkit trimmed every quote
+// character at either end (impr.ps1:474, .Trim('"', "'")); impr keeps
+// quotes inside the pair and a quote with no partner, which are part of the
+// value (Phase 6c review, 2026-11-25).
+func trimValueQuotes(v string) string {
+	v = strings.TrimSpace(v)
+	if len(v) >= 2 && (v[0] == '"' || v[0] == '\'') && v[len(v)-1] == v[0] {
+		return v[1 : len(v)-1]
+	}
+	return v
 }

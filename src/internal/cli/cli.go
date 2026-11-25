@@ -4,6 +4,7 @@
 package cli
 
 import (
+	"bufio"
 	"os/signal"
 	"syscall"
 
@@ -62,6 +63,9 @@ type App struct {
 	// its usage, as scripts and sange expect.
 	Stdin       io.Reader
 	Interactive func() bool
+	// stdinLines is one buffered reader over Stdin for every question a run
+	// asks, so an answer read ahead by one is there for the next.
+	stdinLines *bufio.Reader
 	// Notifier replaces the desktop notifier; tests give it a recorder.
 	Notifier *notifykit.Notifier
 }
@@ -114,6 +118,10 @@ const (
 	stringFlag
 	listFlag   // repeatable, and comma-separated values split
 	repeatFlag // repeatable, each value kept whole (it may contain commas)
+	// foldFlag is a value from a fixed set, matched without regard to case
+	// as the PowerShell parser's mapped options were (O-12): it is stored
+	// lower-cased, and the command checks it against the set.
+	foldFlag
 )
 
 type flagSpec map[string]kind
@@ -181,6 +189,8 @@ func parse(args []string, spec flagSpec) (parsed, error) {
 					p.lists[name] = append(p.lists[name], v)
 				}
 			}
+		case foldFlag:
+			p.strs[name] = strings.ToLower(val)
 		default:
 			p.strs[name] = val
 		}
@@ -308,6 +318,16 @@ func (a *App) migrateOnce(s profile.Store, d paths.Dirs) {
 	env := a.legacyEnv(d)
 	src := profile.FindLegacy(env)
 	if src == "" {
+		// On Windows the PowerShell line made the test certificate's profile
+		// the default on a first run with no settings; so does impr (O-120).
+		if a.GOOS == "windows" {
+			rep, err := profile.FirstRunDefault(s, env)
+			if err != nil {
+				a.say("profiles  could not make the first-run test profile: %v", err)
+			} else if len(rep.Imported) > 0 {
+				a.say("profiles  first run on Windows: made the personal test profile %s (the self-signed test certificate; it can never sign a release)", strings.Join(rep.Imported, ", "))
+			}
+		}
 		return
 	}
 	rep, err := profile.ImportLegacy(s, src, env)
@@ -537,6 +557,10 @@ func (a *App) Run(ctx context.Context, args []string) int {
 		}
 		return a.fail(contract.New(contract.Usage, "unknown command %q", cmd).WithFix(fix...), asJSON)
 	}
+	// An installed completion script follows an upgrade (O-97).
+	if cmd != "completion" && cmd != "uninstall" {
+		a.refreshCompletion()
+	}
 	start := a.Now()
 	code, err := c.run(ctx, a, rest)
 	if err != nil {
@@ -581,6 +605,7 @@ func init() {
 		"path":       {cmdPath, "Shows impr's config, state and install folders.", "install.md"},
 		"menu":       {cmdMenu, "Opens the interactive menu.", "menu.md"},
 		"build":      {cmdBuild, "Cross-compiles a Go module into build/ and writes its build manifest.", "build.md"},
+		"init":       {cmdInit, "Sets a project up for impr build: its targets, and its build output out of git.", "init.md"},
 		"release":    {cmdRelease, "Builds, signs and verifies in one step; never tags, pushes or publishes.", "release.md"},
 		"tools":      {cmdTools, "Lists the external tools impr may run, and pins one by its digest.", "config.md"},
 		"audit":      {cmdAudit, "Reads, checks and anchors impr's hash-chained audit trail.", "audit.md"},
@@ -615,6 +640,7 @@ Usage:
   impr rules test --policy applocker.xml [--user Everyone] FILE... [--json]   (Windows)
   impr rules (--request FILE | FILE... [--scope publisher|product|file|version] [--product NAME] [--file-version a.b.c.d]
             [--base-policy {GUID}] [--eku OID] [--applocker] [--wdac] [--enforce] [--sid SID] [--profile NAME] [--without-signed-record]) [--out-dir DIR] [--json] [--strict]
+  impr init [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--force] [--json]
   impr build [VERSION] [--main ./cmd/NAME] [--module DIR] [--repo-root DIR] [--binary NAME] [--version vX.Y.Z] [--version-var PKG.VAR]
             [--targets os/arch,...] [--clean] [--allow-dirty] [--json]
   impr release [VERSION] --profile NAME --purpose release|test|internal [--repo URL] [--platforms ...] [build options] [--json]

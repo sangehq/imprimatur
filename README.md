@@ -78,6 +78,7 @@ else is in the [documentation](#documentation) below.
 
 - [`impr companion info`](docs/tools/companion.md) — the contract v1 other tools call
 - [`impr profile`](docs/tools/profile.md) — list, show, add, edit, rm, import, export, validate, default, capabilities, import-legacy
+- [`impr init`](docs/tools/init.md) — set a project up for `impr build`: its targets, and its build output out of git
 - [`impr build`](docs/tools/build.md) — cross-compile a Go module into `build/{os}/` with a commit-bound build manifest
 - [`impr release`](docs/tools/release.md) — build, sign and verify in one step; never tags, pushes or publishes
 - [`impr sign`](docs/tools/sign.md) — signing a build manifest, `impr-manifest.json`

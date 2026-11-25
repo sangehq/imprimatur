@@ -284,7 +284,7 @@ func (a *App) trustSteps(c backend.CertEntry) {
 }
 
 var signFlags = flagSpec{"json": boolFlag, "strict": boolFlag, "manifest": stringFlag, "commit": stringFlag, "tree": stringFlag,
-	"profile": stringFlag, "purpose": stringFlag, "platforms": listFlag, "root": stringFlag, "repo": stringFlag, "approval": listFlag, "dry-run": boolFlag}
+	"profile": stringFlag, "purpose": foldFlag, "platforms": listFlag, "root": stringFlag, "repo": stringFlag, "approval": listFlag, "dry-run": boolFlag}
 
 func cmdSign(ctx context.Context, a *App, args []string) (int, error) {
 	p, err := parse(args, signFlags)
@@ -441,7 +441,11 @@ func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
 		if err := os.MkdirAll(dir, 0o750); err != nil {
 			return 0, err
 		}
-		for name, body := range map[string]string{"applocker.xml": res.AppLocker, "wdac-supplemental.xml": res.WDAC} {
+		wdacFile := "wdac-supplemental.xml"
+		if req.Options.BasePolicy {
+			wdacFile = "wdac-base.xml"
+		}
+		for name, body := range map[string]string{"applocker.xml": res.AppLocker, wdacFile: res.WDAC} {
 			if body == "" {
 				continue
 			}
@@ -449,6 +453,11 @@ func cmdRules(ctx context.Context, a *App, args []string) (int, error) {
 				return 0, err
 			}
 			a.say("wrote     %s", filepath.Join(dir, name))
+		}
+		if res.WDAC != "" && a.GOOS == "windows" {
+			if err := a.compileCIPolicy(ctx, filepath.Join(dir, wdacFile), filepath.Join(dir, strings.TrimSuffix(wdacFile, ".xml")+".cip")); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if p.on("json") {
@@ -603,4 +612,44 @@ func (a *App) dryRunAnswer(p parsed, res signing.Result, err error) (int, error)
 	}
 	a.say("dry-run   nothing was signed; the real run would sign as above")
 	return 0, nil
+}
+
+// compileCIPolicy compiles the WDAC policy impr rules wrote into a .cip, with
+// ConvertFrom-CIPolicy through impr's own embedded script, as the PowerShell
+// line did (O-183): it proves Windows accepts the policy. A Windows without
+// the ConfigCI module skips it with a note; a policy that does not compile
+// fails the run, keeping the XML to look at.
+func (a *App) compileCIPolicy(ctx context.Context, xmlPath, cipPath string) error {
+	env, err := execx.CompileCIPolicyEnv(xmlPath, cipPath)
+	if err != nil {
+		return contract.Wrap(contract.Usage, err, "the policy path")
+	}
+	_ = os.Remove(cipPath)
+	res, err := a.host().Runner.Run(ctx, execx.Cmd{Tool: "powershell", Args: execx.CompileCIPolicyArgs(), Env: env})
+	if err != nil {
+		a.say("rules     the WDAC policy was not compiled: %v", err)
+		return nil
+	}
+	out := strings.TrimSpace(string(res.Stdout))
+	switch {
+	case res.ExitCode == 0 && out == "skipped":
+		a.say("rules     not compiled: this Windows has no ConvertFrom-CIPolicy (the ConfigCI module)")
+		return nil
+	case res.ExitCode == 0 && strings.HasSuffix(out, "compiled"):
+		if st, err := os.Stat(cipPath); err == nil {
+			a.say("rules     compiled %s (%d bytes, a policy Windows accepts)", cipPath, st.Size())
+			return nil
+		}
+	}
+	return contract.New(contract.Unavailable, "the WDAC policy did not compile; it is kept for inspection at %s", xmlPath).
+		WithDetails(firstLines(res.Output(), 6)...)
+}
+
+// firstLines is up to n lines of s.
+func firstLines(s string, n int) []string {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return lines
 }

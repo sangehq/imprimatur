@@ -186,3 +186,28 @@ func checkKeyFile(p string) error {
 	}
 	return nil
 }
+
+// AsBytes is AsFile's reading of a resolved value, in memory: a value naming
+// an existing file is read; key material (PEM) is taken as it is; with
+// decodeBase64, base64 content (a .p12 in a CI secret) is decoded. Nothing is
+// written to disk, so a key used in-process (impr's own Developer ID signer
+// and notary client) never touches a temporary file.
+func AsBytes(value string, decodeBase64 bool) ([]byte, error) {
+	if !strings.ContainsAny(value, "\n") {
+		if st, err := os.Stat(value); err == nil && !st.IsDir() {
+			return os.ReadFile(value) //nolint:gosec // G304: the credential file the reference names
+		}
+	}
+	if decodeBase64 && !strings.Contains(value, "-----BEGIN") {
+		d, err := base64.StdEncoding.DecodeString(strings.Join(strings.Fields(value), ""))
+		if err != nil {
+			return nil, contract.New(contract.Unavailable, "the credential is neither a file nor base64 content")
+		}
+		return d, nil
+	}
+	if !strings.Contains(value, "-----BEGIN") {
+		return nil, contract.New(contract.Unavailable, "the credential names a file that does not exist").
+			WithFix("point the reference at the key file, or put the key itself in the variable")
+	}
+	return []byte(value), nil
+}

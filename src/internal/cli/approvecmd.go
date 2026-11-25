@@ -15,7 +15,7 @@ import (
 	"github.com/sangehq/imprimatur/src/internal/profile"
 )
 
-var approveFlags = flagSpec{"json": boolFlag, "manifest": stringFlag, "profile": stringFlag, "purpose": stringFlag,
+var approveFlags = flagSpec{"json": boolFlag, "manifest": stringFlag, "profile": stringFlag, "purpose": foldFlag,
 	"approver": stringFlag, "key": stringFlag, "expires": stringFlag, "out": stringFlag}
 
 // ApproveResult is `impr approve --json`.
