@@ -2,12 +2,15 @@
 <h1 class="h2">Add an API token</h1>
 <p class="text-secondary">The token is shown once, on the next page. Give it only the scopes the program needs.</p>
 {{template "err" .Err}}
+{{template "config_off" $}}
 <form method="post" action="/tokens" autocomplete="off">
   <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  <fieldset{{if $.ConfigOff}} disabled{{end}}>
   <fieldset class="mb-3"><legend class="form-label">Scopes</legend>
     {{range .Scopes}}<label class="form-check" for="scope-{{.}}"><input class="form-check-input" type="checkbox" name="scopes" value="{{.}}" id="scope-{{.}}"><span class="form-check-label">{{.}}</span></label>{{end}}
   </fieldset>
   <button type="submit" class="btn btn-primary">{{icon "plus"}}<span class="ms-1">Add</span></button>
+  </fieldset>
   <a href="/tokens" class="btn btn-link">Cancel</a>
 </form>
 {{end}}{{end}}

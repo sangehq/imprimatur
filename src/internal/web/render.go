@@ -185,10 +185,13 @@ type view struct {
 	Authed, TokenOnly bool
 	// Owner is the one-time link's session, which reaches everything; Reach
 	// is what a token sign-in may use (see Can).
-	Owner   bool
-	Reach   []string
-	CSRF    string
-	Version string
+	Owner bool
+	Reach []string
+	// ConfigOff says why this session may not change configuration, with
+	// the fix; "" when it may. Forms then show disabled.
+	ConfigOff string
+	CSRF      string
+	Version   string
 	// User and Host are who the server runs as and where; Year is the
 	// footer's.
 	User, Host string

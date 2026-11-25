@@ -357,6 +357,9 @@ func (s *Server) profileValidate(w http.ResponseWriter, r *http.Request) {
 
 // profileDefault is POST /profiles/{name}/default: impr profile default NAME.
 func (s *Server) profileDefault(w http.ResponseWriter, r *http.Request) {
+	if s.refuseConfig(w, r) {
+		return
+	}
 	name := r.PathValue("name")
 	if !server.ValidName(name) {
 		s.refuse(w, r, "That is not a profile name.")
@@ -372,6 +375,9 @@ func (s *Server) profileDefault(w http.ResponseWriter, r *http.Request) {
 // profileRemove is POST /profiles/{name}/remove: impr profile rm NAME, after
 // a confirmation.
 func (s *Server) profileRemove(w http.ResponseWriter, r *http.Request) {
+	if s.refuseConfig(w, r) {
+		return
+	}
 	name := r.PathValue("name")
 	if !server.ValidName(name) {
 		s.refuse(w, r, "That is not a profile name.")
@@ -427,6 +433,9 @@ func (s *Server) certNew(w http.ResponseWriter, r *http.Request) {
 
 // certCreate is POST /certs: impr cert create --name --subject --days.
 func (s *Server) certCreate(w http.ResponseWriter, r *http.Request) {
+	if s.refuseConfig(w, r) {
+		return
+	}
 	f := certForm{Name: strings.TrimSpace(r.PostFormValue("name")), Subject: strings.TrimSpace(r.PostFormValue("subject")), Days: strings.TrimSpace(r.PostFormValue("days"))}
 	n, _ := strconv.Atoi(f.Days)
 	switch {
@@ -553,7 +562,24 @@ type tokenForm struct {
 
 // tokenNew is GET /tokens/new: the scopes to give a new token.
 func (s *Server) tokenNew(w http.ResponseWriter, r *http.Request) {
-	s.page(w, r, "token_new", "tokens", "Add an API token", tokenForm{Scopes: config.Scopes})
+	s.page(w, r, "token_new", "tokens", "Add an API token", tokenForm{Scopes: s.offeredScopes(r)})
+}
+
+// offeredScopes are the scopes this session may give a new token: every one
+// for the owner's link session, only its own for a token sign-in, so no
+// token mints a wider one.
+func (s *Server) offeredScopes(r *http.Request) []string {
+	sess := sessionFrom(r.Context())
+	if sess == nil || sess.tokenID == "" {
+		return config.Scopes
+	}
+	var out []string
+	for _, sc := range config.Scopes {
+		if slices.Contains(sess.scopes, sc) {
+			out = append(out, sc)
+		}
+	}
+	return out
 }
 
 // apiTokenRe is what impr server token add prints: impr_ and 32 random bytes.
@@ -562,16 +588,28 @@ var apiTokenRe = regexp.MustCompile(`^impr_[A-Za-z0-9_-]{43}$`)
 // tokenAdd is POST /tokens: impr server token add --scopes. The token is kept
 // in the session for one showing on /tokens/created, and is never logged.
 func (s *Server) tokenAdd(w http.ResponseWriter, r *http.Request) {
+	if s.refuseConfig(w, r) {
+		return
+	}
+	offered := s.offeredScopes(r)
 	scopes := r.PostForm["scopes"]
 	bad := len(scopes) == 0
+	wider := false
 	for _, sc := range scopes {
 		if !slices.Contains(config.Scopes, sc) {
 			bad = true
+		} else if !slices.Contains(offered, sc) {
+			wider = true
 		}
+	}
+	if wider {
+		s.renderError(w, r, http.StatusForbidden, "Not added",
+			"A token sign-in can only make tokens with scopes it holds itself ("+strings.Join(offered, ", ")+").")
+		return
 	}
 	if bad {
 		s.render(w, http.StatusBadRequest, "token_new", s.newView(r, "tokens", "Add an API token",
-			tokenForm{Scopes: config.Scopes, Err: "Choose at least one scope from the list."}))
+			tokenForm{Scopes: offered, Err: "Choose at least one scope from the list."}))
 		return
 	}
 	if s.opts.Run == nil {
@@ -614,6 +652,9 @@ func (s *Server) tokenCreated(w http.ResponseWriter, r *http.Request) {
 // tokenRevoke is POST /tokens/{id}/revoke: impr server token revoke ID, after
 // a confirmation.
 func (s *Server) tokenRevoke(w http.ResponseWriter, r *http.Request) {
+	if s.refuseConfig(w, r) {
+		return
+	}
 	id := r.PathValue("id")
 	if !tokenIDRe.MatchString(id) {
 		s.refuse(w, r, "That is not a token id.")
@@ -681,6 +722,30 @@ type webhookForm struct {
 // webhookNew is GET /webhooks/new.
 func (s *Server) webhookNew(w http.ResponseWriter, r *http.Request) {
 	s.page(w, r, "webhook_new", "webhooks", "Add a webhook", webhookForm{WritesOff: s.webhookWritesOff(r)})
+}
+
+// configWritesOff says why this session may not change impr's
+// configuration (tokens, certificates, profiles), with the fix, or "" when it
+// may. A token sign-in needs server.allowAdmin for it, as over the API; the
+// owner's link session is not gated (owner, 2026-11-25). Webhooks have their
+// own rule (webhookWritesOff).
+func (s *Server) configWritesOff(r *http.Request) string {
+	sess := sessionFrom(r.Context())
+	if s.opts.AllowAdmin || sess == nil || sess.tokenID == "" {
+		return ""
+	}
+	return "Changes to impr's configuration from an API token sign-in are off: server.allowAdmin is false, as for the API. " +
+		"Turn it on with impr config set server.allowAdmin true, then restart impr serve; or open the link impr serve printed."
+}
+
+// refuseConfig answers a configuration change this session may not make
+// with the styled 403, and reports whether it did.
+func (s *Server) refuseConfig(w http.ResponseWriter, r *http.Request) bool {
+	off := s.configWritesOff(r)
+	if off != "" {
+		s.renderError(w, r, http.StatusForbidden, "Configuration changes are off", off)
+	}
+	return off != ""
 }
 
 // webhookWritesOff says why this session may not add or remove a webhook,

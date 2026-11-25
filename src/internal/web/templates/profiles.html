@@ -5,6 +5,7 @@
   <div class="text-secondary">Signing profiles say which key or certificate signs what. Add one with <code>impr profile add</code>, {{if $.Can "admin"}} or <a href="/certs/new" data-inline>create a test certificate</a>{{end}}.</div>
 </div>
 {{template "err" .Err}}
+{{template "config_off" $}}
 <div class="card">
   {{if .List.Profiles}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">
     <thead><tr><th>Profile</th><th>Scope</th><th>Purpose</th><th>Platforms</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
@@ -15,9 +16,9 @@
       <td data-label="Platforms">{{range $i, $p := platforms .Platforms}}{{if $i}}, {{end}}{{$p}}{{end}}</td>
       <td data-label="Actions" class="text-end">
         <div class="btn-list justify-content-end">
-          {{if and ($.Can "admin") (ne .Name $.Data.Default)}}<form method="post" action="/profiles/{{.Name}}/default" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm">{{icon "star"}}<span class="ms-1">Set default</span></button></form>{{end}}
+          {{if and ($.Can "admin") (ne .Name $.Data.Default)}}<form method="post" action="/profiles/{{.Name}}/default" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm"{{if $.ConfigOff}} disabled{{end}}>{{icon "star"}}<span class="ms-1">Set default</span></button></form>{{end}}
           <a href="/profiles/{{.Name}}/validate" class="btn btn-sm" data-inline>{{icon "circle-check"}}<span class="ms-1">Validate</span></a>
-          {{if $.Can "admin"}}<form method="post" action="/profiles/{{.Name}}/remove" id="rm-profile-{{.Name}}" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="confirm-rm-profile-{{.Name}}">{{icon "trash"}}<span class="ms-1">Remove</span></button></form>{{end}}
+          {{if $.Can "admin"}}<form method="post" action="/profiles/{{.Name}}/remove" id="rm-profile-{{.Name}}" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="confirm-rm-profile-{{.Name}}"{{if $.ConfigOff}} disabled{{end}}>{{icon "trash"}}<span class="ms-1">Remove</span></button></form>{{end}}
         </div>
         {{if $.Can "admin"}}{{template "confirm" (confirm (printf "confirm-rm-profile-%s" $n) (printf "rm-profile-%s" $n) (printf "Remove %s?" $n) "The signing profile is deleted. Its keys and certificates stay where they are." "Remove")}}{{end}}
       </td></tr>{{end}}</tbody>

@@ -153,6 +153,7 @@ func (s *Server) fillSession(r *http.Request, v *view) {
 	}
 	v.Authed, v.TokenOnly, v.CSRF = true, sess.tokenID != "", sess.csrf
 	v.Owner, v.Reach = sess.tokenID == "", s.reach(sess)
+	v.ConfigOff = s.configWritesOff(r)
 	if !v.Panel {
 		v.Flash, v.FlashBad = sess.takeFlash()
 	}

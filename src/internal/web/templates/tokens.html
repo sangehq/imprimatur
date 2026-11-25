@@ -10,12 +10,13 @@
   </div>
 </div>
 {{template "err" .Err}}
+{{template "config_off" $}}
 <div class="card">
   {{if .List.Tokens}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">
     <thead><tr><th>Token</th><th>Scopes</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
     <tbody>{{range .List.Tokens}}{{$id := .ID}}<tr><td data-label="Token"><code>{{.ID}}</code></td><td data-label="Scopes">{{join .Scopes ", "}}</td>
       <td data-label="Actions" class="text-end">
-        <form method="post" action="/tokens/{{.ID}}/revoke" id="revoke-{{.ID}}" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="confirm-revoke-{{.ID}}">{{icon "ban"}}<span class="ms-1">Revoke</span></button></form>
+        <form method="post" action="/tokens/{{.ID}}/revoke" id="revoke-{{.ID}}" class="d-inline"><input type="hidden" name="csrf" value="{{$csrf}}"><button type="submit" class="btn btn-sm btn-outline-danger" data-confirm="confirm-revoke-{{.ID}}"{{if $.ConfigOff}} disabled{{end}}>{{icon "ban"}}<span class="ms-1">Revoke</span></button></form>
         {{template "confirm" (confirm (printf "confirm-revoke-%s" $id) (printf "revoke-%s" $id) (printf "Revoke %s?" $id) "Programs using this token are refused once the API restarts." "Revoke")}}
       </td></tr>{{end}}</tbody>
   </table></div>{{else}}{{template "empty" (empty "license" "No API tokens" "The web UI needs none. Add one for a program that calls impr's API.")}}{{end}}

@@ -10,6 +10,7 @@
   </div>
 </div>
 {{template "err" .Err}}
+{{template "config_off" $}}
 <div class="card">
   {{if .List.Certificates}}<div class="table-responsive"><table class="table table-vcenter card-table table-stack">
     <thead><tr><th>Profile</th><th>Platform</th><th>Subject</th><th>Expires</th><th>Thumbprint</th></tr></thead>

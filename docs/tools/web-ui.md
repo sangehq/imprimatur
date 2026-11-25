@@ -46,7 +46,10 @@ impr serve --verbose        # log page views too, not only changes
   - `scopes`: the token's scopes decide. `read` opens the read-only pages (Overview, Doctor, Profiles,
     Certificates, Audit, About), `secrets` the Secrets page and its form, `events` the Events page, and
     `admin` API tokens, Webhooks and every other change (set default, remove, create a test certificate).
-    A token with none of these cannot sign in.
+    A token with none of these cannot sign in. Every configuration change from a token sign-in (tokens,
+    certificates, profiles, webhooks) also needs `server.allowAdmin`, as over the API: without it the forms
+    show disabled with the reason and the fix, and a post answers 403. A token sign-in can only add tokens
+    with scopes it holds itself. Storing a secret needs the `secrets` scope only.
 
   Pages, menu entries, palette entries and buttons the session cannot use are not shown, and a request
   for one answers 403. The one-time link's session reaches everything.

@@ -149,3 +149,64 @@ func TestEveryRouteNamesItsScope(t *testing.T) {
 	}
 	atLeast(t, "routes", n, 30)
 }
+
+// Under tokenAccess scopes, every configuration change from a token sign-in
+// needs server.allowAdmin, as over the API: the forms show disabled with the
+// reason and the fix, and a post answers 403 and runs nothing. The owner's
+// link session is unchanged.
+func TestATokenSessionsConfigWritesNeedAllowAdmin(t *testing.T) {
+	raw, at := apiToken(t, "read", "admin")
+	base := newPagesWith(t, false, func(o *Options) {
+		o.Web.TokenAccess = config.TokenAccessScopes
+		o.Tokens = append(o.Tokens, at)
+	})
+	a := tokenSession(t, base, raw)
+	for path, v := range map[string]url.Values{
+		"/tokens":                         {"scopes": {"read"}},
+		"/tokens/tok_0123456789ab/revoke": {"confirm": {"yes"}},
+		"/certs":                          {"name": {"t9"}, "days": {"2"}},
+		"/profiles/rel/default":           nil,
+		"/profiles/rel/remove":            {"confirm": {"yes"}},
+		"/webhooks":                       {"name": {"ci2"}, "url": {"https://ci.example/h"}, "secretRef": {"env://WH"}},
+	} {
+		before := a.impr.count()
+		code, body, _ := a.post(path, v, true)
+		if code != http.StatusForbidden || a.impr.count() != before || !strings.Contains(body, "server.allowAdmin") {
+			t.Errorf("admin token, POST %s without allowAdmin: %d, ran %d", path, code, a.impr.count()-before)
+		}
+	}
+	for _, path := range []string{"/tokens/new", "/certs/new"} {
+		if _, body, _ := a.get(path); !strings.Contains(body, "<fieldset disabled") || !strings.Contains(body, "impr config set server.allowAdmin true") {
+			t.Errorf("admin token: %s does not show its form disabled with the fix", path)
+		}
+	}
+	for _, path := range []string{"/profiles", "/tokens"} {
+		if _, body, _ := a.get(path); !strings.Contains(body, "impr config set server.allowAdmin true") ||
+			!regexp.MustCompile(`<button type="submit" class="btn btn-sm[^"]*"[^>]* disabled>`).MatchString(body) {
+			t.Errorf("admin token: %s does not show its buttons disabled with the fix", path)
+		}
+	}
+	// The owner's link session changes configuration as before.
+	if code, _, _ := base.post("/certs", url.Values{"name": {"t8"}, "days": {"2"}}, true); code != http.StatusSeeOther {
+		t.Errorf("the owner, POST /certs: %d", code)
+	}
+	if _, body, _ := base.get("/profiles"); strings.Contains(body, "impr config set server.allowAdmin true") {
+		t.Error("the owner is told configuration changes are off")
+	}
+}
+
+// A token sign-in never mints a token wider than itself.
+func TestATokenCannotMintWiderScopes(t *testing.T) {
+	base, _, _, admin := scopedPages(t, config.TokenAccessScopes)
+	a := tokenSession(t, base, admin)
+	before := a.impr.count()
+	if code, _, _ := a.post("/tokens", url.Values{"scopes": {"read", "sign"}}, true); code != http.StatusForbidden || a.impr.count() != before {
+		t.Fatalf("a wider token: %d, ran %d", code, a.impr.count()-before)
+	}
+	if code, _, _ := a.post("/tokens", url.Values{"scopes": {"read", "admin"}}, true); code != http.StatusSeeOther {
+		t.Fatalf("a token within its own scopes: %d", code)
+	}
+	if _, body, _ := a.get("/tokens/new"); strings.Contains(body, `value="sign"`) || !strings.Contains(body, `value="admin"`) {
+		t.Fatal("the form offers scopes the session does not hold")
+	}
+}
