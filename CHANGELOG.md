@@ -89,6 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   PowerShell line did (O-74).
 - Bash completion offers an option's values after `--opt=` too, as the
   PowerShell line's completer did (O-95).
+- On Windows, impr's first run with no PowerShell settings makes the personal
+  test profile `default` (the self-signed test certificate, which can never
+  sign a release), as the PowerShell line's migration did (O-120).
 - Bare `impr serve` now starts the web UI as well as the API, and starts with
   no API token configured; `--no-web` keeps the API-only behaviour and its
   refusal without a token or inbound endpoint. `impr serve --check-config`

@@ -314,6 +314,16 @@ func (a *App) migrateOnce(s profile.Store, d paths.Dirs) {
 	env := a.legacyEnv(d)
 	src := profile.FindLegacy(env)
 	if src == "" {
+		// On Windows the PowerShell line made the test certificate's profile
+		// the default on a first run with no settings; so does impr (O-120).
+		if a.GOOS == "windows" {
+			rep, err := profile.FirstRunDefault(s, env)
+			if err != nil {
+				a.say("profiles  could not make the first-run test profile: %v", err)
+			} else if len(rep.Imported) > 0 {
+				a.say("profiles  first run on Windows: made the personal test profile %s (the self-signed test certificate; it can never sign a release)", strings.Join(rep.Imported, ", "))
+			}
+		}
 		return
 	}
 	rep, err := profile.ImportLegacy(s, src, env)

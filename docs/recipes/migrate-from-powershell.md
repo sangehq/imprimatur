@@ -21,6 +21,7 @@ impr profile import-legacy --from ~/tools/imprimatur/config --json
 | --- | --- |
 | `config/profiles/*.json` and `config/profiles.json` (the 1.8.x profiles) | the same profiles, and the same default |
 | `WINDOWS_SIGNER=SelfSigned` (+ thumbprint, subject) | profile `default`: personal, `test`, cert-store. It can never sign a release |
+| nothing at all, on Windows (a first run with no toolkit) | the same profile `default`, with the subject `CN=<you> Code Signing (Test)`, as the PowerShell line's migration made; elsewhere nothing is made |
 | `WINDOWS_SIGNER=Certum` + `CERTUM_SUBJECT` (+ `CERTUM_THUMBPRINT`) | profile `default`: personal, `internal`, certum, pinned by the thumbprint from `CERTUM_THUMBPRINT` (the environment at import time, or the settings file). Without one, pin it; then add `allowedRepos` and `release` |
 | `WINDOWS_SIGNER=Artifact` + `ARTIFACT_DLIB`, `ARTIFACT_METADATA` | profile `default`: personal, `internal`, azure-artifact-signing. With no `ARTIFACT_METADATA`, the old default `<toolkit>/config/metadata.json` is used when it exists. Pin the subject, add `allowedRepos`, then `release` |
 | `GPG_FINGERPRINT` | `platforms.checksums` of `default`: gpg, `gpg-agent://<fingerprint>` |

@@ -174,6 +174,39 @@ func ImportLegacy(s Store, source string, e LegacyEnv) (LegacyReport, error) {
 	return rep, nil
 }
 
+// FirstRunDefault makes, on a first run on Windows with no PowerShell
+// settings at all, the profile the PowerShell line's migration made there
+// (Invoke-ProfileMigration, O-120): the self-signed test certificate as the
+// personal test profile "default", which can never sign a release, and the
+// default. It reports what it did; elsewhere it does nothing.
+func FirstRunDefault(s Store, e LegacyEnv) (LegacyReport, error) {
+	rep := LegacyReport{Contract: contract.Version, Source: "first run on Windows", Imported: []string{}, Problems: map[string][]string{}}
+	if e.GOOS != "windows" {
+		return rep, nil
+	}
+	idx, _, err := s.LoadIndex()
+	if err != nil {
+		return rep, err
+	}
+	p := settingsProfile(map[string]string{"WINDOWS_SIGNER": "SelfSigned"}, "", e)
+	p.Notes = "Made on impr's first run on Windows, as the PowerShell line did: the self-signed test certificate. It can never sign a release."
+	if err := s.importOne(*p, p.Validate(), &rep); err != nil {
+		return rep, err
+	}
+	if idx.Default == "" && len(rep.Imported) == 1 {
+		idx.Default, rep.Default = p.Name, p.Name
+	}
+	idx.MigratedFrom = rep.Source
+	idx.MigratedAt = e.Now().UTC().Format(time.RFC3339)
+	if err := s.SaveIndex(idx); err != nil {
+		return rep, err
+	}
+	if len(rep.Problems) == 0 {
+		rep.Problems = nil
+	}
+	return rep, nil
+}
+
 func (s Store) importOne(p Profile, ps Problems, rep *LegacyReport) error {
 	if _, ok, err := s.Get(p.Name); err != nil {
 		return err

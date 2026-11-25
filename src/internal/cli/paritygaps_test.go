@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -94,5 +95,49 @@ func TestBashCompletesAfterAnEqualsSign(t *testing.T) {
 		if err != nil || got != want {
 			t.Errorf("%q: %q (%v), want %q", words, got, err, want)
 		}
+	}
+}
+
+// O-120: the first run on Windows with no PowerShell settings makes the
+// default profile the old migration made (profiles.ps1 Invoke-ProfileMigration):
+// the self-signed test certificate as a personal test profile, which can
+// never sign a release. Elsewhere, and on a later run, nothing is made.
+func TestFirstRunOnWindowsMakesTheTestDefaultProfile(t *testing.T) {
+	h := newHarness(t)
+	h.os = "windows"
+	var list struct {
+		Default  string `json:"default"`
+		Profiles []struct {
+			Name      string   `json:"name"`
+			Scope     string   `json:"scope"`
+			Purpose   []string `json:"purpose"`
+			Platforms struct {
+				Windows struct {
+					Backend string `json:"backend"`
+					Subject string `json:"subject"`
+				} `json:"windows"`
+			} `json:"platforms"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal([]byte(h.ok("profile", "list", "--json")), &list); err != nil {
+		t.Fatal(err)
+	}
+	if list.Default != "default" || len(list.Profiles) != 1 {
+		t.Fatalf("a first run on Windows: %+v", list)
+	}
+	p := list.Profiles[0]
+	if p.Name != "default" || p.Scope != "personal" || strings.Join(p.Purpose, ",") != "test" ||
+		p.Platforms.Windows.Backend != "cert-store" || p.Platforms.Windows.Subject != "CN=tester Code Signing (Test)" {
+		t.Fatalf("the profile: %+v", p)
+	}
+	// Removed, it is not made again: the index records the first run.
+	h.ok("profile", "rm", "default", "--force")
+	if out := h.ok("profile", "list", "--json"); strings.Contains(out, `"default"`) && strings.Contains(out, `"name"`) {
+		t.Fatalf("made twice: %s", out)
+	}
+	other := newHarness(t)
+	other.os = "linux"
+	if out := other.ok("profile", "list", "--json"); strings.Contains(out, `"name"`) {
+		t.Fatalf("a first run on Linux made a profile: %s", out)
 	}
 }
